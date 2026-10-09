@@ -3,14 +3,19 @@ x-api-build: &api-build
   dockerfile: docker/Dockerfile.api
 
 x-api-env: &api-env
-  DATABASE_URL: postgresql://energymon:energymon@db:5432/energymon
+  # Password comes from .env (default keeps the existing volume working until the password is rotated
+  # with ALTER USER inside the DB: changing it here alone does NOT change an existing volume).
+  DATABASE_URL: postgresql://energymon:${POSTGRES_PASSWORD:-energymon}@db:5432/energymon
   API_PORT: "3001"
   API_HOST: "0.0.0.0"
   ADMIN_TOKEN: ${ADMIN_TOKEN:?Set a long random ADMIN_TOKEN in .env}
   SOURCE_URL: http://manual-import.invalid/disabled
   USE_MOCK_ADAPTER: "false"
-  # Не запускать опрос оператора автоматически, пока идет локальная доработка и просмотр уже сохраненных данных.
-  ENABLE_SCHEDULER: "false"
+  # Автоопрос оператора. По умолчанию ВЫКЛ (локальная разработка не должна стучаться к WAF оператора).
+  # В production поставьте ENABLE_SCHEDULER=true в .env, иначе данные не обновляются (см. /status dataStale).
+  ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-false}
+  # Диапазоны доверенных прокси (nginx в compose-сети) — нужны для корректного rate limit по IP посетителя.
+  TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
   TELEGRAM_BOT_ENABLED: "false"
   CHERNIHIV_WEB_ENABLED: ${CHERNIHIV_WEB_ENABLED:-true}
   CHERNIHIV_BASE_URL: ${CHERNIHIV_BASE_URL:-https://chernihivoblenergo.com.ua}
@@ -22,9 +27,9 @@ x-api-env: &api-env
   # Рідше опитування (30 хв) + джиттер, бо розклад ГПВ змінюється нечасто, а WAF не любить регулярність.
   PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}
   PARSE_INTERVAL_JITTER_MINUTES: ${PARSE_INTERVAL_JITTER_MINUTES:-5}
-  # Синтетический пример графика очередей, если операторский JSON еще не импортирован.
-  # Установите false, если в интерфейсе нужны исключительно реальные расписания.
-  SCHEDULE_DEMO: ${SCHEDULE_DEMO:-true}
+  # Синтетический график очередей — ТОЛЬКО для демонстрации. По умолчанию выключен:
+  # жителям нельзя показывать выдуманные расписания. Для локальной демо: SCHEDULE_DEMO=true в .env.
+  SCHEDULE_DEMO: ${SCHEDULE_DEMO:-false}
   NODE_ENV: production
   LOG_LEVEL: info
   TZ: Europe/Kyiv
@@ -41,7 +46,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: energymon
-      POSTGRES_PASSWORD: energymon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energymon}
       POSTGRES_DB: energymon
     ports:
       # Доступ только через loopback: сервисы ходят в БД по compose-сети,
@@ -75,9 +80,19 @@ services:
     image: energy-monitor-api:latest
     build: *api-build
     restart: unless-stopped
+    # tini as PID 1: correct signal forwarding and zombie reaping (graceful shutdown handler lives in server.ts)
+    init: true
     ports:
-      - "3001:3001"
+      # Только loopback: наружу API ходит через nginx (/api/). Иначе TRUST_PROXY/лимиты можно обойти напрямую.
+      - "127.0.0.1:3001:3001"
     environment: *api-env
+    healthcheck:
+      # node есть в любом образе; не зависит от wget/curl
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     volumes:
       - ./docker/operator-oblenergo-ca.pem:/app/apps/api/operator-ca.pem:ro
     depends_on:
@@ -91,12 +106,14 @@ services:
       context: .
       dockerfile: docker/Dockerfile.web
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3001/api/v1}
+        # Относительный путь: браузер ходит на тот же origin, nginx проксирует /api/ → api. Образ переносим между окружениями.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
     restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   pg_data:
