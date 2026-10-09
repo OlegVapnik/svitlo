@@ -229,7 +229,10 @@ export class ChernihivWebAdapter implements ISourceAdapter {
     const outages: NormalizedOutage[] = [];
     const incidents: NormalizedIncident[] = [];
     const rawParts: Array<{ cityId: string; type: number; payload: unknown }> = [];
+    const successfulScopes: string[] = [];
     let emergencyCount = 0;
+    let succeededTypes = 0;
+    let firstBlockError: Error | null = null;
 
     await this.warmupSession();
 
@@ -237,7 +240,18 @@ export class ChernihivWebAdapter implements ISourceAdapter {
       for (const type of this.options.types) {
         // Пауза перед кожним запитом — не «бомбимо» оператора.
         if (this.options.requestDelayMs > 0) await sleep(this.options.requestDelayMs);
-        const payload = await this.fetchListAcc(cityId, type);
+        let payload: { status?: string; list?: ListAccRow[] };
+        try {
+          payload = await this.fetchListAcc(cityId, type);
+        } catch (error) {
+          // Одна настроенная порция (cityId:type) не загрузилась — это ЧАСТИЧНОЕ наблюдение,
+          // а не «оператор всё отменил»: остальные порции дособираем, complete=false,
+          // а отмена отсутствующих окон в этом цикле запрещена (ingest/runParse).
+          firstBlockError = firstBlockError ?? (error instanceof Error ? error : new Error(String(error)));
+          continue;
+        }
+        succeededTypes += 1;
+        successfulScopes.push(`${cityId}:${type}`);
         rawParts.push({ cityId, type, payload });
         const list = Array.isArray(payload.list) ? payload.list : [];
         if (type === 2) emergencyCount += list.length;
@@ -255,6 +269,10 @@ export class ChernihivWebAdapter implements ISourceAdapter {
       }
     }
 
+    // Собрать НЕ получилось ни одной порции — это полный отказ, а не "частичный":
+    // пустая лента не должна тихо попадать в ингест как "успех".
+    if (succeededTypes === 0 && firstBlockError) throw firstBlockError;
+
     // Оператор віддає по рядку на кожну вулицю/будинок — згортаємо їх в одну
     // подію населеного пункту, щоб дані не «смітили» дублікатами.
     const mergedOutages = mergeDuplicateOutages(outages);
@@ -262,6 +280,8 @@ export class ChernihivWebAdapter implements ISourceAdapter {
     return {
       outages: mergedOutages,
       incidents,
+      complete: succeededTypes === this.options.cityIds.length * this.options.types.length,
+      completeScopeKeys: successfulScopes,
       gridLevel: emergencyCount > 0 ? 'warning' : 'stable',
       gridMessage: emergencyCount > 0 ? `Зареєстровано аварійних перерв в електропостачанні: ${incidents.length}` : '',
       rawSnapshot: JSON.stringify(rawParts),

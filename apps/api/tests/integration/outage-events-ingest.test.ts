@@ -11,7 +11,7 @@
  * Без TEST_DATABASE_URL файл пропускається (skipped) — як і решта інтеграційних тестів.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { isNotNull, sql } from 'drizzle-orm';
+import { eq, isNotNull, sql } from 'drizzle-orm';
 import { EXPECTED_EVENTS, EXPECTED_ROWS, NOW, SOURCE_ID, fixtureRows } from '../fixtures/outage-events.fixture.js';
 import { ensureTestSchema, testDatabaseUrlOrSkip } from '../helpers/test-db.js';
 import type { NormalizedOutage } from '../../src/parsers/adapter.js';
@@ -73,6 +73,39 @@ describeWithDb('outage ingest dual-write', () => {
       url: 'http://test-fixture.local/disabled',
       type: 'test',
     });
+  });
+
+  it('does not mark the source successful for zero outage rows', async () => {
+    const { sources } = await import('../../src/db/schema.js');
+    await db.update(sources).set({ lastSuccessAt: null }).where(eq(sources.id, SOURCE_ID));
+    await ingestOutages(SOURCE_ID, 'test-fixture', [], { now: NOW });
+    const [source] = await db.select({ lastSuccessAt: sources.lastSuccessAt }).from(sources).where(eq(sources.id, SOURCE_ID));
+    expect(source?.lastSuccessAt).toBeNull();
+  });
+
+  it('marks the source successful only on a complete feed with records (ingest is the gate)', async () => {
+    const { sources } = await import('../../src/db/schema.js');
+    const readSuccess = async () => {
+      const [source] = await db
+        .select({ lastSuccessAt: sources.lastSuccessAt })
+        .from(sources)
+        .where(eq(sources.id, SOURCE_ID));
+      return source?.lastSuccessAt ?? null;
+    };
+
+    // 1) Полный фид с данными — единственный случай, когда last_success_at двигается.
+    await db.update(sources).set({ lastSuccessAt: null }).where(eq(sources.id, SOURCE_ID));
+    await ingestOutages(SOURCE_ID, 'test-fixture', feed(), { now: NOW });
+    expect(await readSuccess()).toEqual(NOW);
+
+    // 2) Частичный ответ оператора (complete=false): runParse в этом случае не вызывает ingest вообще,
+    //    поэтому метка успеха обязана остаться прежней, а не «догонять» частичную ленту.
+    await ingestOutages(SOURCE_ID, 'test-fixture', feed().slice(0, 1), { now: new Date(NOW.getTime() + 60_000), complete: false });
+    expect(await readSuccess()).toEqual(NOW);
+
+    // 3) Пустая (но полная) лента — тоже не успех: записей нет — метку не трогаем.
+    await ingestOutages(SOURCE_ID, 'test-fixture', [], { now: new Date(NOW.getTime() + 120_000) });
+    expect(await readSuccess()).toEqual(NOW);
   });
 
   it(`keeps the numbers equal: ${EXPECTED_ROWS} address rows and ${EXPECTED_EVENTS} events in both paths`, async () => {
@@ -146,6 +179,60 @@ describeWithDb('outage ingest dual-write', () => {
     expect(cancelledEvent.eventKey).toContain('2026-10-09T12:00:00.000Z');
     expect(cancelledEvent.startsAt.getTime()).toBeGreaterThan(NOW.getTime());
     expect(cancelledEvent.cancelledAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  it('cancels nothing when a configured operator type fails to load, but still cancels on a complete feed', async () => {
+    const { ChernihivWebAdapter } = await import('../../src/parsers/chernihiv-web.adapter.js');
+
+    const cancelledCount = async () => {
+      const [row] = (await db.execute(
+        sql`SELECT count(*)::int AS cancelled FROM outage_events WHERE cancelled_at IS NOT NULL`,
+      )) as unknown as [{ cancelled: number }];
+      return row?.cancelled ?? 0;
+    };
+
+    // Стрічка, яку віддає оператор за найгіршого сценарію: тип, чий запит впав, повертає ПОРОЖНІЙ список,
+    // інші типи не мають записів. Тобто якщо вірити цій ленті, всі попередні події зникли —
+    // але це дірка в даних, а не скасування.
+    const brokenFetch = (failedType: number): typeof fetch => async (input, init) => {
+      const requestUrl = new URL(String(input));
+      const body = JSON.parse(String(init?.body ?? '{}')) as { req_param?: string };
+      const query = JSON.parse(decodeURIComponent(body.req_param ?? '{}')) as { t?: number };
+      if (requestUrl.pathname === '/api/list_acc' && query.t === failedType) {
+        return new Response('unavailable', { status: 503 });
+      }
+      return Response.json({ status: '200', list: [] });
+    };
+
+    for (const failedType of [1, 2, 6]) {
+      await ingestOutages(SOURCE_ID, 'test-fixture', feed(), { now: NOW, db });
+      // Метка ингеста: фид с дыркой — отмен не должно быть вообще.
+      const ingestResult = await ingestOutages(SOURCE_ID, 'test-fixture', [], { now: NOW, complete: false, db });
+      expect(ingestResult.cancelledMarked, `failed configured type ${failedType}`).toBe(0);
+      expect(await cancelledCount(), `failed configured type ${failedType}`).toBe(0);
+
+      // Адаптер в той же ситуации отвечает complete=false: он сам себя признаёт неполным.
+      const adapter = new ChernihivWebAdapter(brokenFetch(failedType), {
+        baseUrl: 'https://operator.invalid',
+        cityIds: ['test-city'],
+        types: [1, 2, 6],
+        retries: 0,
+        // 503 у боевом адаптере — ретраящий статус; здесь fataл=true, чтобы тест не ждал паузы.
+        requestDelayMs: 0,
+        sessionWarmup: false,
+        retryAfterMaxMs: 0,
+      });
+      const result = await adapter.fetch();
+      expect(result.complete, `failed configured type ${failedType}`).toBe(false);
+      expect(result.completeScopeKeys ?? [], `failed configured type ${failedType}`).not.toContain(`test-city:${failedType}`);
+    }
+
+    // Контроль в другую сторону: на ПОЛНОЙ ленте без будущего окна то же окно отменяется.
+    // Без этого «ничего не отменяем» можно было бы выполнить, просто никогда ничего не отменяя.
+    const onlyPresent = feed().filter((row) => !row.externalId?.startsWith('fixture-scheduled-window-'));
+    const completeRun = await ingestOutages(SOURCE_ID, 'test-fixture', onlyPresent, { now: NOW, db });
+    expect(completeRun.cancelledMarked).toBe(1);
+    expect(await cancelledCount()).toBe(1);
   });
 
   it('cancels nothing for windows that already started and nothing on an empty feed', async () => {

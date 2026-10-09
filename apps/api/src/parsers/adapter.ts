@@ -4,6 +4,10 @@ export interface ParseResult {
   gridLevel: 'stable' | 'warning' | 'emergency';
   gridMessage: string;
   rawSnapshot: string;
+  /** False when one or more configured portions of the operator feed failed to load. */
+  complete?: boolean;
+  /** Completeness is tracked per configured portion so cancellation can exclude failed portions. */
+  completeScopeKeys?: string[];
   posts?: Array<{ id: string; text: string; date: Date; link: string; kind: 'outage_schedule' | 'incident' | 'news' }>;
 }
 

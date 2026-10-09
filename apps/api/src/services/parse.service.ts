@@ -14,7 +14,7 @@ import { logger } from '../utils/logger.js';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { mergeDuplicateOutages, outageEventKey } from './outage-grouping.js';
 import { outageCategoryFromReason } from './outage-classification.js';
-import { markMissingEventsCancelled, upsertOutageEvent, upsertOutageEventAddress } from '../db/outage-events-writer.js';
+import { markMissingEventsCancelled, upsertOutageEvent, upsertOutageEventAddress, type Database } from '../db/outage-events-writer.js';
 
 function getAdapters(): ISourceAdapter[] {
   if (env.USE_MOCK_ADAPTER) return [new MockAdapter()];
@@ -65,9 +65,15 @@ export async function ingestOutages(
   sourceId: string,
   sourceName: string,
   feed: NormalizedOutage[],
-  options: { now?: Date } = {},
+  options: { now?: Date; complete?: boolean; db?: Database } = {},
 ): Promise<IngestOutagesResult> {
   const now = options.now ?? new Date();
+  // executor по умолчанию — глобальное соединение; тесты подменяют его соединением на *_test БД.
+  const database = options.db ?? db;
+  // Та же граница, что в runParse: событие можно отменять только если лента оператора ПОЛНАЯ.
+  // При `complete: false` (часть настроенных порций не загрузилась) "исчезнувшее" окно —
+  // это дырка в наших данных, а не отмена оператором.
+  const feedIsComplete = options.complete ?? true;
   const seenEventKeys: string[] = [];
   const unclassifiedReasons = new Set<string>();
 
@@ -83,7 +89,7 @@ export async function ingestOutages(
     })),
   ).length;
 
-  const cancelledMarked = await db.transaction(async (tx) => {
+  const cancelledMarked = await database.transaction(async (tx) => {
     for (const outage of feed) {
       const normArea = normalizeOutageLocation(outage.areaName, outage.addressesRaw);
       const normAddr = normalizeAddress(outage.addressesRaw);
@@ -153,7 +159,8 @@ export async function ingestOutages(
     }
 
     // Події, яких більше немає у стрічці, хоч вони ще не почалися: оператор їх скасував.
-    // Порожня стрічка нікого не скасовує (див. markMissingEventsCancelled).
+    // Порожня стрічка нікого не скасовує (див. markMissingEventsCancelled), і неповна — теж.
+    if (!feedIsComplete) return 0;
     return markMissingEventsCancelled(tx, sourceId, seenEventKeys, now);
   });
 
@@ -162,17 +169,29 @@ export async function ingestOutages(
   let counts = { events: 0, addresses: 0 };
   const uniqueEventKeys = [...new Set(seenEventKeys)];
   if (uniqueEventKeys.length > 0) {
-    const [eventsRow] = await db
+    const [eventsRow] = await database
       .select({ count: sql<number>`count(*)::int` })
       .from(outageEvents)
       .where(and(eq(outageEvents.sourceId, sourceId), inArray(outageEvents.eventKey, uniqueEventKeys)));
-    const [addressesRow] = await db
+    const [addressesRow] = await database
       .select({ count: sql<number>`count(*)::int` })
       .from(outageEventAddresses)
       .innerJoin(outageEvents, eq(outageEventAddresses.eventId, outageEvents.id))
       .where(and(eq(outageEvents.sourceId, sourceId), inArray(outageEvents.eventKey, uniqueEventKeys)));
     counts = { events: eventsRow?.count ?? 0, addresses: addressesRow?.count ?? 0 };
   }
+
+  // Граница успеха для источника та ручного вызова ingest (тесты): полная лента с записями.
+  // Такие же правила стоят в runParse — там в одном месте решается и про lastError.
+  const runStatus = feedIsComplete && feed.length > 0 ? 'success' : 'partial';
+  await database
+    .update(sources)
+    .set(
+      runStatus === 'success'
+        ? { lastSuccessAt: now, lastError: null }
+        : { lastError: 'Ingest skipped: incomplete feed or no outage records' },
+    )
+    .where(eq(sources.id, sourceId));
 
   return {
     rowsInFeed: feed.length,
@@ -265,6 +284,15 @@ export async function runParse(sourceId: string) {
     const telegramPosts = secondaryData.flatMap(({ data: secondary }) => secondary.posts ?? []);
     const telegramIncidents = secondaryData.flatMap(({ data: secondary }) => secondary.incidents ?? []);
     const effectiveData = { ...primaryData, incidents: [...primaryData.incidents, ...telegramIncidents], posts: telegramPosts };
+    // Полный успех — только когда основное (outage) джерело ответило ЦЕЛИКОМ и без ошибки.
+    // `complete === false` значит, что хотя бы одна настроенная порция (cityId:type) не загрузилась:
+    // в этом случае ни ingest, ни last_success_at, ни отмена событий не выполняются.
+    const fullOutageFeed = !primaryError && primaryData.complete !== false;
+    const partialReason = primaryError
+      ? primaryError.message
+      : primaryData.complete === false
+        ? `Operator feed incomplete: loaded ${primaryData.completeScopeKeys?.length ?? 0} of ${env.CHERNIHIV_CITY_IDS.length * env.CHERNIHIV_OUTAGE_TYPES.length} configured portions`
+        : 'No outage records in a complete operator feed';
 
     // Нічого не зібрали з жодного джерела — це помилка (не «порожній успіх»).
     // Наявні в БД дані при цьому не чіпаємо, тому втрати даних не буде.
@@ -275,15 +303,21 @@ export async function runParse(sourceId: string) {
     }
 
     const now = new Date();
-    const snapshotPath = `snapshots/${run.id}.json`;
     const { mkdir, writeFile } = await import('node:fs/promises');
-    const snapshotDirectory = new URL('../snapshots/', import.meta.url);
+    const { isAbsolute, resolve } = await import('node:path');
+    const snapshotDirectory = isAbsolute(env.SNAPSHOT_DIR)
+      ? env.SNAPSHOT_DIR
+      : resolve(process.cwd(), env.SNAPSHOT_DIR);
     await mkdir(snapshotDirectory, { recursive: true });
-    await writeFile(new URL(`${run.id}.json`, snapshotDirectory), JSON.stringify({ primary: primaryData.rawSnapshot, secondary: secondaryData.map(({ adapter: adapterName, data: result }) => ({ adapter: adapterName, snapshot: result.rawSnapshot, posts: result.posts })) }), 'utf8');
+    const snapshotFile = resolve(snapshotDirectory, `${run.id}.json`);
+    const snapshotPath = `snapshots/${run.id}.json`;
+    await writeFile(snapshotFile, JSON.stringify({ primary: primaryData.rawSnapshot, secondary: secondaryData.map(({ adapter: adapterName, data: result }) => ({ adapter: adapterName, snapshot: result.rawSnapshot, posts: result.posts })) }), 'utf8');
 
     // 1. Upsert Outages + dual-write канонічних подій в ОДНІЙ транзакції (крок 4 плану міграції).
     //    Читачі поки що читають стару таблицю — тут для них нічого не змінюється.
-    const ingest = await ingestOutages(sourceId, adapter.name, primaryData.outages, { now });
+    const ingest = fullOutageFeed
+      ? await ingestOutages(sourceId, adapter.name, primaryData.outages, { now, complete: true })
+      : { rowsInFeed: 0, eventsOldPath: 0, eventsNewPath: 0, eventsInTable: 0, addressesInTable: 0, cancelledMarked: 0, unclassifiedReasons: [] };
     logDualWriteComparison(sourceId, ingest);
 
     // Persist Telegram post IDs in their own table; channel content never becomes an outage record.
@@ -331,29 +365,40 @@ export async function runParse(sourceId: string) {
     }
 
     // 4. Update status transitions for all outages
-    await updateOutageStatuses();
+    if (fullOutageFeed) await updateOutageStatuses();
 
     // 5. Update Source & ParseRun
-    //    'partial' — впало основне джерело, але допоміжні дані збережено.
-    await db
-      .update(sources)
-      .set({ lastSuccessAt: now, lastError: primaryError ? primaryError.message : null })
-      .where(eq(sources.id, sourceId));
+    //    `last_success_at` двигает ТОЛЬКО полный успех, в котором есть записи об отключениях
+    //    (status='success' и records_found > 0). Обрыв основной ленты, частичный ответ оператора
+    //    и легитимно пустой (но полный) фид оставляют прежнюю метку — «данные не обновлялись»
+    //    должно быть видно в /status, а не маскироваться свежим last_success_at.
+    const runStatus = fullOutageFeed && effectiveData.outages.length > 0 ? 'success' : 'partial';
+    if (runStatus === 'success') {
+      await db
+        .update(sources)
+        .set({ lastSuccessAt: now, lastError: null })
+        .where(eq(sources.id, sourceId));
+    } else {
+      await db
+        .update(sources)
+        .set({ lastError: partialReason })
+        .where(eq(sources.id, sourceId));
+    }
 
     await db
       .update(parseRuns)
       .set({
-        status: primaryError ? 'partial' : 'success',
+        status: runStatus,
         finishedAt: now,
         recordsFound: effectiveData.outages.length,
-        errorMessage: primaryError ? primaryError.message : null,
+        errorMessage: runStatus === 'success' ? null : partialReason,
         rawSnapshotRef: snapshotPath,
       })
       .where(eq(parseRuns.id, run.id));
 
     logger.info(
-      { sourceId, recordsFound: effectiveData.outages.length, snapshotPath, telegramPosts: telegramPosts.length },
-      'Parse run completed successfully',
+      { sourceId, runStatus, recordsFound: effectiveData.outages.length, snapshotPath, telegramPosts: telegramPosts.length },
+      'Parse run finished',
     );
 
     return effectiveData;

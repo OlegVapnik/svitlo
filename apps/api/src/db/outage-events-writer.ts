@@ -8,12 +8,18 @@
  * події В ТІЙ САМІЙ транзакції, що й старий upsert `outages` (крок 4 плану: dual-write).
  */
 import { and, eq, gt, isNull, notInArray, sql } from 'drizzle-orm';
-import type { db as database } from './connection.js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { outageEvents } from './schema.js';
 import type { OutageEventCategory } from '../services/outage-classification.js';
 
+/**
+ * Верхний тип для параметра-исполнителя: принимает и `db` (типизированный схемой),
+ * и `tx` из транзакции, и пул тестовой БД, не теряя тип таблиц на месте вызовов.
+ */
+export type Database = PgDatabase<PgQueryResultHKT, any, any>;
+
 /** Набір методів, спільний для `db` і для транзакції drizzle, — щоб не плодити окремі підписи. */
-export type DbExecutor = typeof database | Parameters<Parameters<typeof database.transaction>[0]>[0];
+export type DbExecutor = Database;
 
 export interface OutageEventInput {
   sourceId: string;
@@ -97,6 +103,7 @@ export async function markMissingEventsCancelled(
   sourceId: string,
   seenEventKeys: string[],
   now: Date,
+  scope?: { areaName?: string; eventKeyPrefix?: string },
 ): Promise<number> {
   if (seenEventKeys.length === 0) return 0;
   const cancelled = await executor
@@ -107,6 +114,8 @@ export async function markMissingEventsCancelled(
         eq(outageEvents.sourceId, sourceId),
         isNull(outageEvents.cancelledAt),
         gt(outageEvents.startsAt, now),
+        scope?.areaName ? eq(outageEvents.areaName, scope.areaName) : undefined,
+        scope?.eventKeyPrefix ? sql`${outageEvents.eventKey} LIKE ${`${scope.eventKeyPrefix}%`}` : undefined,
         notInArray(outageEvents.eventKey, seenEventKeys),
       ),
     )
