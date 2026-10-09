@@ -33,3 +33,30 @@ export function shouldKeepRegionalIncident(title: string, description: string): 
   const content = `${title} ${description}`;
   return NEWS_REGION.test(content) && INCIDENT_TITLE.test(content);
 }
+
+/** Категорія події за причиною — ЄДИНЕ місце класифікації (invariant 3 у skills/outage-data-core):
+ *  колонка outage_events.category заповнюється на ingest/backfill саме цією функцією, а веб лише
+ *  показує значення (регекси дублювались у web/lib/outage-location.ts). */
+export type OutageEventCategory = 'emergency' | 'repair' | 'regime' | 'planned' | 'other';
+
+/** Фізичне пошкодження мережі — найсильніша ознака аварії, тому перевіряється першою. */
+const EMERGENCY_DAMAGE = /пошкоджен|аварі[яй]|знеструмлен|обрив/iu;
+/** Заходи обмеження / режимні відключення: «Заходи обмеження», ГАВ, графіки погодинних відключень. */
+const REGIME_RESTRICTION = /заход.{0,15}обмеженн|обмеженн.{0,25}споживан|режимн.{0,20}відключенн/iu;
+/** Планові роботи та графіки (не аварія). */
+const PLANNED_WORK = /планов|погодинн|графік/iu;
+
+/**
+ * Категорія події. Порядок перевірок (важливий для змішаних текстів):
+ * аварія (пошкодження) → режим/обмеження → ремонт → планове → other.
+ * 'other' ніколи не викидається silently: викликач (backfill/ingest) логує причину з warn.
+ */
+export function outageCategoryFromReason(reason: string | null | undefined): OutageEventCategory {
+  const text = (reason ?? '').trim();
+  if (!text) return 'other';
+  if (EMERGENCY_DAMAGE.test(text)) return 'emergency';
+  if (isRegimeNotice(text) || REGIME_RESTRICTION.test(text)) return 'regime';
+  if (isRepairIncident(text)) return 'repair';
+  if (PLANNED_WORK.test(text)) return 'planned';
+  return 'other';
+}
