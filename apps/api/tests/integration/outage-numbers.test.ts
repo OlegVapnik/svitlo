@@ -16,80 +16,10 @@
  *     pnpm --filter @energy-monitor/api test:integration
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readdir, readFile } from 'node:fs/promises';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-
-/** Заморожене «зараз»: 2026-10-09 12:00 за Києвом (EEST, UTC+3). */
-const NOW = new Date('2026-10-09T09:00:00Z');
-
-/** 6 подій × 5 адресних рядків = 30 сирих рядків. */
-const ADDRESSES_PER_EVENT = 5;
-
-const SOURCE_ID = '00000000-0000-4000-8000-000000000001';
-const AREA = 'с. Деснянське';
-
-interface FixtureEvent {
-  label: string;
-  startsAt: string;
-  endsAt: string;
-  reason: string;
-  status: 'scheduled' | 'active' | 'finished' | 'cancelled';
-  street: string;
-}
-
-const FIXTURE: FixtureEvent[] = [
-  {
-    label: 'regime-window-1',
-    startsAt: '2026-10-08T08:00:00+03:00',
-    endsAt: '2026-10-08T10:00:00+03:00',
-    reason: 'Заходи обмеження',
-    status: 'finished',
-    street: 'вул. Шевченка',
-  },
-  {
-    label: 'regime-window-2',
-    startsAt: '2026-10-08T16:00:00+03:00',
-    endsAt: '2026-10-08T18:00:00+03:00',
-    reason: 'Заходи обмеження',
-    status: 'finished',
-    street: 'вул. Польова',
-  },
-  {
-    label: 'repair-active',
-    startsAt: '2026-10-09T10:00:00+03:00',
-    endsAt: '2026-10-09T13:00:00+03:00',
-    reason: 'Виконання ремонтних робіт',
-    status: 'active',
-    street: 'вул. Садова',
-  },
-  {
-    label: 'cancelled-window',
-    startsAt: '2026-10-09T15:00:00+03:00',
-    endsAt: '2026-10-09T17:00:00+03:00',
-    reason: 'Заходи обмеження',
-    status: 'cancelled',
-    street: 'вул. Лугова',
-  },
-  {
-    label: 'emergency-open-ended',
-    startsAt: '2026-10-09T07:00:00+03:00',
-    endsAt: '2026-10-20T00:00:00+03:00',
-    reason: 'Пошкодження мережі',
-    status: 'active',
-    street: 'вул. Київська',
-  },
-  {
-    label: 'scheduled-window',
-    startsAt: '2026-10-10T08:00:00+03:00',
-    endsAt: '2026-10-10T10:00:00+03:00',
-    reason: 'Заходи обмеження',
-    status: 'scheduled',
-    street: 'вул. Миру',
-  },
-];
-const EXPECTED_EVENTS = FIXTURE.length; // 6
-const EXPECTED_ROWS = FIXTURE.length * ADDRESSES_PER_EVENT; // 30
+import { AREA, EXPECTED_EVENTS, EXPECTED_ROWS, NOW, SOURCE_ID, fixtureRows } from '../fixtures/outage-events.fixture.js';
+import { ensureTestSchema, testDatabaseUrlOrSkip } from '../helpers/test-db.js';
 
 interface OutagesResponse {
   data: unknown[];
@@ -114,58 +44,15 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL ?? '';
 let app: FastifyInstance;
 let db: typeof import('../../src/db/connection.js').db;
 
-/** Сирі рядки оператора: кожна подія розкидана на 30/6 = 5 адрес. */
-function fixtureRows() {
-  return FIXTURE.flatMap((event) =>
-    Array.from({ length: ADDRESSES_PER_EVENT }, (_, index) => {
-      const house = index + 1;
-      const address = `${AREA}, ${event.street}, буд. ${house}`;
-      return {
-        sourceId: SOURCE_ID,
-        startsAt: new Date(event.startsAt),
-        endsAt: new Date(event.endsAt),
-        areaName: AREA,
-        addressesRaw: address,
-        addressesNormalized: address.toLowerCase(),
-        reason: event.reason,
-        status: event.status,
-        source: 'test-fixture',
-        externalId: `fixture-${event.label}-${house}`,
-        contentHash: `fixture-${event.label}-${house}`,
-      };
-    }),
-  );
-}
-
-/** Схема створюється тими самими SQL-міграціями, що й у проді (як у db/migrate.ts). */
-async function ensureSchema(): Promise<void> {
-  const [existing] = (await db.execute(
-    sql`SELECT to_regclass('public.outages') AS name`,
-  )) as unknown as [{ name: string | null }?];
-  if (existing?.name) return;
-
-  const migrationUrl = new URL('../../src/db/migrations/', import.meta.url);
-  const files = (await readdir(migrationUrl)).filter((file) => file.endsWith('.sql')).sort();
-  for (const file of files) {
-    await db.execute(sql.raw(await readFile(new URL(file, migrationUrl), 'utf8')));
-  }
-}
-
 // Без TEST_DATABASE_URL файл пропускается (skipped) вместо падения: `pnpm test` остаётся зелёным
 // без БД, а «красный»/зелёный прогон против реальной схемы делается явно — `pnpm test:integration`.
 const describeWithDb = describe.skipIf(!TEST_DATABASE_URL);
 
 describeWithDb('numbers must match: 6 events described by 30 address rows', () => {
   beforeAll(async () => {
-    const databaseName = new URL(TEST_DATABASE_URL).pathname.replace(/^\//, '');
-    if (!/_test$/.test(databaseName)) {
-      throw new Error(
-        `refusing to run: TEST_DATABASE_URL must point at a throwaway *_test database (got "${databaseName}")`,
-      );
-    }
-
     // config.ts читає process.env на імпорті — тому застосунок імпортуємо ПІСЛЯ підстановки URL.
-    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    // testDatabaseUrlOrSkip() так само відмовляється бігти проти БД, чиє ім'я не закінчується на _test.
+    process.env.DATABASE_URL = testDatabaseUrlOrSkip();
     process.env.ENABLE_SCHEDULER = 'false';
     process.env.USE_MOCK_ADAPTER = 'false';
     process.env.ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? 'test-admin-token';
@@ -177,7 +64,7 @@ describeWithDb('numbers must match: 6 events described by 30 address rows', () =
 
     const connection = await import('../../src/db/connection.js');
     db = connection.db;
-    await ensureSchema();
+    await ensureTestSchema();
 
     const { buildServer } = await import('../../src/app.js');
     app = await buildServer();
@@ -185,7 +72,7 @@ describeWithDb('numbers must match: 6 events described by 30 address rows', () =
 
   beforeEach(async () => {
     const { sources: sourcesTable, outages: outagesTable } = await import('../../src/db/schema.js');
-    await db.execute(sql`TRUNCATE TABLE outages, incidents, parse_runs, sources CASCADE`);
+    await db.execute(sql`TRUNCATE TABLE grid_status, outages, incidents, parse_runs, sources CASCADE`);
     await db.insert(sourcesTable).values({
       id: SOURCE_ID,
       name: 'test-fixture',
