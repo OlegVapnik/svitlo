@@ -42,6 +42,13 @@ description: "How to change the PostgreSQL schema in EnergyMonitor safely: SQL m
 - **Indexes on large tables**: use `CREATE INDEX CONCURRENTLY` outside a transaction only if the runner supports it; otherwise keep tables small or schedule downtime. This DB is small, so plain `CREATE INDEX` is fine.
 - **Time columns** are `timestamptz` storing UTC. "Kyiv day" logic uses `at time zone 'Europe/Kyiv'` (see `kyiv-time`).
 - **Constraints** (`CHECK`, `UNIQUE`, FK) are preferred to application-side checks; they are the last line of defence for dedupe.
+- **Drizzle + postgres.js: never pass a `Date` through a raw `sql` template.** A raw template hands parameters to the driver
+  as-is, and postgres.js 3.4 throws `The "string" argument must be of type string or an instance of Buffer or ArrayBuffer.
+  Received an instance of Date` (reproduced on `apps/api`, 2026-10-09). The query builder (`eq`/`gt`/`inArray`,
+  `.set({ col: date })`) serialises `Date` for `timestamptz` correctly — build `WHERE`/`SET` with it and keep `sql` templates
+  for literals, column references (`excluded.x`, `least(...)`) and DB functions (`now()`, `energy_normalize_address(...)`).
+  If a raw template is unavoidable, pass a string: `starts_at > ${now.toISOString()}::timestamptz` (verified working).
+  Rationale in code: `apps/api/src/db/outage-events-writer.ts` → `markMissingEventsCancelled()`.
 
 ## Drift check (run before finishing)
 
