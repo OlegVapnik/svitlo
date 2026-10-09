@@ -100,36 +100,44 @@ export async function ingestOutages(
       const isCurrent = outage.startsAt <= now && outage.endsAt >= now;
       const initialStatus = isCurrent ? 'active' : outage.startsAt > now ? 'scheduled' : 'finished';
 
-      await tx
-        .insert(outages)
-        .values({
-          sourceId,
-          source: sourceName,
-          externalId: outage.externalId ?? null,
-          startsAt: outage.startsAt,
-          endsAt: outage.endsAt,
-          areaName: normArea,
-          addressesRaw: outage.addressesRaw,
-          addressesNormalized: normAddr,
-          reason: outage.reason,
-          queue: outage.queue,
-          contentHash: hash,
-          status: initialStatus,
-          firstSeenAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [outages.contentHash, outages.sourceId],
-          set: {
-            areaName: normArea,
-            addressesRaw: outage.addressesRaw,
-            addressesNormalized: normAddr,
-            reason: outage.reason,
-            queue: outage.queue,
-            status: initialStatus,
-            updatedAt: now,
-          },
-        });
+      // `outages` має ДВА унікальні індекси — (content_hash, source_id) і частковий (source, external_id) —
+      // а `ON CONFLICT` вміє цілитись лише в один. Через це повторний ingest тієї самої стрічки падав
+      // з `duplicate key value violates unique constraint "outages_source_external_id_uq"`: адаптер
+      // згортає адресні рядки в одну подію й міняє addresses_raw (→ інший content_hash), а external_id
+      // лишається від «дитини». Тому upsert робимо явно: шукаємо рядок за БУДЬ-ЯКИМ із ключів, далі
+      // UPDATE (зберігає first_seen_at) або INSERT. Це і є умова «один і той самий фід можна парсити
+      // повторно» — без неї живий прогон не проходив зовсім.
+      const rowValues = {
+        sourceId,
+        source: sourceName,
+        externalId: outage.externalId ?? null,
+        startsAt: outage.startsAt,
+        endsAt: outage.endsAt,
+        areaName: normArea,
+        addressesRaw: outage.addressesRaw,
+        addressesNormalized: normAddr,
+        reason: outage.reason,
+        queue: outage.queue,
+        contentHash: hash,
+        status: initialStatus,
+      };
+      // Збіг БУДЬ-ЯКОГО з двох унікальних ключів означає «рядок уже є»; params — лише рядки,
+      // Date сюди не потрапляє (postgres.js падає саме на Date у сирому sql-шаблоні).
+      const existingMatch = outage.externalId
+        ? sql`(${outages.contentHash} = ${hash} OR (${outages.source} = ${sourceName} AND ${outages.externalId} = ${outage.externalId}))`
+        : sql`${outages.contentHash} = ${hash}`;
+      const [existing] = await tx
+        .select({ id: outages.id })
+        .from(outages)
+        .where(and(eq(outages.sourceId, sourceId), existingMatch))
+        .limit(1);
+
+      if (existing) {
+        await tx.update(outages).set({ ...rowValues, updatedAt: now }).where(eq(outages.id, existing.id));
+      } else {
+        // onConflictDoNothing — страховка від гонки двох ingest: друга вставка просто нічого не зробить.
+        await tx.insert(outages).values({ ...rowValues, firstSeenAt: now, updatedAt: now }).onConflictDoNothing();
+      }
 
       // Канонічна подія: ключ БЕЗ адрес — саме він згортає 30 адресних рядків у 6 подій.
       const eventKey = outageEventKey({
