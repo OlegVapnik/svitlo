@@ -14,3 +14,5 @@ snapshots/*.json
 /1/
 /operator-samples/
 /sample-responses/
+# Working notes / drafts (not part of the product)
+ALL_IN_ONE.md
