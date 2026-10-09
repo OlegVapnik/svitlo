@@ -1,0 +1,100 @@
+x-api-build: &api-build
+  context: .
+  dockerfile: docker/Dockerfile.api
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql://energymon:energymon@db:5432/energymon
+  API_PORT: "3001"
+  API_HOST: "0.0.0.0"
+  ADMIN_TOKEN: ${ADMIN_TOKEN:?Set a long random ADMIN_TOKEN in .env}
+  SOURCE_URL: http://manual-import.invalid/disabled
+  USE_MOCK_ADAPTER: "false"
+  # Не запускать опрос оператора автоматически, пока идет локальная доработка и просмотр уже сохраненных данных.
+  ENABLE_SCHEDULER: "false"
+  TELEGRAM_BOT_ENABLED: "false"
+  CHERNIHIV_WEB_ENABLED: ${CHERNIHIV_WEB_ENABLED:-true}
+  CHERNIHIV_BASE_URL: ${CHERNIHIV_BASE_URL:-https://chernihivoblenergo.com.ua}
+  CHERNIHIV_CITY_IDS: ${CHERNIHIV_CITY_IDS:-7422288601}
+  CHERNIHIV_OUTAGE_TYPES: ${CHERNIHIV_OUTAGE_TYPES:-1,2,6}
+  # Пауза між запитами до оператора + прогрів сесії (GET /power_outages) — щоб не тригерити WAF.
+  CHERNIHIV_REQUEST_DELAY_MS: ${CHERNIHIV_REQUEST_DELAY_MS:-1000}
+  CHERNIHIV_SESSION_WARMUP: ${CHERNIHIV_SESSION_WARMUP:-true}
+  # Рідше опитування (30 хв) + джиттер, бо розклад ГПВ змінюється нечасто, а WAF не любить регулярність.
+  PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}
+  PARSE_INTERVAL_JITTER_MINUTES: ${PARSE_INTERVAL_JITTER_MINUTES:-5}
+  # Синтетический пример графика очередей, если операторский JSON еще не импортирован.
+  # Установите false, если в интерфейсе нужны исключительно реальные расписания.
+  SCHEDULE_DEMO: ${SCHEDULE_DEMO:-true}
+  NODE_ENV: production
+  LOG_LEVEL: info
+  TZ: Europe/Kyiv
+  # Оператор віддає неповний TLS-ланцюжок (без проміжного CA) — додаємо його з бандла,
+  # щоб Node міг перевірити сертифікат chernihivoblenergo.com.ua без вимкнення перевірки.
+  NODE_EXTRA_CA_CERTS: /app/apps/api/operator-ca.pem
+  # Контейнерний DNS повертає NAT64-адресу (64:ff9b::/96), яка тут не маршрутизується, і undici
+  # «зависає» на ній (ETIMEDOUT). Форсуємо IPv4.
+  NODE_OPTIONS: "--dns-result-order=ipv4first"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: energymon
+      POSTGRES_PASSWORD: energymon
+      POSTGRES_DB: energymon
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U energymon"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Одноразовий сервис: применяет SQL-миграции (node dist/db/migrate.js), затем завершается.
+  # api стартует только после его успешного завершения (service_completed_successfully),
+  # поэтому на чистом томе база гарантированно мигрирована до старта API.
+  migrate:
+    image: energy-monitor-api:latest
+    build: *api-build
+    restart: "no"
+    environment: *api-env
+    command: ["node", "dist/db/migrate.js"]
+    volumes:
+      - ./docker/operator-oblenergo-ca.pem:/app/apps/api/operator-ca.pem:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: energy-monitor-api:latest
+    build: *api-build
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment: *api-env
+    volumes:
+      - ./docker/operator-oblenergo-ca.pem:/app/apps/api/operator-ca.pem:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3001/api/v1}
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+volumes:
+  pg_data:

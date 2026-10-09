@@ -1,0 +1,1 @@
+export const Select = (props: any) => <select className="border p-2 rounded" {...props} />;

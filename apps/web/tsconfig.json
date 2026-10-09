@@ -1,0 +1,16 @@
+   {
+     "compilerOptions": {
+       "target": "ES2020",
+       "module": "ESNext",          // <--- ДОБАВИТЬ или ИЗМЕНИТЬ (было CommonJS или другое)
+       "moduleResolution": "bundler", // <--- Оставить так
+       "allowImportingTsExtensions": true,
+       "resolveJsonModule": true,
+       "isolatedModules": true,
+       "noEmit": true,
+       "jsx": "react-jsx",
+       "baseUrl": ".",
+       "paths": {
+         "@/*": ["./src/*"]         // <--- Чинит ошибку "Cannot find module '@/lib/cn'"
+       }
+     }
+   }

@@ -1,0 +1,38 @@
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY apps/api/package.json ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+RUN pnpm install --frozen-lockfile || pnpm install
+
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+COPY . .
+RUN pnpm --filter @energy-monitor/shared build && pnpm --filter @energy-monitor/api build
+
+FROM base AS runner
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/apps/api/package.json ./apps/api/
+COPY --from=builder /app/packages/shared/src ./packages/shared/src
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+
+COPY --from=builder /app/apps/api/src/db/migrations ./apps/api/dist/db/migrations
+
+# Оператор (chernihivoblenergo.com.ua) віддає неповний TLS-ланцюжок: листовий сертифікат
+# підписано проміжним "Sectigo Public Server Authentication CA DV R36", а корінь
+# "Sectigo Public Server Authentication Root R46" відсутній у бандлі node:22-alpine.
+# Докладаємо обидва CA у файл, на який вказує NODE_EXTRA_CA_CERTS (див. docker-compose.yml),
+# щоб Node міг перевірити сертифікат без вимкнення перевірки.
+COPY --from=builder /app/apps/api/operator-ca.pem ./apps/api/operator-ca.pem
+
+# Disable nonessential browser automation in this manual-import-only deployment.
+
+WORKDIR /app/apps/api
+EXPOSE 3001
+CMD ["node", "dist/server.js"]

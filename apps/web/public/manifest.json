@@ -1,0 +1,17 @@
+{
+  "name": "EnergyMonitor — Чернігів",
+  "short_name": "EnergyMonitor",
+  "lang": "uk",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1e40af",
+  "background_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

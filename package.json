@@ -1,0 +1,17 @@
+{
+  "name": "energy-monitor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build --workspace @energy-monitor/web && npm run build --workspace @energy-monitor/api"
+  },
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "packages/shared"
+  ],
+  "dependencies": {
+    "zod": "^3.25.76"
+  }
+}

@@ -1,0 +1,1 @@
+export const ErrorState = ({ onRetry }: any) => <div className="text-center text-red-500 p-8"><p>Error</p><button onClick={onRetry}>Retry</button></div>;

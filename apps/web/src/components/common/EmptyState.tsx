@@ -1,0 +1,1 @@
+export const EmptyState = ({ title, description }: any) => <div className="text-center p-8"><h3 className="font-bold">{title}</h3><p>{description}</p></div>;

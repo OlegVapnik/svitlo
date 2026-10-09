@@ -1,0 +1,11 @@
+{
+  "nav": { "home": "Головна", "outages": "Відключення", "incidents": "Аварії", "contacts": "Контакти", "myAddress": "Моя адреса", "streets": "Вулиці села" },
+  "status": { "stable": "Стабільно", "warning": "Можливі збої", "emergency": "Аварійна ситуація", "lastUpdated": "Оновлено", "dataStale": "Застарілі дані", "minutesAgo": "хвилин тому" },
+  "outages": { "title": "Відключення", "planned": "Планові", "active": "Активні", "finished": "Завершені", "cancelled": "Скасовані", "scheduled": "Заплановані", "noOutages": "Відключень не знайдено", "search": "Пошук", "filterDate": "Фільтр за датою", "today": "Сьогодні", "tomorrow": "Завтра", "thisWeek": "Цей тиждень", "customRange": "Власний діапазон", "allStatuses": "Всі статуси", "queue": "Черга", "area": "Район", "list": "Список", "calendar": "Календар", "chart": "Графік", "map": "Карта", "from": "Від", "to": "До", "reason": "Причина", "addresses": "Адреси", "affectedArea": "Зона відключення" },
+  "incidents": { "title": "Аварії та ремонтні роботи", "active": "Тривають", "scheduled": "Заплановані", "resolved": "Усунені", "eta": "Орієнтовний час", "severity": "Серйозність", "noIncidents": "Немає аварій або відключень", "place": "Місце", "cause": "Причина", "source": "Першоджерело", "kindOutage": "Дані оператора", "kindReport": "Повідомлення" },
+  "contacts": { "title": "Контакти", "callCenter": "Кол-центр", "telegram": "Telegram", "viber": "Viber", "facebook": "Facebook", "onlineForm": "Онлайн форма" },
+  "myAddress": { "title": "Моя адреса", "placeholder": "Введіть адресу", "save": "Зберегти", "clear": "Очистити", "description": "Збережіть адресу для швидкого доступу", "noResults": "Нічого не знайдено" },
+  "common": { "loading": "Завантаження...", "error": "Помилка", "retry": "Спробувати ще раз", "updatedAt": "Оновлено о", "showMore": "Показати більше", "noData": "Немає даних" },
+  "charts": { "byHour": "За годинами", "byDay": "За днями", "byArea": "За районами", "heatmap": "Теплова карта", "timeline": "Таймлайн", "outageCount": "Кількість відключень", "durationMinutes": "Тривалість (хв)" },
+  "streets": { "title": "Вулиці села", "subtitle": "Графік відключень для кожної вулиці села", "queue": "Черга", "searchPlaceholder": "Наприклад: вул. Зарічна", "today": "Сьогодні", "tomorrow": "Завтра", "notBound": "Вулицю ще не прив'язано до черги" }
+}

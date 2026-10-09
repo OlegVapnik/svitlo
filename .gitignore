@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.turbo/
+.env
+*.log
+.DS_Store
+coverage/
+.playwright/
+snapshots/*.html
+snapshots/*.json
+!snapshots/.gitkeep
+# Operator response samples may contain account identifiers, names, addresses, and session tokens
+/1/
+/operator-samples/
+/sample-responses/
