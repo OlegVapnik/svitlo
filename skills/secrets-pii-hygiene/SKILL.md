@@ -29,6 +29,7 @@ python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .          # report, 
 python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py . --also /tmp   # also scan temp dirs for leftovers
 ```
 It checks: token/password assignments, bearer headers, private keys, JWTs, DB URLs with passwords, account-number-like numbers near `рахунок/счет/account`, tracked `.env`, and a `.gitignore` baseline. Findings are printed as `file:line  rule  masked-snippet` — the secret itself is never printed.
+Reviewed false positive? Add `scan:allow` in a comment on that line, or list `path` / `path:line` in `.scan-allowlist` (one per line). Code-like values (`z.string().default(`, `authHeader.split(`), phrases like `must-be-dropped` and placeholder numbers (`000000000`) are ignored automatically. Never allowlist a value you have not looked at.
 
 ## `.gitignore` baseline (must contain)
 

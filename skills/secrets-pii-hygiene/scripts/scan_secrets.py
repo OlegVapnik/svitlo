@@ -6,6 +6,11 @@ Usage:
   python3 scan_secrets.py [ROOT]            scan a directory tree
   python3 scan_secrets.py ROOT --also /tmp  scan extra directories too
 Exit code: 0 clean, 1 findings.
+
+Suppressing a reviewed false positive:
+  - add `scan:allow` in a comment on that line, or
+  - list a path / path:line in ROOT/.scan-allowlist (one per line, '#' comments allowed).
+Code-like values (z.string().default(, authHeader.split() and trivial numbers (000000000) are ignored automatically.
 """
 import os
 import re
@@ -50,7 +55,27 @@ def is_placeholder(value: str) -> bool:
     return bool(PLACEHOLDER.search(value))
 
 
-def scan_file(path: Path, root: Path, findings: list) -> None:
+def looks_like_code(value: str) -> bool:
+    """z.string().default(  authHeader.split(  process.env.X  -> code, not a secret."""
+    v = value.rstrip(";,)")
+    if re.fullmatch(r"[a-z]+(-[a-z]+)+", v):          # plain words like must-be-dropped: a phrase, not a secret
+        return True
+    return bool(re.search(r"[()\[\]{}<>]", v)) or bool(re.match(r"^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)+\.?$", v))
+
+
+def trivial_number(value: str) -> bool:
+    """000000000, 111111111, 123456789 are placeholders in docs/tests."""
+    return len(set(value)) == 1 or value in ("123456789", "1234567890", "987654321")
+
+
+def load_allowlist(root: Path) -> list:
+    f = root / ".scan-allowlist"
+    if not f.exists():
+        return []
+    return [l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
+
+
+def scan_file(path: Path, root: Path, findings: list, allow: list = ()) -> None:
     try:
         if path.stat().st_size > MAX_BYTES:
             return
@@ -59,25 +84,32 @@ def scan_file(path: Path, root: Path, findings: list) -> None:
         return
     rel = os.path.relpath(path, root) if str(path).startswith(str(root)) else str(path)
     for lineno, line in enumerate(text.splitlines(), 1):
-        if len(line) > 4000:
+        if len(line) > 4000 or "scan:allow" in line:
+            continue
+        if any(a in f"{rel}:{lineno}" or a in rel for a in allow if a.startswith(("/", ".")) or ":" in a or "/" in a):
             continue
         for name, rx in RULES:
             for m in rx.finditer(line):
                 val = m.group(m.lastindex) if m.lastindex else m.group(0)
-                if name in ("assigned-secret", "bearer-header", "db-url-password") and is_placeholder(val):
+                if name in ("assigned-secret", "bearer-header", "db-url-password") and (is_placeholder(val) or looks_like_code(val)):
+                    continue
+                if name == "account-number" and trivial_number(val):
+                    continue
+                if any(a == val for a in allow):
                     continue
                 # .env.example / docs with placeholders are fine; real-looking values are not
                 findings.append((rel, lineno, name, mask(val)))
 
 
 def walk(base: Path, findings: list) -> None:
+    allow = load_allowlist(base)
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for fn in filenames:
             p = Path(dirpath) / fn
             if p.suffix.lower() in SKIP_EXT:
                 continue
-            scan_file(p, base, findings)
+            scan_file(p, base, findings, allow)
 
 
 def check_repo_hygiene(root: Path, findings: list) -> None:

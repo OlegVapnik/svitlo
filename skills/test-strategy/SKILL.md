@@ -46,6 +46,13 @@ Today this test fails (30 vs 6): that is the proof the model needs `outage-data-
 
 ## Route tests
 
+> Prerequisite found in the real code: `apps/api/src/server.ts` creates the Fastify instance at module level and
+> calls `start()` (which listens on a port) at import time, so tests cannot import the app. First extract a factory:
+> `buildServer(): Promise<FastifyInstance>` in `src/app.ts` (registers plugins/routes, **no** `listen`, no scheduler),
+> and keep `server.ts` as a thin entry that calls it, then listens and installs the SIGTERM handler.
+> Until that refactor exists, `buildApp` below does not exist — do it as the first step, in its own commit.
+
+
 ```ts
 const app = await buildApp({ ...testConfig });              // do not listen on a port
 const res = await app.inject({ method: 'GET', url: '/api/v1/outages?limit=2&page=2' });
