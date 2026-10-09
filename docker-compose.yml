@@ -44,7 +44,9 @@ services:
       POSTGRES_PASSWORD: energymon
       POSTGRES_DB: energymon
     ports:
-      - "5432:5432"
+      # Доступ только через loopback: сервисы ходят в БД по compose-сети,
+      # публиковать порт наружу не нужно (аудит, P0 3.3).
+      - "127.0.0.1:5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
