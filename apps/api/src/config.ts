@@ -28,6 +28,9 @@ const envSchema = z.object({
   SCHEDULE_DEMO: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   USE_MOCK_ADAPTER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   ENABLE_SCHEDULER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
+  // Довірені проксі (діапазони proxy-addr через кому), напр. "loopback,uniquelocal".
+  // Порожньо = вимкнено. Потрібно, щоб rate limit рахувався по IP відвідувача, а не по IP nginx.
+  TRUST_PROXY: z.string().default(''),
   TELEGRAM_BOT_ENABLED: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   TELEGRAM_API_ID: z.string().optional(),
   TELEGRAM_API_HASH: z.string().optional(),
