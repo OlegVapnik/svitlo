@@ -8,6 +8,7 @@ x-api-env: &api-env
   DATABASE_URL: postgresql://energymon:${POSTGRES_PASSWORD:-energymon}@db:5432/energymon
   API_PORT: "3001"
   API_HOST: "0.0.0.0"
+  SNAPSHOT_DIR: /var/lib/energy-monitor/snapshots
   ADMIN_TOKEN: ${ADMIN_TOKEN:?Set a long random ADMIN_TOKEN in .env}
   SOURCE_URL: http://manual-import.invalid/disabled
   USE_MOCK_ADAPTER: "false"
@@ -95,6 +96,7 @@ services:
       start_period: 20s
     volumes:
       - ./docker/operator-oblenergo-ca.pem:/app/apps/api/operator-ca.pem:ro
+      - api_snapshots:/var/lib/energy-monitor/snapshots
     depends_on:
       db:
         condition: service_healthy
@@ -117,3 +119,4 @@ services:
 
 volumes:
   pg_data:
+  api_snapshots:
