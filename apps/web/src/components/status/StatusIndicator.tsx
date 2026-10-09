@@ -1,81 +1,77 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, AlertTriangle, AlertOctagon } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, AlertOctagon, type LucideIcon } from 'lucide-react';
+import { cn } from '@/lib/cn';
 
 interface StatusIndicatorProps {
   level?: 'stable' | 'warning' | 'emergency';
   message?: string;
 }
 
-export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
-  level = 'stable',
-  message,
-}) => {
+interface LevelStyle {
+  wrap: string;
+  icon: string;
+  dot: string;
+  Icon: LucideIcon;
+  titleKey: string;
+  messageKey: string;
+}
+
+/**
+ * Большой индикатор состояния сети. Цвета — только из токенов (success/warning/destructive),
+ * поэтому и светлая, и тёмная тема читаются одинаково; иконка и текст дублируют цвет.
+ */
+const LEVELS: Record<'stable' | 'warning' | 'emergency', LevelStyle> = {
+  stable: {
+    wrap: 'border-success/30 bg-success/5',
+    icon: 'text-success',
+    dot: 'bg-success',
+    Icon: CheckCircle2,
+    titleKey: 'status.titleStable',
+    messageKey: 'status.messageStable',
+  },
+  warning: {
+    wrap: 'border-warning/40 bg-warning/5',
+    icon: 'text-warning',
+    dot: 'bg-warning',
+    Icon: AlertTriangle,
+    titleKey: 'status.titleWarning',
+    messageKey: 'status.messageWarning',
+  },
+  emergency: {
+    wrap: 'border-destructive/40 bg-destructive/5',
+    icon: 'text-destructive',
+    dot: 'bg-destructive',
+    Icon: AlertOctagon,
+    titleKey: 'status.titleEmergency',
+    messageKey: 'status.messageEmergency',
+  },
+};
+
+export const StatusIndicator: React.FC<StatusIndicatorProps> = ({ level = 'stable', message }) => {
   const { t } = useTranslation();
-
-  const configs = {
-    stable: {
-      bg: 'bg-emerald-500/10 dark:bg-emerald-950/30',
-      border: 'border-emerald-500/30 dark:border-emerald-800/50',
-      text: 'text-emerald-700 dark:text-emerald-300',
-      dot: 'bg-emerald-500',
-      ping: 'bg-emerald-400',
-      icon: CheckCircle2,
-      title: t('status.stable', 'Енергосистема працює стабільно'),
-      defaultMsg: 'Дефіциту потужності не зафіксовано. Відключення відбуваються за плановим графіком.',
-    },
-    warning: {
-      bg: 'bg-amber-500/10 dark:bg-amber-950/30',
-      border: 'border-amber-500/30 dark:border-amber-800/50',
-      text: 'text-amber-700 dark:text-amber-300',
-      dot: 'bg-amber-500',
-      ping: 'bg-amber-400',
-      icon: AlertTriangle,
-      title: t('status.warning', 'Можливі тимчасові обмеження'),
-      defaultMsg: 'Підвищене навантаження на систему. Будь ласка, ощадливо споживайте електроенергію.',
-    },
-    emergency: {
-      bg: 'bg-red-500/10 dark:bg-red-950/30',
-      border: 'border-red-500/30 dark:border-red-800/50',
-      text: 'text-red-700 dark:text-red-300',
-      dot: 'bg-red-500',
-      ping: 'bg-red-400',
-      icon: AlertOctagon,
-      title: t('status.emergency', 'Аварійна ситуація в системі'),
-      defaultMsg: 'Застосовано екстрені відключення за розпорядженням НЕК «Укренерго». Графіки не діють.',
-    },
-  };
-
-  const current = configs[level] || configs.stable;
-  const Icon = current.icon;
+  const current = LEVELS[level] ?? LEVELS.stable;
+  const { Icon } = current;
 
   return (
-    <div
-      className={`rounded-2xl border ${current.border} ${current.bg} p-4 sm:p-5 transition-all`}
-    >
+    <section className={cn('rounded-2xl border p-4 sm:p-5', current.wrap)}>
       <div className="flex items-start gap-3.5">
-        <div className="relative mt-1 shrink-0">
-          <span className={`flex h-3.5 w-3.5 relative`}>
-            <span
-              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${current.ping} opacity-75`}
-            />
-            <span
-              className={`relative inline-flex rounded-full h-3.5 w-3.5 ${current.dot}`}
-            />
-          </span>
-        </div>
+        <span className="relative mt-1 flex h-3.5 w-3.5 shrink-0">
+          <span className={cn('absolute inline-flex h-full w-full animate-ping rounded-full opacity-70', current.dot)} />
+          <span className={cn('relative inline-flex h-3.5 w-3.5 rounded-full', current.dot)} />
+        </span>
 
-        <div className="flex-1 space-y-1">
-          <div className="flex items-center gap-2">
-            <h2 className={`font-bold text-base sm:text-lg ${current.text}`}>
-              {current.title}
-            </h2>
-          </div>
-          <p className="text-xs sm:text-sm text-foreground/80 leading-relaxed">
-            {message || current.defaultMsg}
+        <div className="min-w-0 flex-1 space-y-1">
+          <h2 className={cn('flex items-center gap-2 text-base font-bold sm:text-lg', current.icon)}>
+            <Icon className="h-5 w-5 shrink-0" aria-hidden />
+            {t(current.titleKey)}
+          </h2>
+          {/* message приходит от оператора и не переводится — это первоисточник (см. skill, i18n). */}
+          <p className="text-xs leading-relaxed text-foreground/80 sm:text-sm">
+            {message || t(current.messageKey)}
           </p>
         </div>
       </div>
-    </div>
+    </section>
   );
 };

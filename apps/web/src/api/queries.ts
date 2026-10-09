@@ -6,6 +6,7 @@ import type {
   OutageStatsResponse,
   OutageDetailResponse,
   OutageStatus,
+  QueueScheduleData,
   ReliabilityResponse,
   StatusResponse,
   StreetQueuePair,
@@ -23,8 +24,17 @@ type OutageFilters = {
   limit?: number;
 };
 
+/**
+ * staleTime: бэкенд опрашивает оператора раз в ~30 минут, поэтому дёргать API на каждый переход
+ * между страницами незачем (skills/frontend-ui-change: 30–60 с для данных об отключениях).
+ * Данные статуса обновляются чаще — по ним видно, что источник жив (или что он на паузе).
+ */
+const OUTAGE_STALE_MS = 30_000;
+const STATUS_POLL_MS = 30_000;
+
 export const useOutages = (filters?: OutageFilters) => useQuery<OutageListResponse>({
   queryKey: ['outages', filters],
+  staleTime: OUTAGE_STALE_MS,
   queryFn: () => {
     const params = filters && Object.fromEntries(
       Object.entries(filters).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]),
@@ -41,19 +51,23 @@ export const useOutage = (id: string) => useQuery<OutageDetailResponse>({
 
 export const useOutageStats = (params?: Record<string, string>) => useQuery<OutageStatsResponse>({
   queryKey: ['outagesStats', params],
+  staleTime: OUTAGE_STALE_MS,
   queryFn: () => api.fetchOutageStats(params),
 });
 
 export const useIncidents = () => useQuery<IncidentListResponse>({
   queryKey: ['incidents'],
   queryFn: api.fetchIncidents,
+  staleTime: OUTAGE_STALE_MS,
   refetchInterval: 60000,
 });
 
 export const useStatus = () => useQuery<{ data: StatusResponse }>({
   queryKey: ['status'],
   queryFn: api.fetchStatus,
-  refetchInterval: 30000,
+  // Свежесть данных и пауза источника видны в шапке на каждой странице: короткий интервал обязателен.
+  staleTime: STATUS_POLL_MS / 2,
+  refetchInterval: STATUS_POLL_MS,
 });
 
 export const useReliability = () => useQuery<ReliabilityResponse>({
@@ -81,4 +95,15 @@ export const useStreetSchedule = (street: string, date: string) => useQuery<{ da
   queryKey: ['streetSchedule', street, date],
   queryFn: () => api.fetchStreetSchedule(street, date),
   enabled: street.trim().length >= 2,
+});
+
+/**
+ * График очереди на дату. Раньше страница «Головна» ходила в сеть своим fetch-ем — теперь
+ * единственный путь (api/client.ts), а кэш общий с остальными экранами.
+ */
+export const useQueueSchedule = (queue: string | undefined, date: string) => useQuery<{ data: QueueScheduleData }>({
+  queryKey: ['queueSchedule', queue, date],
+  queryFn: () => api.fetchQueueSchedule(queue as string, date),
+  enabled: Boolean(queue),
+  staleTime: 60_000,
 });

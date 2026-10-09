@@ -1,47 +1,55 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, X, ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { ArrowRight, TriangleAlert, X } from 'lucide-react';
 import type { Incident } from '@energy-monitor/shared';
 
 interface IncidentBannerProps {
   incident: Incident;
 }
 
+/**
+ * Баннер активной аварии. Токен destructive вместо жёсткого bg-red-500 (в тёмной теме он слепил),
+ * и своя анимация вместо классов tailwindcss-animate, которого в проекте нет (они ничего не рисовали).
+ */
 export const IncidentBanner: React.FC<IncidentBannerProps> = ({ incident }) => {
+  const { t } = useTranslation();
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;
 
   return (
-    <div className="bg-red-500 text-white p-3 sm:p-4 rounded-xl shadow-md flex items-start sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-      <div className="flex items-start sm:items-center gap-3">
-        <div className="p-1.5 rounded-lg bg-white/20 shrink-0 mt-0.5 sm:mt-0">
-          <AlertTriangle className="w-5 h-5 text-white" />
-        </div>
+    <div
+      role="alert"
+      className="flex animate-rise items-start justify-between gap-3 rounded-2xl bg-destructive p-3.5 text-destructive-foreground shadow-pop sm:items-center"
+    >
+      <div className="flex items-start gap-3 sm:items-center">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background/20 sm:mt-0">
+          <TriangleAlert className="h-5 w-5" aria-hidden />
+        </span>
         <div className="space-y-0.5">
-          <div className="font-bold text-xs sm:text-sm tracking-wide uppercase">
-            Увага: {incident.title}
-          </div>
-          <div className="text-xs text-white/90 line-clamp-1 sm:line-clamp-none">
+          <div className="text-xs font-bold uppercase tracking-wide sm:text-sm">{incident.title}</div>
+          <div className="line-clamp-2 text-xs text-destructive-foreground/90 sm:line-clamp-none">
             {incident.description}
           </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex shrink-0 items-center gap-1">
         <Link
           to="/incidents"
-          className="text-xs font-bold underline hover:text-white/80 whitespace-nowrap flex items-center gap-1"
+          className="flex min-h-[44px] items-center gap-1 whitespace-nowrap text-xs font-bold underline underline-offset-2"
         >
-          <span>Деталі</span>
-          <ArrowRight className="w-3.5 h-3.5" />
+          <span>{t('common.details')}</span>
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden />
         </Link>
         <button
+          type="button"
           onClick={() => setDismissed(true)}
-          className="p-1 rounded-lg hover:bg-white/20 text-white/80 hover:text-white transition-colors"
-          aria-label="Dismiss banner"
+          aria-label={t('common.dismiss')}
+          className="flex h-11 w-11 items-center justify-center rounded-xl transition-colors hover:bg-background/20"
         >
-          <X className="w-4 h-4" />
+          <X className="h-4 w-4" aria-hidden />
         </button>
       </div>
     </div>

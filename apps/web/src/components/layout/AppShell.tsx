@@ -1,13 +1,24 @@
-import { Header } from './Header';
-import { BottomNav } from './BottomNav';
-import { Sidebar } from './Sidebar';
 import { Outlet } from 'react-router-dom';
+import { Header } from './Header.js';
+import { BottomNav } from './BottomNav.js';
+import { Sidebar } from './Sidebar.js';
+
+/**
+ * Каркас приложения: шапка, боковое меню (desktop), контент, нижняя навигация (mobile).
+ * «Skip to content» — первая ссылка на странице: клавиатурой можно проскочить меню.
+ */
 export const AppShell = () => (
-  <div className="min-h-screen bg-background flex flex-col">
+  <div className="flex min-h-screen flex-col bg-background">
+    <a
+      href="#main"
+      className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-60 focus:rounded-lg focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:shadow-pop"
+    >
+      Перейти до вмісту
+    </a>
     <Header />
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1">
       <Sidebar />
-      <main className="flex-1 overflow-auto p-4 md:p-8 pb-24 md:pb-8">
+      <main id="main" className="min-w-0 flex-1 px-4 pb-24 pt-4 sm:px-6 md:pb-8 md:pt-6">
         <Outlet />
       </main>
     </div>

@@ -1,31 +1,42 @@
-import { Home, Zap, AlertTriangle, Phone, MapPin, CalendarDays, Building2 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
+import { BOTTOM_NAV_ITEMS, isNavItemActive } from './nav-items.js';
 
+/**
+ * Мобильная навигация. Пять пунктов, тач-зона ≥ 44 px, активный пункт помечен цветом И
+ * жирным подписью — цвет не единственный сигнал (skills/frontend-ui-change, accessibility).
+ */
 export const BottomNav = () => {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const items = [
-    { to: '/', icon: Home, label: t('nav.home') },
-    { to: '/outages', icon: Zap, label: t('nav.outages') },
-    { to: '/incidents', icon: AlertTriangle, label: t('nav.incidents') },
-    { to: '/contacts', icon: Phone, label: t('nav.contacts') },
-    { to: '/queues', icon: CalendarDays, label: 'Мої черги' },
-    { to: '/streets', icon: Building2, label: t('nav.streets') }
-  ];
 
   return (
-    <nav className="fixed bottom-0 w-full border-t bg-background pb-safe flex justify-around p-1.5 md:hidden">
-      {items.map(item => {
-        const active = pathname === item.to;
-        return (
-          <Link key={item.to} to={item.to} className={cn("flex min-w-0 flex-1 flex-col items-center p-2", active ? "text-primary" : "text-muted-foreground")}>
-            <item.icon className="h-6 w-6" />
-            <span className="text-[10px] mt-1">{item.label}</span>
-          </Link>
-        )
-      })}
+    <nav
+      aria-label={t('nav.home')}
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 pb-safe backdrop-blur md:hidden"
+    >
+      <ul className="flex items-stretch justify-around">
+        {BOTTOM_NAV_ITEMS.map((item) => {
+          const active = isNavItemActive(pathname, item.to);
+          const Icon = item.icon;
+          return (
+            <li key={item.to} className="flex-1">
+              <Link
+                to={item.to}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex min-h-[52px] flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[10px]',
+                  active ? 'font-semibold text-primary' : 'text-muted-foreground',
+                )}
+              >
+                <Icon className={cn('h-5 w-5', active && 'text-primary')} aria-hidden />
+                <span className="truncate leading-tight">{t(item.labelKey)}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 };

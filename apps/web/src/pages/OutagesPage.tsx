@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { List, Calendar as CalendarIcon, BarChart2, MapPin } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs.js';
 import { SearchBar } from '../components/search/SearchBar.js';
 import { FilterPanel } from '../components/search/FilterPanel.js';
 import { OutageList } from '../components/outages/OutageList.js';
@@ -113,15 +114,17 @@ export const OutagesPage: React.FC = () => {
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto pb-16 md:pb-6">
-      {/* Title */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-          {t('outages.title', 'Планові відключення')}
+      <header className="space-y-0.5">
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+          {t('outages.plannedSection')}
         </h1>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          Планові перерви в електропостачанні населених пунктів Чернігівської області. Аварійні та ремонтні роботи — на сторінці «Аварії».
+        <p className="text-xs text-muted-foreground sm:text-sm">
+          {t('outages.incidentsHint')}{' '}
+          <Link to="/incidents" className="font-semibold text-primary hover:underline">
+            {t('outages.incidentsLink')}
+          </Link>
         </p>
-      </div>
+      </header>
 
       {/* Search and Filters */}
       <div className="space-y-2">
@@ -129,65 +132,37 @@ export const OutagesPage: React.FC = () => {
         <FilterPanel filters={filters} onChange={setFilters} areas={uniqueAreas} />
       </div>
 
-      {/* View Switcher Tabs */}
-      <div className="flex rounded-xl border border-border p-1 bg-muted/40 gap-1">
-        <button
-          onClick={() => setActiveTab('list')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'list'
-              ? 'bg-card text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <List className="w-4 h-4" />
-          <span>{t('outages.list', 'Список')} · {plannedOutages.length}</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('calendar')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'calendar'
-              ? 'bg-card text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <CalendarIcon className="w-4 h-4" />
-          <span>{t('outages.calendar', 'Календар')}</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('chart')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'chart'
-              ? 'bg-card text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <BarChart2 className="w-4 h-4" />
-          <span>{t('outages.chart', 'Графіки')}</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('map')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'map'
-              ? 'bg-card text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <MapPin className="w-4 h-4" />
-          <span>{t('outages.map', 'Карта')}</span>
-        </button>
-      </div>
+      {/* Переключатель вида — ui/Tabs: роли ARIA, стрелки влево/вправо, aria-selected */}
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabView)}>
+        <TabsList aria-label={t('outages.title')}>
+          <TabsTrigger value="list">
+            <List className="h-4 w-4" aria-hidden />
+            <span>
+              {t('outages.list')} · {plannedOutages.length}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="calendar">
+            <CalendarIcon className="h-4 w-4" aria-hidden />
+            <span>{t('outages.calendar')}</span>
+          </TabsTrigger>
+          <TabsTrigger value="chart">
+            <BarChart2 className="h-4 w-4" aria-hidden />
+            <span>{t('outages.chart')}</span>
+          </TabsTrigger>
+          <TabsTrigger value="map">
+            <MapPin className="h-4 w-4" aria-hidden />
+            <span>{t('outages.map')}</span>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Content depending on active tab */}
       {activeTab === 'list' && (
-        <div className="space-y-5">
-          <section className="space-y-2"><h2 className="font-semibold text-sm text-foreground">Планові відключення ({plannedOutages.length})</h2>{plannedOutages.length > 0 ? <OutageList outages={plannedOutages} isLoading={isLoading} isError={isError} onRetry={() => refetch()} /> : <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">На вибраний період планових відключень немає.</p>}</section>
-          <p className="text-xs text-muted-foreground">
-            Аварійні та ремонтні роботи з місцем і причиною — на сторінці{' '}
-            <Link to="/incidents" className="text-primary underline">Аварії</Link>.
-          </p>
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            {t('outages.plannedSection')} ({plannedOutages.length})
+          </h2>
+          <OutageList outages={plannedOutages} isLoading={isLoading} isError={isError} onRetry={() => refetch()} />
         </div>
       )}
 
@@ -199,13 +174,13 @@ export const OutagesPage: React.FC = () => {
             onSelectDate={setCalendarSelectedDate}
           />
           <div className="pt-2">
-            <h4 className="text-xs font-semibold text-muted-foreground mb-2">
+            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
               {calendarSelectedDate
-                ? `Відключення на ${calendarSelectedDate.toLocaleDateString()}`
-                : 'Всі відключення'}
+                ? `${t('outages.selectedDay')} ${calendarSelectedDate.toLocaleDateString()}`
+                : t('outages.allDays')}
             </h4>
             <div className="space-y-3">
-              {plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate)).length > 0 ? <OutageList outages={plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate))} isLoading={isLoading} isError={isError} onRetry={() => refetch()} /> : <p className="text-sm text-muted-foreground">На цю дату планових відключень немає.</p>}
+              {plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate)).length > 0 ? <OutageList outages={plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate))} isLoading={isLoading} isError={isError} onRetry={() => refetch()} /> : <p className="text-sm text-muted-foreground">{t('outages.noneForPeriod')}</p>}
             </div>
           </div>
         </div>
@@ -222,7 +197,11 @@ export const OutagesPage: React.FC = () => {
               <OutageHeatmap data={stats.heatmap} />
             </>
           )}
-          {!isLoading && outages.length === 0 && <p className="rounded-xl border-amber-500/30 bg-amber-500/5 p-4 text-sm text-muted-foreground">За вибраний період записів немає. Для перегляду історичної статистики скиньте фільтр дат.</p>}
+          {!isLoading && outages.length === 0 && (
+            <p className="rounded-2xl border border-warning/40 bg-warning/5 p-4 text-sm text-muted-foreground">
+              {t('outages.noRecordsForPeriod')}
+            </p>
+          )}
         </div>
       )}
 

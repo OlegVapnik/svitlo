@@ -395,3 +395,52 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
 2. Дубли окон с разным `ends_at`, фильтр `queue` и переключение `/outages`, `/reliability`,
    `power-summary` на `outage_events` — по-прежнему открыты (см. §9.4).
 3. APK для Android 13+: решения по домену/офлайну/распространению не приняты (см. §9.5).
+
+## 11. Сессия 2026-10-10 (продолжение): редизайн веб-интерфейса, шаг 1
+
+### 11.1 Что сделано
+
+- **Токены и темы** (`apps/web/src/styles/globals.css`, `apps/web/tailwind.config.ts`): добавлены
+  `success/warning/info`, тени `card/pop`, анимации `fade-in/rise/pulse-soft`, `z-60`,
+  `--shadow-color`, радиусы `xl/2xl/3xl`; системный стек шрифтов вместо внешнего Inter (PWA живёт
+  офлайн — веб-шрифт это лишний запрос и FOUT); `prefers-reduced-motion`, видимый фокус,
+  утилиты `tabular` и `pb-safe`. Светлая и тёмная темы описаны парой (токен есть и в CSS, и в конфиге).
+- **Навигация**: новый `components/layout/nav-items.ts` — один список `NAV_ITEMS` для `Sidebar` и
+  `BottomNav` (раньше списки дублировались и расходились: «Мої черги»/«Імпорт графіка» жили без
+  перевода). Служебный пункт вынесен в отдельную группу, добавлены `aria-current`, skip-link,
+  тач-зоны ≥ 44 px, счётчик-подсветка активного пункта.
+- **Состояние источника данных** (то, чего просил пользователь): `FreshnessChip` в шапке (видно с
+  любой страницы) и `SourceHealthBanner` — `lastError` (уже без персональных данных, чистит API),
+  `nextAttemptAt`, `pausedUntil`, число неудач подряд, кнопка «Оновити», `aria-live`. Правила
+  вынесены в чистую функцию `lib/source-health.ts` (`sourceSeverity`) + 5 unit-тестов.
+- **Главная** (`pages/HomePage.tsx`) переписана: hero со статусом сети, метрики-плитки `ui/StatCard`,
+  быстрые ссылки, «Мій графік» через новый хук `useQueueSchedule` (прямой `fetch('/api/v1/schedules…')`
+  со страницы убран — правило «HTTP только через `api/client.ts`»), ближайшие отключения,
+  PowerSummary/Reliability; все строки через i18n (было много зашитой украинской).
+- **UI-примитивы**: Card/Button/Badge/Skeleton обновлены; `ui/Tabs` переписан по ARIA-паттерну
+  (`role=tablist/tab/panel`, стрелки влево/вправо) и применён на странице «Відключення» вместо
+  самодельного переключателя; `EmptyState`/`ErrorState` из однострочников с `any` стали нормальными
+  компонентами с переводами; `IncidentBanner` больше не использует классы `animate-in`
+  (плагина `tailwindcss-animate` в проекте нет — они ничего не рисовали).
+- **i18n**: `uk.json`/`ru.json` дополнены (`home.*`, `status.title*/message*`, `status.nextAttempt`,
+  `nav.queues/streets/scheduleImport/admin`, `outages.plannedSection/incidentsHint/noneForPeriod/...`).
+
+### 11.2 Проверено
+
+- `pnpm --filter @energy-monitor/web lint` → 0; `web test` → **7/7** (включая новые тесты `source-health`).
+- `check_tailwind_tokens.py` → «OK: all semantic tokens are defined and mapped»; единственное замечание —
+  inline color/zIndex в `AddressCombobox.tsx` (legacy-обход, снять вместе с этой страницей).
+- `vite build` → OK: `index.css` 48.2 kB (13.2 kB gzip), `index.js` 1735 kB (561 kB gzip).
+  **Бюджет скилла (первый экран ≤ 250 kB gzip) не выполнен** — ECharts и Leaflet пока в основном чанке.
+- `verify.sh` → **4/4 PASS** (api tests 95 / 24 skipped, web 7).
+- В браузере глазами не смотрел (нет доступа к устройству из этой сессии): нужен hard reload
+  (`Ctrl+Shift+R`), проверка светлой/тёмной темы и ширины 360 px — это следующий шаг, а не «проверено».
+
+### 11.3 Что осталось (шаг 2)
+
+1. **Ленивая загрузка тяжёлых вкладок**: `React.lazy` для `OutageCalendar/OutageTimeline/
+   OutageBarChart/OutageHeatmap/OutageMap` — главный рычаг к бюджету 250 kB gzip.
+2. **Страницы без редизайна**: `IncidentsPage`, `ContactsPage`, `MyAddressPage`, `QueueSchedulePage`,
+   `ScheduleImportPage`, `StreetsPage` (там ещё свои inline-цвета, украинский текст в JSX и
+   самодельные переключатели), плюс `AddressCombobox` (inline color/zIndex).
+3. Живой прогон UI: `docker compose build web && docker compose up -d web` + hard reload.
