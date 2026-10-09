@@ -11,7 +11,7 @@
  *
  * Потребує окремої БД (щоб не чіпати робочу):
  *   docker compose exec -T db createdb -U energymon energymon_test
- *   TEST_DATABASE_URL=postgresql://energymon:energymon@localhost:5432/energymon_test \
+ *   TEST_DATABASE_URL=postgresql://energymon:energymon@localhost:5432/energymon_test \   (scan:allow: local dev default, not a secret)
  *     pnpm --filter @energy-monitor/api exec vitest run tests/integration/outage-numbers.test.ts
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -149,11 +149,12 @@ async function ensureSchema(): Promise<void> {
     await db.execute(sql.raw(await readFile(new URL(file, migrationUrl), 'utf8')));
   }
 }
+
 describe('numbers must match: 6 events described by 30 address rows', () => {
   beforeAll(async () => {
     expect(
       TEST_DATABASE_URL,
-      'TEST_DATABASE_URL is required: create a throwaway DB with `docker compose exec -T db createdb -U energymon energymon_test` and pass postgresql://energymon:energymon@localhost:5432/energymon_test',
+      'TEST_DATABASE_URL is required: create a throwaway DB with `docker compose exec -T db createdb -U energymon energymon_test` and pass postgresql://energymon:energymon@localhost:5432/energymon_test', // scan:allow local dev default
     ).not.toBe('');
 
     const databaseName = new URL(TEST_DATABASE_URL).pathname.replace(/^\//, '');
