@@ -1,9 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/connection.js';
-import { gridStatus, outages } from '../db/schema.js';
-import { sql } from 'drizzle-orm';
+import { gridStatus, outageEvents } from '../db/schema.js';
+import { and, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { getPowerSummary } from '../services/power-summary.service.js';
-import { mergeDuplicateOutages } from '../services/outage-grouping.js';
 import { getIncidents } from '../services/incidents.service.js';
 
 export default async function statusRoutes(fastify: FastifyInstance) {
@@ -11,13 +10,27 @@ export default async function statusRoutes(fastify: FastifyInstance) {
     const now = new Date();
     const [status] = await db.select().from(gridStatus).orderBy(sql`${gridStatus.updatedAt} desc`).limit(1);
 
-    // Рахуємо без дублікатів за адресами — щоб цифри збігались зі списками.
-    const outageRows = await db
-      .select({ startsAt: outages.startsAt, endsAt: outages.endsAt, areaName: outages.areaName, addressesRaw: outages.addressesRaw, reason: outages.reason })
-      .from(outages);
-    const mergedOutages = mergeDuplicateOutages(outageRows);
-    const activeOutages = mergedOutages.filter((outage) => outage.startsAt.getTime() <= now.getTime() && outage.endsAt.getTime() >= now.getTime()).length;
-    const scheduledOutages = mergedOutages.filter((outage) => outage.startsAt.getTime() > now.getTime()).length;
+    // Рахуємо КАНОНІЧНІ події (invariant 5 у outage-data-core): одна реальна перерва = одна подія, а не
+    // 30 адресних рядків. Статус ОБЧИСЛЮЄТЬСЯ, а не береться зі сховища: cancelled_at → скасовано,
+    // інакше за starts_at/ends_at і «зараз». «Зараз» приходить з JS (Date), не з SQL now(), щоб тест
+    // міг заморозити час; ORM-шлях мапить Date у рядок для timestamptz (postgres.js валиться лише
+    // на Date у сирому sql-шаблоні — див. outage-events-writer.ts).
+    const [activeRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outageEvents)
+      .where(
+        and(
+          isNull(outageEvents.cancelledAt),
+          lte(outageEvents.startsAt, now),
+          or(isNull(outageEvents.endsAt), gte(outageEvents.endsAt, now)),
+        ),
+      );
+    const [scheduledRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outageEvents)
+      .where(and(isNull(outageEvents.cancelledAt), gt(outageEvents.startsAt, now)));
+    const activeOutages = activeRow?.count ?? 0;
+    const scheduledOutages = scheduledRow?.count ?? 0;
 
     // Той самий список, що й на сторінці «Аварії та ремонтні роботи».
     const incidentList = await getIncidents(now);

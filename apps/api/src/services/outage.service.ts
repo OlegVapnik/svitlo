@@ -1,6 +1,6 @@
 import { db } from '../db/connection.js';
-import { outages } from '../db/schema.js';
-import { eq, and, gte, lte, sql, desc, or, ilike } from 'drizzle-orm';
+import { outages, outageEvents } from '../db/schema.js';
+import { eq, and, gte, lte, sql, desc, or, ilike, isNull, not } from 'drizzle-orm';
 import type { OutageFilters, PaginationQuery, OutageStats } from '@energy-monitor/shared';
 import { mergeDuplicateOutages } from './outage-grouping.js';
 
@@ -73,40 +73,56 @@ export async function getOutageById(id: string) {
   return record || null;
 }
 
-export async function getOutageStats(dateFrom?: string, dateTo?: string): Promise<OutageStats> {
-  // By Area
+export async function getOutageStats(now: Date = new Date()): Promise<OutageStats> {
+  // Читаем КАНОНИЧЕСКИЕ события, а не сырые адресные строки: иначе одна реальная авария
+  // на 30 адресов попадает в статистику 30 раз (см. skills/outage-data-core, invariant 5).
+  // «Сейчас» приходит параметром: SQL now() и представление outage_events_v не используем,
+  // чтобы результат можно было воспроизвести в тесте (замороженные часы живут в JS).
+  // Статус в отчётах считаем целиком в SQL, но БЕЗ now(): лимит «сейчас» приходит из приложения
+  // ISO-строкой (Date в любом виде валит postgres.js). :ts — подготовленное значение drizzle,
+  // не конкатенация в текст запроса.
+  const notCancelled = isNull(outageEvents.cancelledAt);
+  const capsAtNow = sql`${outageEvents.endsAt} < ${now.toISOString()}::timestamptz`;
+  const activeWindow = and(
+    notCancelled,
+    lte(outageEvents.startsAt, now),
+    or(isNull(outageEvents.endsAt), not(capsAtNow)),
+  );
+  // Итоговое окно события; для незавершённой (открытой) аварии считаем до текущего момента.
+  const totalMinutesSql = sql<number>`round(coalesce(sum(extract(epoch from (coalesce(${outageEvents.endsAt}, ${now.toISOString()}::timestamptz) - ${outageEvents.startsAt})) / 60), 0))::int`;
   const byAreaRows = await db
     .select({
-      areaName: outages.areaName,
+      areaName: sql<string>`coalesce(${outageEvents.areaName}, 'невідомо')`,
       count: sql<number>`count(*)::int`,
-      totalMinutes: sql<number>`round(coalesce(sum(extract(epoch from (${outages.endsAt} - ${outages.startsAt})) / 60), 0))::int`,
+      totalMinutes: totalMinutesSql,
     })
-    .from(outages)
-    .groupBy(outages.areaName)
+    // Розподіли (byArea/byDay/byHour/heatmap) рахують УСІ опубліковані вікна, включно зі скасованими:
+    // це історія графіка оператора, і приймальний тест outage-numbers вимагає, щоб сума по днях
+    // дорівнювала кількості подій (6/6). Скасовані виключаються лише зі статусів (active/scheduled) нижче.
+    .from(outageEvents)
+    .groupBy(outageEvents.areaName)
     .orderBy(desc(sql`count(*)`))
     .limit(10);
-
   // By Day (last 14 days)
   const byDayRows = await db
     .select({
-      date: sql<string>`to_char(${outages.startsAt} at time zone 'Europe/Kyiv', 'YYYY-MM-DD')`,
+      date: sql<string>`to_char(${outageEvents.startsAt} at time zone 'Europe/Kyiv', 'YYYY-MM-DD')`,
       count: sql<number>`count(*)::int`,
-      totalMinutes: sql<number>`round(coalesce(sum(extract(epoch from (${outages.endsAt} - ${outages.startsAt})) / 60), 0))::int`,
+      totalMinutes: totalMinutesSql,
     })
-    .from(outages)
-    .groupBy(sql`to_char(${outages.startsAt} at time zone 'Europe/Kyiv', 'YYYY-MM-DD')`)
-    .orderBy(sql`to_char(${outages.startsAt} at time zone 'Europe/Kyiv', 'YYYY-MM-DD')`);
-
+    .from(outageEvents)
+    .groupBy(sql`to_char(${outageEvents.startsAt} at time zone 'Europe/Kyiv', 'YYYY-MM-DD')`)
+    .orderBy(sql`to_char(${outageEvents.startsAt} at time zone 'Europe/Kyiv', 'YYYY-MM-DD')`);
   // By Hour (0-23 distribution)
   const byHourRows = await db
     .select({
-      hour: sql<number>`extract(hour from ${outages.startsAt} at time zone 'Europe/Kyiv')::int`,
+      hour: sql<number>`extract(hour from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')::int`,
       count: sql<number>`count(*)::int`,
-      totalMinutes: sql<number>`round(coalesce(sum(extract(epoch from (${outages.endsAt} - ${outages.startsAt})) / 60), 0))::int`,
+      totalMinutes: totalMinutesSql,
     })
-    .from(outages)
-    .groupBy(sql`extract(hour from ${outages.startsAt} at time zone 'Europe/Kyiv')`)
-    .orderBy(sql`extract(hour from ${outages.startsAt} at time zone 'Europe/Kyiv')`);
+    .from(outageEvents)
+    .groupBy(sql`extract(hour from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')`)
+    .orderBy(sql`extract(hour from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')`);
 
   // Fill all 24 hours
   const byHourMap = new Map<number, { count: number; totalMinutes: number }>();
@@ -120,14 +136,14 @@ export async function getOutageStats(dateFrom?: string, dateTo?: string): Promis
   // Heatmap: Day of week (0-6) × Hour (0-23)
   const heatmapRows = await db
     .select({
-      dayOfWeek: sql<number>`extract(dow from ${outages.startsAt} at time zone 'Europe/Kyiv')::int`,
-      hour: sql<number>`extract(hour from ${outages.startsAt} at time zone 'Europe/Kyiv')::int`,
+      dayOfWeek: sql<number>`extract(dow from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')::int`,
+      hour: sql<number>`extract(hour from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')::int`,
       count: sql<number>`count(*)::int`,
     })
-    .from(outages)
+    .from(outageEvents)
     .groupBy(
-      sql`extract(dow from ${outages.startsAt} at time zone 'Europe/Kyiv')`,
-      sql`extract(hour from ${outages.startsAt} at time zone 'Europe/Kyiv')`,
+      sql`extract(dow from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')`,
+      sql`extract(hour from ${outageEvents.startsAt} at time zone 'Europe/Kyiv')`,
     );
 
   const heatmapMap = new Map<string, number>();
@@ -144,17 +160,17 @@ export async function getOutageStats(dateFrom?: string, dateTo?: string): Promis
     }
   }
 
-  // Active / scheduled counts
-  const now = new Date();
+  // Статус ОБЧИСЛЮЄТЬСЯ по событию, а не берётся из хранимого status:
+  // cancelled_at → cancelled; иначе по starts_at/ends_at и «сейчас».
   const [activeCount] = await db
     .select({ count: sql<number>`count(*)::int` })
-    .from(outages)
-    .where(and(lte(outages.startsAt, now), gte(outages.endsAt, now)));
+    .from(outageEvents)
+    .where(activeWindow);
 
   const [scheduledCount] = await db
     .select({ count: sql<number>`count(*)::int` })
-    .from(outages)
-    .where(and(gte(outages.startsAt, now), eq(outages.status, 'scheduled')));
+    .from(outageEvents)
+    .where(and(isNull(outageEvents.cancelledAt), gte(outageEvents.startsAt, now)));
 
   return {
     byHour,

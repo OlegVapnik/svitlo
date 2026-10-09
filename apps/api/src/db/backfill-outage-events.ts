@@ -16,6 +16,7 @@ import { db } from './connection.js';
 import { outages } from './schema.js';
 import { outageCategoryFromReason } from '../services/outage-classification.js';
 import { outageEventKey } from '../services/outage-grouping.js';
+import { normalizeOutageLocation } from '../parsers/normalizer.js';
 import { upsertOutageEvent, upsertOutageEventAddress } from './outage-events-writer.js';
 
 export interface BackfillSummary {
@@ -40,13 +41,16 @@ export async function backfillOutageEvents(): Promise<BackfillSummary> {
     if (category === 'other') otherSamples.add((row.reason ?? '(порожня причина)').slice(0, 120));
 
     const eventKey = outageEventKey(row);
+    // Населений пункт — ТОЙ САМИЙ нормалізатор, що й на ingest: інакше історія лишається з «ДЕСНЯНСЬКЕ»,
+    // а живі дані приходять як «Деснянське» — і в UI з'являються два різні «райони» для одного села.
+    const areaName = normalizeOutageLocation(row.areaName, row.addressesRaw);
 
     const eventId = await upsertOutageEvent(db, {
       sourceId: row.sourceId,
       eventKey,
       category,
       reason: row.reason,
-      areaName: row.areaName,
+      areaName,
       startsAt: row.startsAt,
       endsAt: row.endsAt,
       // Статус у старій таблиці — рядок, а не час. Для 'cancelled' беремо updated_at (момент, коли стан

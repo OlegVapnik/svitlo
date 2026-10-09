@@ -95,6 +95,10 @@ export function fixtureRows() {
         source: 'test-fixture',
         externalId: `fixture-${event.label}-${house}`,
         contentHash: `fixture-${event.label}-${house}`,
+        // Момент наблюдения, а не дефолтный now(): backfill берёт updated_at как момент
+        // отмены статусной строки, и без этого отменённое окно "отменялось" текущим временем.
+        firstSeenAt: NOW,
+        updatedAt: NOW,
       };
     }),
   );

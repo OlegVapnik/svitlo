@@ -15,7 +15,7 @@
  *   TEST_DATABASE_URL=postgresql://energymon:energymon@localhost:5432/energymon_test \   (scan:allow: local dev default, not a secret)
  *     pnpm --filter @energy-monitor/api test:integration
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { AREA, EXPECTED_EVENTS, EXPECTED_ROWS, NOW, SOURCE_ID, fixtureRows } from '../fixtures/outage-events.fixture.js';
@@ -71,6 +71,10 @@ describeWithDb('numbers must match: 6 events described by 30 address rows', () =
   });
 
   beforeEach(async () => {
+    // Замораживаем «сейчас» ДО импорта сервисов: /status и /outages/stats теперь
+    // принимают время от приложения и не имеют права читать SQL now().
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
     const { sources: sourcesTable, outages: outagesTable } = await import('../../src/db/schema.js');
     await db.execute(sql`TRUNCATE TABLE grid_status, outages, incidents, parse_runs, sources CASCADE`);
     await db.insert(sourcesTable).values({
@@ -80,6 +84,11 @@ describeWithDb('numbers must match: 6 events described by 30 address rows', () =
       type: 'test',
     });
     await db.insert(outagesTable).values(fixtureRows());
+    // Каноничный читатель /outages/stats смотрит в outage_events: без этой проекции
+    // (её делает ingest в проде) статистика видела бы пустоту. Импорт ленивый: модуль
+    // тянет connection/config, а их можно грузить только после подстановки DATABASE_URL.
+    const { backfillOutageEvents } = await import('../../src/db/backfill-outage-events.js');
+    await backfillOutageEvents(db);
   });
 
   afterAll(async () => {
