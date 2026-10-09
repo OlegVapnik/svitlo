@@ -1,9 +1,11 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/connection.js';
-import { gridStatus, outageEvents } from '../db/schema.js';
+import { gridStatus, outageEvents, sources } from '../db/schema.js';
 import { and, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { env } from '../config.js';
 import { getPowerSummary } from '../services/power-summary.service.js';
 import { getIncidents } from '../services/incidents.service.js';
+import { summarizeSourceHealth } from '../services/source-breaker.js';
 
 export default async function statusRoutes(fastify: FastifyInstance) {
   fastify.get('/api/v1/status', async () => {
@@ -40,6 +42,25 @@ export default async function statusRoutes(fastify: FastifyInstance) {
     const powerSummary = await getPowerSummary(now);
     const lastUpdatedAt = status?.updatedAt ?? null;
     const dataStale = !lastUpdatedAt || now.getTime() - lastUpdatedAt.getTime() > 2 * 60 * 60 * 1000;
+
+    // Circuit breaker источников (skills/scraper-adapter-hardening требует dataStale + lastError +
+    // nextAttemptAt): оператор может заблокировать IP, и тогда честный ответ «когда данные
+    // обновятся» важнее пустого экрана. Персональных данных здесь нет — last_error уже прогнан
+    // через sanitizeSourceError (длинные цифровые последовательности заменены на <number>).
+    const sourceRows = await db
+      .select({
+        name: sources.name,
+        consecutiveFailures: sources.consecutiveFailures,
+        pausedUntil: sources.pausedUntil,
+        lastError: sources.lastError,
+      })
+      .from(sources)
+      .where(sql`is_active = true`);
+    const sourceHealth = summarizeSourceHealth(sourceRows, now, {
+      schedulerEnabled: env.ENABLE_SCHEDULER,
+      intervalMinutes: env.PARSE_INTERVAL_MINUTES,
+    });
+
     return {
       data: {
         grid: { level: status?.level ?? 'unknown', message: status?.message ?? '' },
@@ -50,6 +71,7 @@ export default async function statusRoutes(fastify: FastifyInstance) {
         totalIncidents: incidentList.length,
         lastUpdatedAt: lastUpdatedAt?.toISOString() ?? null,
         dataStale,
+        ...sourceHealth,
         powerSummary,
       },
     };

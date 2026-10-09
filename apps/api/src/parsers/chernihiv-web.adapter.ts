@@ -1,4 +1,5 @@
 import type { ISourceAdapter, NormalizedIncident, NormalizedOutage, ParseResult } from './adapter.js';
+import { SourceBlockedError, SourceRequestError, isTimeoutError, type SourceBlockKind } from './source-errors.js';
 import { mergeDuplicateOutages } from '../services/outage-grouping.js';
 
 
@@ -38,7 +39,11 @@ export interface ChernihivWebOptions {
   requestDelayMs: number;
   /** Прогріти сесію: спершу GET /power_outages (cookies), потім POST /api/list_acc — як у браузера. */
   sessionWarmup: boolean;
-  /** Максимальний Retry-After (мс), який ми готові почекати; більший — одразу пропускаємо цикл. */
+  /**
+   * Legacy (лишено для сумісності): раніше — «Retry-After більший за це значення → пропускаємо цикл».
+   * Тепер адаптер НЕ чекає взагалі: на 429 він одразу кидає SourceBlockedError, а тривалість паузи
+   * (у т.ч. з урахуванням Retry-After) вирішує circuit breaker — services/source-breaker.ts.
+   */
   retryAfterMaxMs: number;
 }
 
@@ -207,20 +212,42 @@ export class ChernihivWebAdapter implements ISourceAdapter {
    */
   private async warmupSession(): Promise<void> {
     if (!this.options.sessionWarmup) return;
-    const response = await this.fetchImpl(`${this.options.baseUrl}/power_outages`, {
-      method: 'GET',
-      headers: {
-        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'accept-language': 'uk-UA,uk;q=0.9,en;q=0.8',
-        'user-agent': this.options.userAgent,
-        'upgrade-insecure-requests': '1',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'none',
-        'sec-fetch-user': '?1',
-      },
-      signal: AbortSignal.timeout(this.options.timeoutMs),
-    });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.options.baseUrl}/power_outages`, {
+        method: 'GET',
+        headers: {
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'accept-language': 'uk-UA,uk;q=0.9,en;q=0.8',
+          'user-agent': this.options.userAgent,
+          'upgrade-insecure-requests': '1',
+          'sec-fetch-dest': 'document',
+          'sec-fetch-mode': 'navigate',
+          'sec-fetch-site': 'none',
+          'sec-fetch-user': '?1',
+        },
+        signal: AbortSignal.timeout(this.options.timeoutMs),
+      });
+    } catch (error) {
+      // Прогрів — теж запит до того самого WAF: таймаут і обрив ЗУПИНЯЮТЬ прогін (повторами
+      // репутацію IP не поліпшити), інакше далі пішли б 3 порції API-запитів «наосліп».
+      if (isTimeoutError(error) || isConnectionAbortError(error)) {
+        throw new SourceBlockedError(
+          isTimeoutError(error) ? 'timeout' : 'connection_aborted',
+          `Operator session warmup failed for /power_outages: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+    // 403/429 на сторінці — той самий сигнал блоку, що й на API: жодних подальших запитів.
+    if (response.status === 403 || response.status === 429) {
+      throw new SourceBlockedError(
+        response.status === 403 ? 'http_403' : 'http_429',
+        `Operator page /power_outages returned HTTP ${response.status} during session warmup`,
+        { retryAfterMs: parseRetryAfter(response.headers.get('retry-after')) },
+      );
+    }
     const setCookie = (response.headers as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
     if (setCookie.length) this.cookies = setCookie.map((item) => item.split(';')[0]).join('; ');
   }
@@ -244,6 +271,9 @@ export class ChernihivWebAdapter implements ISourceAdapter {
         try {
           payload = await this.fetchListAcc(cityId, type);
         } catch (error) {
+          // Явний блок (403/429/таймаут/обрив) — не долбимо джерело остальными порциями:
+          // пробрасываем наверх, а circuit breaker ставит источник на паузу и пишет lastError.
+          if (error instanceof SourceBlockedError) throw error;
           // Одна настроенная порция (cityId:type) не загрузилась — это ЧАСТИЧНОЕ наблюдение,
           // а не «оператор всё отменил»: остальные порции дособираем, complete=false,
           // а отмена отсутствующих окон в этом цикле запрещена (ingest/runParse).
@@ -295,11 +325,11 @@ export class ChernihivWebAdapter implements ISourceAdapter {
       headers: this.browserHeaders(),
       body: JSON.stringify({ req_param: reqParam }),
     };
+    const scope = `city=${cityId}, type=${type}`;
 
     let lastError: unknown;
     for (let attempt = 0; attempt <= this.options.retries; attempt += 1) {
-      let retryDelayMs = this.options.retryDelayMs * 2 ** attempt;
-      let fatal = false;
+      const retryDelayMs = this.options.retryDelayMs * 2 ** attempt;
       try {
         const response = await this.fetchImpl(`${this.options.baseUrl}/api/list_acc`, {
           ...requestInit,
@@ -308,33 +338,40 @@ export class ChernihivWebAdapter implements ISourceAdapter {
         if (response.ok) {
           return (await response.json()) as { status?: string; list?: ListAccRow[] };
         }
-        const message = `Operator /api/list_acc returned HTTP ${response.status} (city=${cityId}, type=${type})`;
-        if (response.status === 429) {
-          // Поважаємо Retry-After; якщо просять чекати надто довго — просто пропускаємо цикл.
-          const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
-          if (retryAfter !== null && retryAfter > this.options.retryAfterMaxMs) {
-            fatal = true;
-          } else if (retryAfter !== null) {
-            retryDelayMs = Math.max(retryDelayMs, retryAfter);
-          }
-        } else if (response.status < 500) {
-          // 4xx (крім 429) — ретраїти безглуздо.
-          fatal = true;
+        const message = `Operator /api/list_acc returned HTTP ${response.status} (${scope})`;
+        // 403 і 429 — прямі сигнали «не зараз» (WAF/ліміт). Жодних повторів у цьому прогоні:
+        // замість цього circuit breaker ставить джерело на паузу (і поважає Retry-After).
+        if (response.status === 403 || response.status === 429) {
+          const kind: SourceBlockKind = response.status === 403 ? 'http_403' : 'http_429';
+          throw new SourceBlockedError(kind, message, {
+            retryAfterMs: parseRetryAfter(response.headers.get('retry-after')),
+          });
         }
+        if (response.status < 500) {
+          // Інші 4xx — повторювати безглуздо: проблема в запиті, а не в джерелі. І це не блок.
+          throw new SourceRequestError(message);
+        }
+        // 5xx — тимчасовий збій сервера оператора: ось тут повтор із backoff виправданий.
         lastError = new Error(message);
       } catch (error) {
-        if (isConnectionAbortError(error)) {
-          // WAF обірвав TLS/з'єднання (тротлінг) — НЕ ретраїмо, щоб не погіршувати ситуацію.
-          throw new Error(
-            `Operator connection aborted for /api/list_acc (city=${cityId}, type=${type}): ${error instanceof Error ? error.message : String(error)}`,
+        // Обе «окончательные» ошибки порции выходят наружу: блок — на паузу, 4xx — просто неудача
+        // этой порции без повторов (иначе 404 превратился бы в три запроса к WAF).
+        if (error instanceof SourceBlockedError || error instanceof SourceRequestError) throw error;
+        if (isTimeoutError(error) || isConnectionAbortError(error)) {
+          // Таймаут і обрив TLS (WAF рве рукостискання): повтор лише шкодить репутації IP,
+          // тому прогін переривається, а паузу вирішує circuit breaker.
+          throw new SourceBlockedError(
+            isTimeoutError(error) ? 'timeout' : 'connection_aborted',
+            isTimeoutError(error)
+              ? `Operator request timed out for /api/list_acc (${scope})`
+              : `Operator connection aborted for /api/list_acc (${scope}): ${error instanceof Error ? error.message : String(error)}`,
             { cause: error },
           );
         }
         lastError = error;
       }
-      if (fatal) break;
       if (attempt < this.options.retries) await sleep(retryDelayMs);
     }
-    throw lastError ?? new Error(`Operator /api/list_acc failed (city=${cityId}, type=${type})`);
+    throw lastError ?? new Error(`Operator /api/list_acc failed (${scope})`);
   }
 }

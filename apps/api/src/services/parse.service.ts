@@ -15,6 +15,9 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { mergeDuplicateOutages, outageEventKey } from './outage-grouping.js';
 import { outageCategoryFromReason } from './outage-classification.js';
 import { markMissingEventsCancelled, upsertOutageEvent, upsertOutageEventAddress, type Database } from '../db/outage-events-writer.js';
+import { clearSourcePause, recordSourceFailure, recordSourceSuccess } from './source-breaker-state.js';
+import { sanitizeSourceError } from './source-breaker.js';
+import type { SourceFailureKind } from '../parsers/source-errors.js';
 
 function getAdapters(): ISourceAdapter[] {
   if (env.USE_MOCK_ADAPTER) return [new MockAdapter()];
@@ -260,6 +263,10 @@ export async function runParse(sourceId: string) {
     throw new Error('Failed to create parse_runs record');
   }
 
+  // Вид збою основного джерела (403/429/таймаут/обрив/…). Объявлен снаружи try, потому что нужен
+  // и в catch того же try: флаг «circuit breaker уже записал ошибку — не перетирай её».
+  let sourceFailureKind: SourceFailureKind | null = null;
+
   try {
     logger.info({ sourceId, adapter: adapter.name }, 'Starting parse run');
 
@@ -271,7 +278,21 @@ export async function runParse(sourceId: string) {
       primaryData = await adapter.fetch();
     } catch (error) {
       primaryError = error instanceof Error ? error : new Error(String(error));
-      logger.warn({ err: primaryError, adapter: adapter.name }, 'Primary source failed; continuing with secondary sources');
+      // Circuit breaker: блокування чи таймаут — це сигнал джерела, а не наш баг. У цьому прогоні
+      // до джерела більше не звертаємось (адаптер такі збої теж не повторює), а саме джерело
+      // стає на паузу 30 хв → 1 год → 3 год → 6 год; Retry-After поважається.
+      const failure = await recordSourceFailure(sourceId, primaryError);
+      sourceFailureKind = failure.kind;
+      logger.warn(
+        {
+          adapter: adapter.name,
+          sourceId,
+          kind: failure.kind,
+          consecutiveFailures: failure.consecutiveFailures,
+          pausedUntil: failure.pausedUntil,
+        },
+        'Primary source failed; continuing with secondary sources',
+      );
       primaryData = { outages: [], incidents: [], gridLevel: 'stable', gridMessage: '', rawSnapshot: '' };
     }
 
@@ -382,15 +403,22 @@ export async function runParse(sourceId: string) {
     //    должно быть видно в /status, а не маскироваться свежим last_success_at.
     const runStatus = fullOutageFeed && effectiveData.outages.length > 0 ? 'success' : 'partial';
     if (runStatus === 'success') {
-      await db
-        .update(sources)
-        .set({ lastSuccessAt: now, lastError: null })
-        .where(eq(sources.id, sourceId));
+      // Успіх скидає і серию невдач, і паузу circuit breaker.
+      await recordSourceSuccess(sourceId, now);
+    } else if (sourceFailureKind) {
+      // Джерело вже позначене recordSourceFailure вище — повідомлення з видом збою не перетираємо.
+      logger.warn(
+        { sourceId, kind: sourceFailureKind },
+        'Parse run partial: primary source failed earlier in this run',
+      );
     } else {
       await db
         .update(sources)
-        .set({ lastError: partialReason })
+        .set({ lastError: sanitizeSourceError(partialReason) })
         .where(eq(sources.id, sourceId));
+      // Повна (але порожня) відповідь оператора означає, що джерело живе: серию невдач скидаємо,
+      // last_success_at при цьому не рухаємо (див. коментар вище про часткові й порожні фіди).
+      if (fullOutageFeed) await clearSourcePause(sourceId);
     }
 
     await db
@@ -399,7 +427,14 @@ export async function runParse(sourceId: string) {
         status: runStatus,
         finishedAt: now,
         recordsFound: effectiveData.outages.length,
-        errorMessage: runStatus === 'success' ? null : partialReason,
+        // Вид збою в тексті: parse_runs читають руками, коли «даних немає», і клас проблеми
+        // (блок / таймаут / формат) економить час.
+        errorMessage:
+          runStatus === 'success'
+            ? null
+            : sourceFailureKind
+              ? `[${sourceFailureKind}] ${partialReason}`
+              : partialReason,
         rawSnapshotRef: snapshotPath,
       })
       .where(eq(parseRuns.id, run.id));
@@ -417,14 +452,18 @@ export async function runParse(sourceId: string) {
       .set({
         status: 'error',
         finishedAt: new Date(),
-        errorMessage: err.message,
+        errorMessage: sanitizeSourceError(err.message),
       })
       .where(eq(parseRuns.id, run.id));
 
-    await db
-      .update(sources)
-      .set({ lastError: err.message })
-      .where(eq(sources.id, sourceId));
+    // Збій основного джерела вже врахував circuit breaker (вище, до ingest). Тут пишемо лише
+    // «наші» помилки (БД, «0 записів») — і теж без персональних даних.
+    if (!sourceFailureKind) {
+      await db
+        .update(sources)
+        .set({ lastError: sanitizeSourceError(err.message) })
+        .where(eq(sources.id, sourceId));
+    }
 
     throw err;
   }

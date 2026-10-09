@@ -285,7 +285,7 @@ curl -s localhost:3001/api/v1/status | head -c 300
 `Parse scheduler enabled; initial parse scheduled` → `Starting initial parse run` →
 `runStatus:"success", recordsFound:7, telegramPosts:20`. Интервал `PARSE_INTERVAL_MINUTES=30`
 (минимум из `scraper-adapter-hardening`), есть джиттер `PARSE_INTERVAL_JITTER_MINUTES=5`.
-**Не реализовано:** circuit breaker (3 подряд неудачи → пауза 30 мин → 1 ч → 3 ч → 6 ч) и `dataStale`
+**Не реализовано на тот момент (сделано в §10):** circuit breaker (3 подряд неудачи → пауза 30 мин → 1 ч → 3 ч → 6 ч) и `dataStale`
 по источнику — `scheduler/cron.ts` просто повторяет прогон. Если оператор заблокирует IP, планировщик
 будет молча стучаться каждые 30 минут; обходов бана в проекте нет и быть не должно.
 
@@ -324,7 +324,7 @@ curl -s localhost:3001/api/v1/status | head -c 300
    `street_queues`, либо честное удаление фильтра из UI вместе с API.
 3. `power-summary` (`getPowerSummary`) и `/status.powerSummary` ещё считают по `outages` — переключить
    вместе с `/reliability`.
-4. Circuit breaker и `dataStale` по источнику (см. §9.2).
+4. Circuit breaker и `dataStale` по источнику (см. §9.2) — **сделано в §10.**
 
 ### 9.5 Упаковка в APK для Android 13+ (план, не начато)
 
@@ -345,3 +345,53 @@ curl -s localhost:3001/api/v1/status | head -c 300
 **Что нужно решить до старта:** (а) есть ли HTTPS-домен для приложения (это же нужно для PWA/установки —
 проверить по `skills/ops-deploy-check`); (б) офлайн обязателен или онлайн достаточно; (в) распространение —
 Play Store или APK вручную. От этого зависит TWA vs Capacitor.
+
+## 10. Сессия 2026-10-10 (задача A2): circuit breaker источников
+
+### 10.1 Что сделано
+
+- **Адаптер** (`parsers/chernihiv-web.adapter.ts` + новый `parsers/source-errors.ts`): 403, 429 и
+  таймаут/обрыв TLS дают `SourceBlockedError` (`kind` + `retryAfterMs`) и **ни одного повтора в этом
+  прогоне**. Раньше 429 без Retry-After и таймаут ретраились (лишние запросы к WAF). Блок на любой
+  порции останавливает весь прогон — остальные порции (`cityId:type`) не опрашиваются. 5xx по-прежнему
+  ретраится с backoff; прочие 4xx — один запрос без повтора (`SourceRequestError`, это не блок).
+  Блок на самой странице прогрева сессии (`GET /power_outages`) тоже останавливает прогон.
+- **Политика** (`services/source-breaker.ts`, чистые функции без БД): явный блок ставит на паузу сразу,
+  «формат/прочее» — с 3-й подряд неудачи; длина паузы 30 мин → 1 ч → 3 ч → 6 ч; Retry-After
+  соблюдается (если он длиннее — пауза берётся по нему, но не более 24 ч).
+- **Состояние** (`services/source-breaker-state.ts` + миграция `0009_source_circuit_breaker.sql`):
+  `sources.consecutive_failures`, `sources.paused_until`. Живёт в БД, а не в памяти процесса: пауза
+  переживает `docker compose up`. Полный ответ оператора сбрасывает счётчик и паузу; `last_success_at`
+  по-прежнему двигает только успех с записями.
+- **Планировщик** (`scheduler/cron.ts`): один `runParseCycle()` для старта и cron; источники на паузе
+  пропускаются с warn-логом (обходов бана нет и не добавлено).
+- **`/status`**: `nextAttemptAt`, `lastError` (санитизирован: длинные последовательности цифр →
+  `<number>`), `pausedUntil`, `consecutiveParseFailures`; поля добавлены в `StatusResponse` (shared).
+- **`config.ts`**: `PARSE_INTERVAL_MINUTES` — целое ≥ 30, `PARSE_INTERVAL_JITTER_MINUTES` < интервала;
+  неверное значение — падение на старте, а не «тихое» чаще опрашивать оператора.
+- `parse_runs.error_message` теперь начинается с класса сбоя: `[http_429] ...`.
+- Заметка: опция `ChernihivWebOptions.retryAfterMaxMs` больше не влияет на поведение (адаптер не ждёт,
+  а прерывает прогон) — оставлена как legacy, чтобы не ломать вызовы.
+
+### 10.2 Проверено (без сети к оператору и без реального парсинга)
+
+- `pnpm --filter @energy-monitor/api lint` — чисто; фокусные тесты **34/34** (`chernihiv-web.adapter`
+  22, `source-breaker` 8, `config` 4).
+- `tests/integration` против `energymon_test` — **24/24**, включая новый `status-breaker.test.ts`
+  (пауза/истечение паузы/`nextAttemptAt` в `/status`) и применение миграции 0009.
+- `verify.sh` — **4/4 PASS** (api tests 95 passed / 24 skipped, web 2 passed).
+- `scan_secrets.py` — те же 3 находки, что были до изменений (`.env`, `.env.example` — локальные
+  dev-значения), новых нет.
+- Миграция 0009 применена к рабочей БД тем же способом, что `migrate`-сервис (файл + запись в
+  `__energy_migrations`, в транзакции): столбцы на месте (`consecutive_failures=0`, `paused_until` =
+  NULL у единственного источника), работающий api (старая сборка) отдаёт `/status` HTTP 200 — ничего
+  не сломано. Дамп до миграции: `/tmp/energymon_before_breaker_20261010_0211.dump` (вне репо).
+
+### 10.3 Что осталось
+
+1. api-контейнер крутит старую сборку: чтобы заработали новые поля `/status` и пропуск источников на
+   паузе, нужен `docker compose build api && docker compose up -d api` (migrate уже применён). Rebuild
+   не делал специально: старт поднимает живой парсинг, а задача требовала без сети к оператору.
+2. Дубли окон с разным `ends_at`, фильтр `queue` и переключение `/outages`, `/reliability`,
+   `power-summary` на `outage_events` — по-прежнему открыты (см. §9.4).
+3. APK для Android 13+: решения по домену/офлайну/распространению не приняты (см. §9.5).

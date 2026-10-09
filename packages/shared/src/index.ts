@@ -25,7 +25,7 @@ export interface Incident {
   sourceUrl?: string | null;
 }
 export interface Contact { id: string; type: string; label: string; value: string; region?: string | null; }
-export interface StatusResponse { grid: { level: 'stable' | 'warning' | 'emergency'; message: string }; activeOutages: number; scheduledOutages: number; activeIncidents: number; scheduledIncidents?: number; totalIncidents?: number; lastUpdatedAt?: string | null; dataStale?: boolean; powerSummary?: PowerSummary | null; }
+export interface StatusResponse { grid: { level: 'stable' | 'warning' | 'emergency'; message: string }; activeOutages: number; scheduledOutages: number; activeIncidents: number; scheduledIncidents?: number; totalIncidents?: number; lastUpdatedAt?: string | null; dataStale?: boolean; /** Оцінка моменту наступной спроби опитування (пауза circuit breaker або наступний слот); null — планувальник вимкнено. */ nextAttemptAt?: string | null; /** Остання помилка джерела без персональних даних (уже санитизована на боці API). */ lastError?: string | null; /** До цього моменту джерело на паузі; null — не на паузі. */ pausedUntil?: string | null; /** Невдач підряд при опитуванні джерела. */ consecutiveParseFailures?: number; powerSummary?: PowerSummary | null; }
 export interface PaginationQuery { page: number; limit: number; }
 export interface OutageFilters { query?: string; status?: OutageStatus; queue?: number; area?: string; dateFrom?: string; dateTo?: string; limit?: number; }
 export interface OutageListResponse { data: Outage[]; meta?: Record<string, unknown>; }

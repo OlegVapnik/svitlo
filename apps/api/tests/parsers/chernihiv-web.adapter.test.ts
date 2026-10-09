@@ -7,6 +7,7 @@ import {
   parseRetryAfter,
   type ListAccRow,
 } from '../../src/parsers/chernihiv-web.adapter.js';
+import { SourceBlockedError } from '../../src/parsers/source-errors.js';
 
 const CITY_ID = '7422288601';
 
@@ -222,14 +223,87 @@ describe('ChernihivWebAdapter', () => {
     expect(calls).toBe(1);
   });
 
-  test('пропускає цикл, якщо Retry-After просить чекати довше за нашу готовність', async () => {
+  test('на 429 з Retry-After не чекає і не повторює: прогон зупиняється', async () => {
     let calls = 0;
     const limited = (async () => {
       calls += 1;
       return new Response('slow down', { status: 429, headers: { 'retry-after': '600' } });
     }) as typeof fetch;
     const adapter = new ChernihivWebAdapter(limited, { ...base, types: [1], retries: 2, retryDelayMs: 1, requestDelayMs: 0, sessionWarmup: false });
-    await expect(adapter.fetch()).rejects.toThrow(/HTTP 429/u);
+    const error = await adapter.fetch().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SourceBlockedError);
+    expect((error as SourceBlockedError).kind).toBe('http_429');
+    // Пауза из Retry-After уезжает наверх — её применяет circuit breaker, а не адаптер.
+    expect((error as SourceBlockedError).retryAfterMs).toBe(600_000);
+    expect(calls).toBe(1);
+  });
+
+  test('на 403 не повторює запрос и помечает источник как заблокированный', async () => {
+    let calls = 0;
+    const forbidden = (async () => {
+      calls += 1;
+      return new Response('forbidden', { status: 403 });
+    }) as typeof fetch;
+    const adapter = new ChernihivWebAdapter(forbidden, { ...base, types: [1], retries: 2, retryDelayMs: 1, requestDelayMs: 0, sessionWarmup: false });
+    const error = await adapter.fetch().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SourceBlockedError);
+    expect((error as SourceBlockedError).kind).toBe('http_403');
+    expect((error as SourceBlockedError).retryAfterMs).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  test('429 без Retry-After тоже не ретраится (раньше бил по WAF снова)', async () => {
+    let calls = 0;
+    const limited = (async () => {
+      calls += 1;
+      return new Response('slow down', { status: 429 });
+    }) as typeof fetch;
+    const adapter = new ChernihivWebAdapter(limited, { ...base, types: [1], retries: 2, retryDelayMs: 1, requestDelayMs: 0, sessionWarmup: false });
+    const error = await adapter.fetch().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SourceBlockedError);
+    expect((error as SourceBlockedError).kind).toBe('http_429');
+    expect(calls).toBe(1);
+  });
+
+  test('таймаут не ретраится и классифицируется как таймаут', async () => {
+    let calls = 0;
+    const timingOut = (async () => {
+      calls += 1;
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }) as typeof fetch;
+    const adapter = new ChernihivWebAdapter(timingOut, { ...base, types: [1], retries: 2, retryDelayMs: 1, requestDelayMs: 0, sessionWarmup: false });
+    const error = await adapter.fetch().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SourceBlockedError);
+    expect((error as SourceBlockedError).kind).toBe('timeout');
+    expect(calls).toBe(1);
+  });
+
+  test('блок на первой порции останавливает прогон: остальные порции не запрашиваются', async () => {
+    let calls = 0;
+    const blocked = (async () => {
+      calls += 1;
+      return new Response('nope', { status: 403 });
+    }) as typeof fetch;
+    const adapter = new ChernihivWebAdapter(blocked, { ...base, types: [1, 2, 6], retries: 2, retryDelayMs: 1, requestDelayMs: 0, sessionWarmup: false });
+
+    await expect(adapter.fetch()).rejects.toBeInstanceOf(SourceBlockedError);
+    // 3 настроенные порции, но после блока — ни одного дополнительного запроса к оператору.
+    expect(calls).toBe(1);
+  });
+
+  test('404 (не блок) не ретраится, но и не выдаёт себя за блок', async () => {
+    let calls = 0;
+    const notFound = (async () => {
+      calls += 1;
+      return new Response('gone', { status: 404 });
+    }) as typeof fetch;
+    const adapter = new ChernihivWebAdapter(notFound, { ...base, types: [1], retries: 2, retryDelayMs: 1, requestDelayMs: 0, sessionWarmup: false });
+
+    await expect(adapter.fetch()).rejects.toThrow(/HTTP 404/u);
     expect(calls).toBe(1);
   });
 });

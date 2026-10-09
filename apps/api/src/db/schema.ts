@@ -8,7 +8,11 @@ export const sources = pgTable('sources', {
   type: text('type').notNull(),
   isActive: boolean('is_active').default(true),
   lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
-  lastError: text('last_error')
+  lastError: text('last_error'),
+  /** Невдач підряд (міграція 0009); скидається після повного успішного збору. */
+  consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+  /** До цього моменту планувальник пропускає джерело (circuit breaker); null = не на паузі. */
+  pausedUntil: timestamp('paused_until', { withTimezone: true })
 });
 
 export const outages = pgTable('outages', {

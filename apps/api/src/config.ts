@@ -5,9 +5,13 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(3001),
   API_HOST: z.string().default('0.0.0.0'),
   ADMIN_TOKEN: z.string().default('development-admin-token'),
-  PARSE_INTERVAL_MINUTES: z.coerce.number().default(60),
-  // Джиттер (хвилини), що додається до інтервалу опитування, щоб не бити рівно по розкладу (анти-бот).
-  PARSE_INTERVAL_JITTER_MINUTES: z.coerce.number().default(5),
+  // Мінімум 30 хвилин — вимога skills/scraper-adapter-hardening: оператор сидить за WAF, і часті
+  // автоматичні запити виглядають як бот. Менше значення — помилка конфігурації на старті,
+  // а не «легше» опитування: лікується паузою circuit breaker, а не частими запитами.
+  PARSE_INTERVAL_MINUTES: z.coerce.number().int().min(30).default(60),
+  // Джиттер (хвилини), що зсуває момент запиту, щоб не бити рівно по розкладу (анти-бот).
+  // Мусить бути меншим за інтервал, інакше запуск напливає на наступний слот — перевірка нижче.
+  PARSE_INTERVAL_JITTER_MINUTES: z.coerce.number().min(0).default(5),
   PARSE_TIMEOUT_MS: z.coerce.number().default(30000),
   // Каталог сырых ответов оператора (PII-риск: адреса/ПИБ могут встречаться).
   // Держим ВНЕ src/dist, путь без "snapshots/" (иначе .gitignore-правило `snapshots/`
@@ -45,6 +49,14 @@ const envSchema = z.object({
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
   TZ: z.string().default('Europe/Kyiv')
+}).superRefine((value, ctx) => {
+  if (value.PARSE_INTERVAL_JITTER_MINUTES >= value.PARSE_INTERVAL_MINUTES) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['PARSE_INTERVAL_JITTER_MINUTES'],
+      message: 'PARSE_INTERVAL_JITTER_MINUTES must be smaller than PARSE_INTERVAL_MINUTES',
+    });
+  }
 });
 
 export const env = envSchema.parse(process.env);
