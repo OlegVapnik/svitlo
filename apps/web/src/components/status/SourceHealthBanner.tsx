@@ -91,10 +91,10 @@ export const SourceHealthBanner = ({ className }: { className?: string }) => {
               label={t('status.nextAttempt')}
               value={status?.nextAttemptAt ? formatDateTime(status.nextAttemptAt) : t('status.schedulerOff')}
             />
-            {status && status.consecutiveParseFailures > 0 && (
+            {status && (status.consecutiveParseFailures ?? 0) > 0 && (
               <Fact
                 label={t('status.failuresInRow')}
-                value={String(status.consecutiveParseFailures)}
+                value={String(status.consecutiveParseFailures ?? 0)}
               />
             )}
           </div>

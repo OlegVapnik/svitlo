@@ -6,11 +6,35 @@ import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs.js';
 import { SearchBar } from '../components/search/SearchBar.js';
 import { FilterPanel } from '../components/search/FilterPanel.js';
 import { OutageList } from '../components/outages/OutageList.js';
-import { OutageCalendar } from '../components/outages/OutageCalendar.js';
-import { OutageTimeline } from '../components/outages/OutageTimeline.js';
-import { OutageHeatmap } from '../components/outages/OutageHeatmap.js';
-import { OutageBarChart } from '../components/outages/OutageBarChart.js';
-import { OutageMap } from '../components/outages/OutageMap.js';
+import { Skeleton } from '../components/ui/Skeleton.js';
+
+/**
+ * Тяжёлые вкладки (календарь, таймлайн, теплокарта, график, карта) — ленивые чанки: первый экран
+ * (список) не должен тянуть chart/geo-библиотеки. Бюджет первого экрана — 250 kB gzip.
+ */
+const OutageCalendar = React.lazy(() =>
+  import('../components/outages/OutageCalendar.js').then((module) => ({ default: module.OutageCalendar })),
+);
+const OutageTimeline = React.lazy(() =>
+  import('../components/outages/OutageTimeline.js').then((module) => ({ default: module.OutageTimeline })),
+);
+const OutageHeatmap = React.lazy(() =>
+  import('../components/outages/OutageHeatmap.js').then((module) => ({ default: module.OutageHeatmap })),
+);
+const OutageBarChart = React.lazy(() =>
+  import('../components/outages/OutageBarChart.js').then((module) => ({ default: module.OutageBarChart })),
+);
+const OutageMap = React.lazy(() =>
+  import('../components/outages/OutageMap.js').then((module) => ({ default: module.OutageMap })),
+);
+
+/** Заглушка на время загрузки ленивого чанка: те же пропорции, что у контента вкладки. */
+const TabFallback = () => (
+  <div className="space-y-3">
+    <Skeleton className="h-56 w-full rounded-2xl" />
+    <Skeleton className="h-40 w-full rounded-2xl" />
+  </div>
+);
 import { useOutages, useOutageStats } from '../api/queries.js';
 import type { Outage, OutageStatus } from '@energy-monitor/shared';
 import { outageCategory, resolveOutageMapPoint } from '../lib/outage-location.js';
@@ -167,45 +191,53 @@ export const OutagesPage: React.FC = () => {
       )}
 
       {activeTab === 'calendar' && (
-        <div className="space-y-4">
-          <OutageCalendar
-            outages={outages}
-            selectedDate={calendarSelectedDate}
-            onSelectDate={setCalendarSelectedDate}
-          />
-          <div className="pt-2">
-            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
-              {calendarSelectedDate
-                ? `${t('outages.selectedDay')} ${calendarSelectedDate.toLocaleDateString()}`
-                : t('outages.allDays')}
-            </h4>
-            <div className="space-y-3">
-              {plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate)).length > 0 ? <OutageList outages={plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate))} isLoading={isLoading} isError={isError} onRetry={() => refetch()} /> : <p className="text-sm text-muted-foreground">{t('outages.noneForPeriod')}</p>}
+        <React.Suspense fallback={<TabFallback />}>
+          <div className="space-y-4">
+            <OutageCalendar
+              outages={outages}
+              selectedDate={calendarSelectedDate}
+              onSelectDate={setCalendarSelectedDate}
+            />
+            <div className="pt-2">
+              <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
+                {calendarSelectedDate
+                  ? `${t('outages.selectedDay')} ${calendarSelectedDate.toLocaleDateString()}`
+                  : t('outages.allDays')}
+              </h4>
+              <div className="space-y-3">
+                {plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate)).length > 0 ? <OutageList outages={plannedOutages.filter((outage) => !calendarSelectedDate || startsOnSelectedKyivDay(outage, calendarSelectedDate))} isLoading={isLoading} isError={isError} onRetry={() => refetch()} /> : <p className="text-sm text-muted-foreground">{t('outages.noneForPeriod')}</p>}
+              </div>
             </div>
           </div>
-        </div>
+        </React.Suspense>
       )}
 
       {activeTab === 'chart' && (
-        <div className="space-y-4">
-          {/* Заголовок графіка — «відключень ТА РЕМОНТІВ», тому показуємо всі події
-              (ремонтні роботи + планові/аварійні обмеження), а не лише «планові». */}
-          {displayOutages.length > 0 && <OutageTimeline outages={displayOutages} />}
-          {stats && (
-            <>
-              <OutageBarChart byArea={stats.byArea} byDay={stats.byDay} />
-              <OutageHeatmap data={stats.heatmap} />
-            </>
-          )}
-          {!isLoading && outages.length === 0 && (
-            <p className="rounded-2xl border border-warning/40 bg-warning/5 p-4 text-sm text-muted-foreground">
-              {t('outages.noRecordsForPeriod')}
-            </p>
-          )}
-        </div>
+        <React.Suspense fallback={<TabFallback />}>
+          <div className="space-y-4">
+            {/* Заголовок графіка — «відключень ТА РЕМОНТІВ», тому показуємо всі події
+                (ремонтні роботи + планові/аварійні обмеження), а не лише «планові». */}
+            {displayOutages.length > 0 && <OutageTimeline outages={displayOutages} />}
+            {stats && (
+              <>
+                <OutageBarChart byArea={stats.byArea} byDay={stats.byDay} />
+                <OutageHeatmap data={stats.heatmap} />
+              </>
+            )}
+            {!isLoading && outages.length === 0 && (
+              <p className="rounded-2xl border border-warning/40 bg-warning/5 p-4 text-sm text-muted-foreground">
+                {t('outages.noRecordsForPeriod')}
+              </p>
+            )}
+          </div>
+        </React.Suspense>
       )}
 
-      {activeTab === 'map' && <OutageMap outages={outages} />}
+      {activeTab === 'map' && (
+        <React.Suspense fallback={<TabFallback />}>
+          <OutageMap outages={outages} />
+        </React.Suspense>
+      )}
     </div>
   );
 };

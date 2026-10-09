@@ -444,3 +444,69 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
    `ScheduleImportPage`, `StreetsPage` (там ещё свои inline-цвета, украинский текст в JSX и
    самодельные переключатели), плюс `AddressCombobox` (inline color/zIndex).
 3. Живой прогон UI: `docker compose build web && docker compose up -d web` + hard reload.
+
+---
+
+## 12. Редизайн UI — раунд 2 (все страницы) — 2026-10-10
+
+Закрывает пункты §11.3 («шаг 2»). Токены темы — единственный источник цвета: жёстких палитр
+(`bg-red-500`, `text-emerald-500`, `text-white`) и inline-цветов в этих файлах больше нет.
+
+### 12.1 Что изменено
+
+- **Ленивые вкладки** (`pages/OutagesPage.tsx`): `React.lazy` + `React.Suspense` (скелетон) для
+  `OutageCalendar`, `OutageTimeline`, `OutageBarChart`, `OutageHeatmap`, `OutageMap` — ECharts и
+  Leaflet ушли из стартового чанка.
+- **Аварії** (`pages/IncidentsPage.tsx`): фильтр статуса — `ui/Tabs` (ARIA + стрелки) вместо кнопок
+  `bg-red-500/bg-amber-500`; поиск по месту/причине; карточка отвечает «де / чому / коли»
+  (`place`, `cause`, `eta*`), severity-бейджи, скелетоны, пустое состояние.
+- **Контакти** (`pages/ContactsPage.tsx`): иконки — токены `success/info/primary`, скелетоны, `<a>`
+  на всю карточку, фолбэк-контакты, если API отдал пусто.
+- **Вулиці** (`pages/StreetsPage.tsx`): поиск + «Сьогодні/Завтра» с датою, `QueueScheduleBar`,
+  легенда интервалов, счётчик улиц, чипы улиц (тач ≥ 44 px, активный — `border-primary bg-primary/10`),
+  админ-блок в `<details>` (токен не сохраняется), сообщения `role=status`.
+- **Моя адреса** (`pages/MyAddressPage.tsx`): выделенный ввод адреса, «Збережено» — токен `success`,
+  счётчик найденных отключений, `EmptyState` с иконкой.
+- **Мої черги** (`pages/QueueSchedulePage.tsx`): переписан на `ui/*` + `localStorage`; дни — `aria`-группа,
+  демо-предупреждение токеном `warning`.
+- **Імпорт графіка** (`pages/ScheduleImportPage.tsx`): предупреждение про персональные данные,
+  успех/ошибка на токенах, `successText` с интерполяцией, чек-лист ошибок валидации.
+- **AddressCombobox**: сняты inline `backgroundColor/color/borderColor` и `zIndex` — остались
+  `bg-popover/border-border` (последнее замечание токен-скрипта из §11.2 закрыто).
+- **i18n**: ~90 новых ключей в `uk.json`/`ru.json` (`incidents.*`, `contacts.hotline/sourceNote`,
+  `streets.*`, `myAddress.*`, `queues.*`, `scheduleImport.*`, `common.delete`); наборы ключей uk и ru идентичны.
+- **Dev-удобства VS Code**: `.vscode/launch.json` — Debugger for Firefox (dev-сервер 5173, docker 3000,
+  attach); `.vscode/settings.json` — Tailwind IntelliSense (`classRegex` для `cva()`), css-lint.
+
+### 12.2 Проверено (2026-10-10, этой сессией)
+
+- `bash skills/energymon-onboarding/scripts/verify.sh` → **4/4 PASS**: api typecheck PASS, web typecheck
+  PASS, api tests **95 passed** / 24 skipped, web tests **7 passed**.
+- `python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .` → **OK** (inline-цветов нет).
+- i18n-скан `/tmp/check_i18n_keys.py`: все **174** литеральных `t('…')` ключа есть и в `uk.json`, и в `ru.json`
+  (0 отсутствующих).
+- `vite build` → OK. Стартовый чанк **517.4 kB (157 kB gzip)**; ленивые: `OutageMap` 156 kB (46 kB gzip),
+  чарты 1054 kB (350 kB gzip — грузятся только при открытии вкладки «Графік»), CSS 31.5 kB (6.8 kB gzip).
+  Было (§11.2): один чанк 1735 kB (**561 kB gzip**) на первый экран.
+- Docker: `docker compose build web && docker compose up -d web` → образ `energy-monitor-web:latest`
+  пересобран, контейнер пересоздан; `http://localhost:3000/` → **200**, `index.html` ссылается на новый
+  `assets/index-DOnICMhf.js` (старые хеши ушли), внутри контейнера новые чанки; api healthy.
+- API-смоук (`/tmp/smoke.py`, только коды и количества): `/street-queues` 200 (0 пар),
+  `/street-queues/schedule` 200, `/schedules?queue=2/2` 200, `/incidents` 200 (5), `/outages?limit=5` 200 (9),
+  `/contacts` 200 (0 → страница показывает фолбэк).
+
+### 12.3 Что осталось
+
+1. **Взгляд глазами в браузере** (не делал — нет устройства в этой сессии): hard reload `Ctrl+Shift+R` на
+   `http://localhost:3000`, светлая/тёмная тема, ширина 360 px. Конфиг отладки Firefox уже в
+   `.vscode/launch.json` (порт 3000 для docker, 5173 для dev-сервера).
+2. **Чарты весят 350 kB gzip**: перейти с полного `echarts` на `echarts/core` + нужные компоненты
+   (или на лёгкую библиотеку) — сейчас вкладка «Графік» тянет самый большой чанк.
+3. **`/api/v1/contacts` возвращает 0 записей** → «Контакти» живут на фолбэке в `ContactsPage.tsx`;
+   решить: отдавать контакты из API или закрепить фолбэк как основной источник.
+4. **`/street-queues` пуст** (соответствия улиц не засеяны) → раздел «Всі вулиці» покажет пустое
+   состояние; заполняется админ-блоком на «Вулиці» или сидами.
+5. `AGENTS.md` (правка владельца про «Экономный режим») **намеренно не закоммичен** — рабочее дерево
+   по нему остаётся грязным.
+
+

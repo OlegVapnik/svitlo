@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Upload, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
 import { Button } from '../components/ui/Button.js';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Input } from '../components/ui/Input.js';
-import { Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 
 type ImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };
 type ApiError = { error: { code: string; message: string; details?: Array<{ path: string; message: string }> } };
 
+/**
+ * Ручной импорт графика оператора: сайт оператора отдаёт JSON только в авторизованной браузерной
+ * сессии, поэтому копипаст — единственный легальный путь (WAF/бан не обходим). Токен и вставленный
+ * JSON живут только в этом компоненте и уходят лишь на /admin/schedules/import.
+ */
 export const ScheduleImportPage: React.FC = () => {
+  const { t } = useTranslation();
   const [queue, setQueue] = useState('2/2');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [json, setJson] = useState('');
@@ -24,7 +31,7 @@ export const ScheduleImportPage: React.FC = () => {
     try {
       payload = JSON.parse(json);
     } catch {
-      setError({ error: { code: 'JSON_PARSE', message: 'Не вдалося прочитати JSON. Перевірте, що скопійовано повну відповідь.' } });
+      setError({ error: { code: 'JSON_PARSE', message: t('scheduleImport.badJson') } });
       return;
     }
     setBusy(true);
@@ -35,80 +42,89 @@ export const ScheduleImportPage: React.FC = () => {
         body: JSON.stringify({ queue, date, payload }),
       });
       if (response.ok) {
-        setResult(await response.json() as ImportResult);
+        setResult((await response.json()) as ImportResult);
       } else {
-        setError(await response.json() as ApiError);
+        setError((await response.json()) as ApiError);
       }
     } catch {
-      setError({ error: { code: 'NETWORK', message: 'Сервер недоступний. Перевірте, що API запущено.' } });
+      setError({ error: { code: 'NETWORK', message: t('scheduleImport.network') } });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="space-y-5 max-w-3xl mx-auto pb-16 md:pb-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Імпорт графіка</h1>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          Скопіюйте JSON-відповідь сайту оператора у браузері та вставте сюди. Персональні дані (ПІБ, адреса, рахунок, token) не зберігаються.
-        </p>
-      </div>
+    <div className="mx-auto max-w-3xl space-y-5 pb-16 md:pb-6">
+      <header className="space-y-0.5">
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('scheduleImport.title')}</h1>
+        <p className="text-xs text-muted-foreground sm:text-sm">{t('scheduleImport.subtitle')}</p>
+      </header>
 
+      <div className="flex items-start gap-2 rounded-2xl border border-warning/40 bg-warning/5 p-4">
+        <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden />
+        <div>
+          <p className="text-sm font-semibold text-foreground">{t('scheduleImport.warningTitle')}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{t('scheduleImport.warningText')}</p>
+        </div>
+      </div>
       <Card>
         <CardContent className="p-4 sm:p-5">
           <form onSubmit={submit} className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <label htmlFor="import-queue" className="text-xs font-semibold text-foreground">Черга (наприклад 2/2 або 3)</label>
+                <label htmlFor="import-queue" className="text-xs font-semibold text-foreground">{t('scheduleImport.queueLabel')}</label>
                 <Input id="import-queue" value={queue} onChange={(event) => setQueue(event.target.value)} required className="h-11" />
               </div>
               <div className="space-y-1.5">
-                <label htmlFor="import-date" className="text-xs font-semibold text-foreground">Дата</label>
+                <label htmlFor="import-date" className="text-xs font-semibold text-foreground">{t('scheduleImport.dateLabel')}</label>
                 <Input id="import-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required className="h-11" />
               </div>
             </div>
+
             <div className="space-y-1.5">
-              <label htmlFor="import-json" className="text-xs font-semibold text-foreground">JSON-відповідь</label>
+              <label htmlFor="import-json" className="text-xs font-semibold text-foreground">{t('scheduleImport.jsonLabel')}</label>
               <textarea
                 id="import-json"
                 value={json}
                 onChange={(event) => setJson(event.target.value)}
                 rows={10}
                 required
+                spellCheck={false}
                 placeholder='{"status":"ok","aData":[...],"aState":{...}}'
-                className="w-full rounded-lg border border-border bg-background p-3 text-xs font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="tabular w-full rounded-xl border border-input bg-background p-3 font-mono text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
+
             <div className="space-y-1.5">
-              <label htmlFor="import-token" className="text-xs font-semibold text-foreground">Адмін-токен</label>
-              <Input id="import-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} required className="h-11 font-mono" />
+              <label htmlFor="import-token" className="text-xs font-semibold text-foreground">{t('scheduleImport.tokenLabel')}</label>
+              <Input id="import-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} required autoComplete="off" className="h-11 font-mono" />
             </div>
-            <Button type="submit" disabled={busy} className="gap-2 w-full sm:w-auto">
-              <Upload className="w-4 h-4" />
-              <span>{busy ? 'Імпортуємо…' : 'Імпортувати графік'}</span>
+
+            <Button type="submit" disabled={busy} className="w-full gap-2 sm:w-auto">
+              <Upload className="h-4 w-4" aria-hidden />
+              {busy ? t('scheduleImport.submitting') : t('scheduleImport.submit')}
             </Button>
           </form>
 
           {result && (
-            <div className="mt-4 flex items-start gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-              <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+            <div role="status" className="mt-4 flex items-start gap-2 rounded-2xl border border-success/40 bg-success/5 p-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden />
               <div>
-                <p className="font-semibold">Графік імпортовано</p>
-                <p className="text-xs mt-0.5">
-                  Черга {result.queue}, дата {result.date}: слотів у відповіді {result.imported}, після склейки {result.mergedIntervals}.
+                <p className="text-sm font-semibold text-foreground">{t('scheduleImport.successTitle')}</p>
+                <p className="tabular mt-0.5 text-xs text-muted-foreground">
+                  {t('scheduleImport.successText', { queue: result.queue, date: result.date, slots: result.imported, merged: result.mergedIntervals })}
                 </p>
               </div>
             </div>
           )}
 
           {error && (
-            <div className="mt-4 flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-400">
-              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div role="alert" className="mt-4 flex items-start gap-2 rounded-2xl border border-destructive/40 bg-destructive/5 p-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden />
               <div>
-                <p className="font-semibold">{error.error.message}</p>
+                <p className="text-sm font-semibold text-foreground">{error.error.message}</p>
                 {error.error.details && (
-                  <ul className="text-xs mt-1 list-disc list-inside">
+                  <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
                     {error.error.details.map((detail, index) => (
                       <li key={index}><code>{detail.path}</code> — {detail.message}</li>
                     ))}

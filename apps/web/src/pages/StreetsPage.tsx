@@ -1,10 +1,15 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Info, MapPin, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { CalendarDays, Info, MapPin, Plus, Trash2 } from 'lucide-react';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
 import { Button } from '../components/ui/Button.js';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Input } from '../components/ui/Input.js';
+import { Badge } from '../components/ui/Badge.js';
+import { Skeleton } from '../components/ui/Skeleton.js';
+import { EmptyState } from '../components/common/EmptyState.js';
+import { ErrorState } from '../components/common/ErrorState.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
 import { useStreetQueues, useStreetSchedule } from '../api/queries.js';
 import { api } from '../api/client.js';
@@ -22,7 +27,12 @@ function kyivDate(offsetDays = 0): string {
   return `${base.getUTCFullYear()}-${String(base.getUTCMonth() + 1).padStart(2, '0')}-${String(base.getUTCDate()).padStart(2, '0')}`;
 }
 
+/**
+ * «Вулиці села»: пошук вулиці → її черга → графік на добу. Внизу — адмін-блок
+ * керування відповідностями (потребує ADMIN_TOKEN, який ніде не зберігається).
+ */
 export const StreetsPage: React.FC = () => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [street, setStreet] = useState(() => localStorage.getItem(STREET_KEY) || '');
   const [day, setDay] = useState<0 | 1>(0);
@@ -45,100 +55,105 @@ export const StreetsPage: React.FC = () => {
     if (trimmed) localStorage.setItem(STREET_KEY, trimmed);
   };
 
-  const runAdmin = async (action: () => Promise<unknown>, okText: string) => {
+  const runAdmin = async (action: () => Promise<unknown>, okKey: string) => {
     setAdminBusy(true);
     setAdminMessage(null);
     try {
       await action();
       await queryClient.invalidateQueries({ queryKey: ['streetQueues'] });
       await queryClient.invalidateQueries({ queryKey: ['streetSchedule'] });
-      setAdminMessage({ kind: 'ok', text: okText });
+      setAdminMessage({ kind: 'ok', text: t(okKey) });
     } catch (error) {
-      setAdminMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Помилка запиту' });
+      setAdminMessage({ kind: 'error', text: error instanceof Error ? error.message : t('streets.requestError') });
     } finally {
       setAdminBusy(false);
     }
   };
 
   return (
-    <div className="space-y-5 max-w-4xl mx-auto pb-16 md:pb-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Вулиці села</h1>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          Знайдіть вулицю та побачте графік відключень для прив'язаної черги. Дані оновлюються після ручного імпорту графіка.
-        </p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-5 pb-16 md:pb-6">
+      <header className="space-y-0.5">
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('streets.title')}</h1>
+        <p className="text-xs text-muted-foreground sm:text-sm">{t('streets.subtitle')}</p>
+      </header>
 
-      <Card><CardContent className="space-y-3 p-4 sm:p-5">
-        <div className="space-y-1.5">
-          <label htmlFor="streets-search" className="text-xs font-semibold text-foreground">Вулиця</label>
-          <AddressCombobox id="streets-search" value={street} onChange={setStreet} onSelect={(suggestion) => chooseStreet(suggestion.name)} placeholder="Наприклад: вул. Зарічна" />
-        </div>
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Оберіть дату">
-          <Button variant={day === 0 ? 'default' : 'outline'} onClick={() => setDay(0)} className="gap-2"><CalendarDays className="w-4 h-4" />Сьогодні</Button>
-          <Button variant={day === 1 ? 'default' : 'outline'} onClick={() => setDay(1)} className="gap-2"><CalendarDays className="w-4 h-4" />Завтра</Button>
-          <span className="self-center text-sm text-muted-foreground">{date}</span>
-          {street.trim().length >= 2 && (
-            <Button size="sm" variant="outline" className="gap-2 sm:ml-auto" disabled={isFetching} onClick={() => refetch()}>
-              <RefreshCw className={cn('w-4 h-4', isFetching && 'animate-spin')} />Оновити
+      <Card>
+        <CardContent className="space-y-3 p-4 sm:p-5">
+          <div className="space-y-1.5">
+            <label htmlFor="streets-search" className="text-xs font-semibold text-foreground">{t('streets.streetLabel')}</label>
+            <AddressCombobox id="streets-search" value={street} onChange={setStreet} onSelect={(suggestion) => chooseStreet(suggestion.name)} placeholder={t('streets.searchPlaceholder')} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('streets.selectDate')}>
+            <Button variant={day === 0 ? 'default' : 'outline'} onClick={() => setDay(0)} className="gap-2">
+              <CalendarDays className="h-4 w-4" aria-hidden />
+              {t('streets.today')}
             </Button>
-          )}
-        </div>
-      </CardContent></Card>
-
-      {street.trim().length < 2 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          <MapPin className="w-6 h-6" />
-          Почніть вводити назву вулиці, щоб побачити її чергу та графік.
-        </div>
-      ) : scheduleLoading ? (
-        <div className="rounded-xl border border-border p-8 text-center text-sm text-muted-foreground">Завантажуємо графік…</div>
-      ) : scheduleError ? (
-        <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 text-center text-sm text-destructive">
-          Не вдалося завантажити дані. Перевірте підключення або спробуйте пізніше.
-        </div>
-      ) : schedule && schedule.queue === null ? (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-6 text-sm text-amber-700 dark:text-amber-300">
-          <Info className="mt-0.5 w-5 shrink-0" />
-          <div>
-            <p className="font-semibold">Вулицю «{street}» ще не прив'язано до черги.</p>
-            <p className="mt-0.5 text-xs">Додайте відповідність у розділі нижче, і графік з'явиться автоматично.</p>
+            <Button variant={day === 1 ? 'default' : 'outline'} onClick={() => setDay(1)} className="gap-2">
+              <CalendarDays className="h-4 w-4" aria-hidden />
+              {t('streets.tomorrow')}
+            </Button>
+            <span className="tabular self-center text-sm text-muted-foreground">{date}</span>
           </div>
-        </div>
-      ) : schedule ? (
-        <Card><CardContent className="space-y-4 p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="truncate font-semibold text-foreground">{schedule.street || street}</h2>
-              <p className="text-xs text-muted-foreground">{date}</p>
+        </CardContent>
+      </Card>
+
+      <section className="space-y-3" aria-busy={isFetching}>
+        {street.trim().length < 2 ? (
+          <EmptyState icon={MapPin} title={t('streets.hintTitle')} description={t('streets.hint')} />
+        ) : scheduleLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl" />
+          </div>
+        ) : scheduleError ? (
+          <ErrorState onRetry={() => refetch()} />
+        ) : schedule && schedule.queue === null ? (
+          <div className="flex items-start gap-2 rounded-2xl border border-warning/40 bg-warning/5 p-4">
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden />
+            <div>
+              <p className="text-sm font-semibold text-foreground">{t('streets.notBound')}: «{street}»</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t('streets.notBoundDesc')}</p>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-sm font-medium text-primary">Черга {schedule.queue}</span>
           </div>
-          <QueueScheduleBar intervals={schedule.intervals} date={date} />
-          {schedule.intervals.length > 0 && (
-            <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
-              {schedule.intervals.map((interval, index) => (
-                <li key={index} className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: interval.stateColor }} />
-                  <span className="font-mono tabular-nums">{formatTimeRange(interval.startsAt, interval.endsAt)}</span>
-                  <span className="text-muted-foreground">{interval.stateName}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>Джерело: {schedule.source === 'manual' ? 'ручний імпорт' : schedule.source ?? '—'}</span>
-            {schedule.lastImportedAt && <span>Імпортовано: {formatDateTime(schedule.lastImportedAt)}</span>}
-          </div>
-        </CardContent></Card>
-      ) : null}
+        ) : schedule ? (
+          <Card>
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-semibold text-foreground sm:text-base">{schedule.street || street}</h2>
+                  <p className="tabular text-xs text-muted-foreground">{date}</p>
+                </div>
+                <Badge variant="info">{t('streets.queue')} {schedule.queue}</Badge>
+              </div>
+              <QueueScheduleBar intervals={schedule.intervals} date={date} />
+              {schedule.intervals.length > 0 && (
+                <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
+                  {schedule.intervals.map((interval, index) => (
+                    <li key={index} className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: interval.stateColor }} aria-hidden />
+                      <span className="tabular font-mono">{formatTimeRange(interval.startsAt, interval.endsAt)}</span>
+                      <span className="text-muted-foreground">{interval.stateName}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>{t('streets.source')}: {schedule.source === 'manual' ? t('streets.sourceManual') : schedule.source ?? '—'}</span>
+                {schedule.lastImportedAt && <span>{t('streets.imported')}: {formatDateTime(schedule.lastImportedAt)}</span>}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+      </section>
 
-      <div className="space-y-3">
-        <h2 className="text-base font-semibold text-foreground">Усі вулиці ({pairs.length})</h2>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground sm:text-base">{t('streets.allStreets')} ({pairs.length})</h2>
         {pairsLoading ? (
-          <div className="text-sm text-muted-foreground">Завантаження…</div>
+          <div className="flex flex-wrap gap-2">
+            {[1, 2, 3, 4, 5].map((index) => <Skeleton key={index} className="h-11 w-28 rounded-full" />)}
+          </div>
         ) : pairs.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">Поки що жодної вулиці не прив'язано до черг.</div>
+          <EmptyState title={t('streets.pairsEmpty')} />
         ) : (
           <div className="flex flex-wrap gap-2">
             {pairs.map((pair) => (
@@ -147,7 +162,7 @@ export const StreetsPage: React.FC = () => {
                 type="button"
                 onClick={() => chooseStreet(pair.streetName)}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                  'inline-flex min-h-11 items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
                   street.trim() === pair.streetName ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-card hover:border-primary/50',
                 )}
               >
@@ -157,38 +172,39 @@ export const StreetsPage: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      <details className="rounded-xl border border-border bg-card/50">
-        <summary className="cursor-pointer p-4 text-sm font-semibold text-foreground">Керування відповідностями (адмін)</summary>
+      <details className="rounded-2xl border border-border bg-card/50">
+        <summary className="cursor-pointer p-4 text-sm font-semibold text-foreground">{t('streets.manage')}</summary>
         <div className="space-y-3 border-t border-border p-4">
           <div className="space-y-1.5">
-            <label htmlFor="admin-token" className="text-xs font-semibold text-foreground">Адмін-токен</label>
-            <Input id="admin-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} className="h-11 font-mono" placeholder="ADMIN_TOKEN" />
+            <label htmlFor="admin-token" className="text-xs font-semibold text-foreground">{t('streets.adminToken')}</label>
+            <Input id="admin-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} className="h-11 font-mono" placeholder="ADMIN_TOKEN" autoComplete="off" />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
             <div className="space-y-1.5">
-              <label htmlFor="admin-street" className="text-xs font-semibold text-foreground">Вулиця</label>
+              <label htmlFor="admin-street" className="text-xs font-semibold text-foreground">{t('streets.adminStreet')}</label>
               <Input id="admin-street" value={newStreet} onChange={(event) => setNewStreet(event.target.value)} className="h-11" placeholder="вул. Зарічна" />
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="admin-queue" className="text-xs font-semibold text-foreground">Черга</label>
-              <select id="admin-queue" value={newQueue} onChange={(event) => setNewQueue(event.target.value)} className="h-11 rounded-md border border-input bg-background px-3 text-sm text-foreground">
+              <label htmlFor="admin-queue" className="text-xs font-semibold text-foreground">{t('streets.adminQueue')}</label>
+              <select id="admin-queue" value={newQueue} onChange={(event) => setNewQueue(event.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm text-foreground">
                 {QUEUE_OPTIONS.map((queue) => <option key={queue} value={queue}>{queue}</option>)}
               </select>
             </div>
             <Button
-              className="h-11 gap-2"
+              className="gap-2"
               disabled={adminBusy || !token || newStreet.trim().length < 2}
-              onClick={() => runAdmin(() => api.upsertStreetQueue(newStreet.trim(), newQueue, token), 'Відповідність збережено')}
+              onClick={() => runAdmin(() => api.upsertStreetQueue(newStreet.trim(), newQueue, token), 'streets.savedOk')}
             >
-              <Plus className="w-4 h-4" />Додати
+              <Plus className="h-4 w-4" aria-hidden />
+              {t('streets.adminAdd')}
             </Button>
           </div>
           {adminMessage && (
-            <p role="status" className={cn('text-xs', adminMessage.kind === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive')}>{adminMessage.text}</p>
+            <p role="status" className={cn('text-xs font-medium', adminMessage.kind === 'ok' ? 'text-success' : 'text-destructive')}>{adminMessage.text}</p>
           )}
-          <ul className="divide-y divide-border rounded-lg border border-border">
+          <ul className="divide-y divide-border rounded-2xl border border-border">
             {pairs.map((pair) => (
               <li key={pair.streetNormalized} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <span className="min-w-0 truncate">{pair.streetName} <span className="text-muted-foreground">· {pair.queue}</span></span>
@@ -196,10 +212,10 @@ export const StreetsPage: React.FC = () => {
                   size="sm"
                   variant="outline"
                   disabled={adminBusy || !token}
-                  aria-label={`Видалити ${pair.streetName}`}
-                  onClick={() => runAdmin(() => api.deleteStreetQueue(pair.streetName, token), 'Відповідність видалено')}
+                  aria-label={`${t('common.delete')} ${pair.streetName}`}
+                  onClick={() => runAdmin(() => api.deleteStreetQueue(pair.streetName, token), 'streets.deletedOk')}
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="h-4 w-4" aria-hidden />
                 </Button>
               </li>
             ))}

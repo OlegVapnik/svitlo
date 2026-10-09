@@ -70,16 +70,11 @@ export function AddressCombobox({ value, onChange, onSelect, placeholder, id }: 
       }}
       className="h-11 w-full rounded-lg border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
     />
-    {/* Інлайн-фолбеки на CSS-змінні: список лишається непрозорим навіть якщо сторінка
-        відкрита зі старим (кешованим) CSS без токенів bg-popover / border-border. */}
+    {/* Список — непрозрачная popover-поверхность из токенов. Никаких inline-цветов:
+        bg-popover/border-border объявлены и в tailwind.config.ts, и в globals.css,
+        иначе классы молча не срабатывают и текст пропадает на фоне страницы. */}
     {open && value.trim().length >= 2 && <div
-      className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-xl"
-      style={{
-        zIndex: 60,
-        backgroundColor: 'hsl(var(--popover, 0 0% 100%))',
-        color: 'hsl(var(--popover-foreground, 222.2 84% 4.9%))',
-        borderColor: 'hsl(var(--border, 214.3 31.8% 91.4%))',
-      }}
+      className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-auto rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl"
       role="presentation"
     >
       {loading && <div className="px-4 py-3 text-sm text-muted-foreground" role="status">Шукаємо адресу…</div>}

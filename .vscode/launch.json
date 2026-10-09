@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "web: Firefox (dev server 5173)",
+      "type": "firefox",
+      "request": "launch",
+      "reAttach": true,
+      "url": "http://localhost:5173/",
+      "webRoot": "${workspaceFolder}/apps/web/src",
+      "sourceMaps": "client",
+      "pathMappings": [
+        {
+          "url": "http://localhost:5173/src",
+          "path": "${workspaceFolder}/apps/web/src"
+        }
+      ]
+    },
+    {
+      "name": "web: Firefox (docker 3000, prod bundle)",
+      "type": "firefox",
+      "request": "launch",
+      "reAttach": true,
+      "url": "http://localhost:3000/",
+      "webRoot": "${workspaceFolder}/apps/web/src"
+    },
+    {
+      "name": "web: Firefox (attach to running instance)",
+      "type": "firefox",
+      "request": "attach"
+    }
+  ]
+}

@@ -2,145 +2,99 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Phone, Mail, Globe, Send, MessageCircle, ExternalLink } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card.js';
+import { Badge } from '../components/ui/Badge.js';
+import { Skeleton } from '../components/ui/Skeleton.js';
 import { useContacts } from '../api/queries.js';
 import type { Contact } from '@energy-monitor/shared';
+
+/**
+ * Фолбэк-контакты, если API ничего не вернул. Номера из открытых источников оператора.
+ * Цвета иконок — токены (success/info/primary): жёсткие blue-500/emerald-500 в тёмной теме
+ * давали слабый контраст (skills/frontend-ui-change).
+ */
+const FALLBACK_CONTACTS: Contact[] = [
+  { id: '1', type: 'phone', label: 'Кол-центр (безкоштовно по Україні)', value: '0800210310', region: 'Чернігівська область' },
+  { id: '2', type: 'phone', label: 'Міський телефон Чернігів', value: '0462772901', region: 'Чернігів' },
+  { id: '3', type: 'telegram', label: 'Telegram-канал з новинами', value: 'https://t.me/chernigivoblenergo', region: null },
+  { id: '4', type: 'telegram', label: 'Telegram-бот для перевірки черги', value: 'https://t.me/ChernigivOEbot', region: null },
+  { id: '5', type: 'viber', label: 'Viber-бот АТ «Чернігівобленерго»', value: 'https://chernihivoblenergo.com.ua/in_viber', region: null },
+  { id: '6', type: 'link', label: 'Офіційний сайт', value: 'https://chernihivoblenergo.com.ua', region: null },
+  { id: '7', type: 'link', label: 'Онлайн-звернення споживачів', value: 'https://chernihivoblenergo.com.ua/feedback_new', region: null },
+] as Contact[];
+
+function contactIcon(type: string) {
+  if (type === 'phone') return <Phone className="h-5 w-5" aria-hidden />;
+  if (type === 'email') return <Mail className="h-5 w-5" aria-hidden />;
+  if (type === 'telegram') return <Send className="h-5 w-5" aria-hidden />;
+  if (type === 'viber') return <MessageCircle className="h-5 w-5" aria-hidden />;
+  return <Globe className="h-5 w-5" aria-hidden />;
+}
+
+function contactTone(type: string) {
+  if (type === 'phone' || type === 'email') return 'bg-success/10 text-success';
+  if (type === 'telegram' || type === 'viber') return 'bg-info/10 text-info';
+  return 'bg-primary/10 text-primary';
+}
+
+function formatPhone(phone: string) {
+  if (phone.startsWith('0800')) return `0 (800) ${phone.slice(4, 7)}-${phone.slice(7)}`;
+  if (phone.startsWith('0462')) return `0 (462) ${phone.slice(4, 7)}-${phone.slice(7)}`;
+  return phone;
+}
 
 export const ContactsPage: React.FC = () => {
   const { t } = useTranslation();
   const { data: contactsResponse, isLoading } = useContacts();
-
-  const contacts: Contact[] = contactsResponse?.data?.length ? contactsResponse.data : [
-    {
-      id: '1',
-      type: 'phone',
-      label: 'Кол-центр (безкоштовно по Україні)',
-      value: '0800210310',
-      region: 'Чернігівська область',
-    },
-    {
-      id: '2',
-      type: 'phone',
-      label: 'Міський телефон Чернігів',
-      value: '0462772901',
-      region: 'Чернігів',
-    },
-    {
-      id: '3',
-      type: 'telegram',
-      label: 'Telegram-канал з новинами',
-      value: 'https://t.me/chernigivoblenergo',
-      region: null,
-    },
-    {
-      id: '4',
-      type: 'telegram',
-      label: 'Telegram-бот для перевірки черги',
-      value: 'https://t.me/ChernigivOEbot',
-      region: null,
-    },
-    {
-      id: '5',
-      type: 'viber',
-      label: 'Viber-бот АТ «Чернігівобленерго»',
-      value: 'https://chernihivoblenergo.com.ua/in_viber',
-      region: null,
-    },
-    {
-      id: '6',
-      type: 'link',
-      label: 'Офіційний сайт',
-      value: 'https://chernihivoblenergo.com.ua',
-      region: null,
-    },
-    {
-      id: '7',
-      type: 'link',
-      label: 'Онлайн-звернення споживачів',
-      value: 'https://chernihivoblenergo.com.ua/feedback_new',
-      region: null,
-    },
-  ];
-
-  const getContactIcon = (type: string) => {
-    switch (type) {
-      case 'phone':
-        return <Phone className="w-5 h-5 text-blue-500" />;
-      case 'email':
-        return <Mail className="w-5 h-5 text-emerald-500" />;
-      case 'telegram':
-        return <Send className="w-5 h-5 text-sky-500" />;
-      case 'viber':
-        return <MessageCircle className="w-5 h-5 text-purple-500" />;
-      default:
-        return <Globe className="w-5 h-5 text-primary" />;
-    }
-  };
-
-  const formatPhone = (phone: string) => {
-    if (phone.startsWith('0800')) {
-      return `0 (800) ${phone.slice(4, 7)}-${phone.slice(7)}`;
-    }
-    if (phone.startsWith('0462')) {
-      return `0 (462) ${phone.slice(4, 7)}-${phone.slice(7)}`;
-    }
-    return phone;
-  };
+  const contacts: Contact[] = contactsResponse?.data?.length ? contactsResponse.data : FALLBACK_CONTACTS;
 
   return (
-    <div className="space-y-4 max-w-4xl mx-auto pb-16 md:pb-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-          {t('contacts.title', 'Контакти підтримки')}
-        </h1>
-        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-          Офіційні канали зв'язку АТ «Чернігівобленерго» для довідок та аварійних повідомлень
-        </p>
-      </div>
+    <div className="mx-auto max-w-4xl space-y-4 pb-16 md:pb-6">
+      <header className="space-y-0.5">
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('contacts.title')}</h1>
+        <p className="text-xs text-muted-foreground sm:text-sm">{t('contacts.subtitle')}</p>
+      </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {contacts.map((contact) => {
-          const isPhone = contact.type === 'phone';
-          const isEmail = contact.type === 'email';
-          const href = isPhone
-            ? `tel:${contact.value}`
-            : isEmail
-            ? `mailto:${contact.value}`
-            : contact.value;
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {[1, 2, 3, 4].map((index) => <Skeleton key={index} className="h-20 w-full rounded-2xl" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {contacts.map((contact) => {
+            const isPhone = contact.type === 'phone';
+            const isEmail = contact.type === 'email';
+            const href = isPhone ? `tel:${contact.value}` : isEmail ? `mailto:${contact.value}` : contact.value;
+            return (
+              <Card key={contact.id} className="transition-colors hover:border-primary/50">
+                <CardContent className="p-4 sm:p-5">
+                  <a
+                    href={href}
+                    target={isPhone || isEmail ? '_self' : '_blank'}
+                    rel="noopener noreferrer"
+                    className="flex w-full items-start gap-3"
+                  >
+                    <span className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${contactTone(contact.type)}`}>
+                      {contactIcon(contact.type)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium text-muted-foreground">{contact.label}</span>
+                      <span className="mt-0.5 block truncate text-sm font-semibold text-foreground sm:text-base">
+                        {isPhone ? formatPhone(contact.value) : contact.value}
+                      </span>
+                      {contact.region && <span className="mt-0.5 block text-[11px] text-muted-foreground">{contact.region}</span>}
+                    </span>
+                    <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  </a>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
-          return (
-            <Card
-              key={contact.id}
-              className="hover:border-primary/50 transition-all cursor-pointer group"
-            >
-              <CardContent className="p-4">
-                <a
-                  href={href}
-                  target={isPhone || isEmail ? '_self' : '_blank'}
-                  rel="noopener noreferrer"
-                  className="flex items-start gap-3 w-full"
-                >
-                  <div className="p-2.5 rounded-xl bg-muted/60 shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                    {getContactIcon(contact.type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-muted-foreground font-medium">
-                      {contact.label}
-                    </div>
-                    <div className="text-sm sm:text-base font-semibold text-foreground truncate mt-0.5 group-hover:text-primary transition-colors">
-                      {isPhone ? formatPhone(contact.value) : contact.value}
-                    </div>
-                    {contact.region && (
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {contact.region}
-                      </div>
-                    )}
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-muted-foreground shrink-0 group-hover:text-primary transition-colors" />
-                </a>
-              </CardContent>
-            </Card>
-          );
-        })}
+      <div className="flex items-start gap-2 rounded-2xl border border-info/40 bg-info/5 p-4">
+        <Badge variant="info">{t('contacts.hotline')}</Badge>
+        <p className="text-xs text-muted-foreground">{t('contacts.sourceNote')}</p>
       </div>
     </div>
   );
