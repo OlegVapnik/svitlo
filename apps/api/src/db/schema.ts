@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, uuid, integer, doublePrecision, index, uniqueIndex, date, smallint } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, timestamp, uuid, integer, doublePrecision, index, uniqueIndex, check, primaryKey, date, smallint } from 'drizzle-orm/pg-core';
 import { sql, relations } from 'drizzle-orm';
 
 export const sources = pgTable('sources', {
@@ -37,6 +37,44 @@ export const outages = pgTable('outages', {
     externalSourceIdx: uniqueIndex('outages_source_external_id_uq').on(table.source, table.externalId)
   };
 });
+
+/**
+ * Канонічна подія відключення: один рядок на РЕАЛЬНУ подію, а не на адресу
+ * (див. skills/outage-data-core). event_key — з outageEventKey(), тобто ідентичність БЕЗ адрес;
+ * перелік адрес живе в outage_event_addresses, а не в текстовому блобі.
+ */
+export const outageEvents = pgTable('outage_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sourceId: uuid('source_id').references(() => sources.id).notNull(),
+  eventKey: text('event_key').notNull(),
+  /** emergency | repair | regime | planned | other — CHECK у міграції 0008_outage_events.sql. */
+  category: text('category').notNull(),
+  reason: text('reason'),
+  areaName: text('area_name'),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  externalId: text('external_id'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  identityUq: uniqueIndex('outage_events_identity_uq').on(table.sourceId, table.eventKey),
+  rangeIdx: index('outage_events_range_idx').on(table.startsAt, table.endsAt),
+  categoryIdx: index('outage_events_category_idx').on(table.category),
+  areaIdx: index('outage_events_area_idx').on(table.areaName),
+  categoryChk: check('outage_events_category_chk', sql`${table.category} IN ('emergency', 'repair', 'regime', 'planned', 'other')`),
+  rangeChk: check('outage_events_range_chk', sql`${table.endsAt} IS NULL OR ${table.endsAt} >= ${table.startsAt}`)
+}));
+
+/** Адреси події (багато на одну подію): address_normalized = energy_normalize_address(address_raw). */
+export const outageEventAddresses = pgTable('outage_event_addresses', {
+  eventId: uuid('event_id').notNull().references(() => outageEvents.id, { onDelete: 'cascade' }),
+  addressRaw: text('address_raw').notNull(),
+  addressNormalized: text('address_normalized').notNull()
+}, (table) => ({
+  pk: primaryKey({ columns: [table.eventId, table.addressNormalized] }),
+  trgmIdx: index('outage_event_addresses_trgm_idx').using('gin', sql`${table.addressNormalized} gin_trgm_ops`)
+}));
 
 export const addresses = pgTable('addresses', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -147,7 +185,17 @@ export const geocodeCache = pgTable('geocode_cache', {
 export const sourceRelations = relations(sources, ({ many }) => ({
   outages: many(outages),
   incidents: many(incidents),
-  parseRuns: many(parseRuns)
+  parseRuns: many(parseRuns),
+  outageEvents: many(outageEvents)
+}));
+
+export const outageEventsRelations = relations(outageEvents, ({ one, many }) => ({
+  source: one(sources, { fields: [outageEvents.sourceId], references: [sources.id] }),
+  addresses: many(outageEventAddresses)
+}));
+
+export const outageEventAddressRelations = relations(outageEventAddresses, ({ one }) => ({
+  event: one(outageEvents, { fields: [outageEventAddresses.eventId], references: [outageEvents.id] })
 }));
 
 export const outageRelations = relations(outages, ({ one }) => ({
