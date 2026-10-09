@@ -13,9 +13,10 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from './connection.js';
-import { outageEvents, outages } from './schema.js';
+import { outages } from './schema.js';
 import { outageCategoryFromReason } from '../services/outage-classification.js';
 import { outageEventKey } from '../services/outage-grouping.js';
+import { upsertOutageEvent, upsertOutageEventAddress } from './outage-events-writer.js';
 
 export interface BackfillSummary {
   /** Скільки сирих рядків оператора прочитано. */
@@ -40,45 +41,23 @@ export async function backfillOutageEvents(): Promise<BackfillSummary> {
 
     const eventKey = outageEventKey(row);
 
-    const [event] = await db
-      .insert(outageEvents)
-      .values({
-        sourceId: row.sourceId,
-        eventKey,
-        category,
-        reason: row.reason,
-        areaName: row.areaName,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
-        // Статус у старій таблиці — рядок, а не час. Для 'cancelled' беремо updated_at (момент, коли стан
-        // востаннє фіксувався оператором): інакше після перемикання читачів скасоване вікно знову
-        // виглядало б як заплановане. Реальний час скасування з'явиться на кроці 5 (ingest).
-        cancelledAt: row.status === 'cancelled' ? row.updatedAt : null,
-        externalId: row.externalId,
-      })
-      .onConflictDoUpdate({
-        target: [outageEvents.sourceId, outageEvents.eventKey],
-        set: {
-          category: sql`excluded.category`,
-          // Злиття за планом: найраніший старт і найпізніше завершення.
-          // GREATEST/LEAST ігнорують NULL, тому «без завершення» не губиться.
-          startsAt: sql`least(${outageEvents.startsAt}, excluded.starts_at)`,
-          endsAt: sql`greatest(${outageEvents.endsAt}, excluded.ends_at)`,
-          // Перше відоме скасування не перезаписуємо.
-          cancelledAt: sql`coalesce(${outageEvents.cancelledAt}, excluded.cancelled_at)`,
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({ id: outageEvents.id });
+    const eventId = await upsertOutageEvent(db, {
+      sourceId: row.sourceId,
+      eventKey,
+      category,
+      reason: row.reason,
+      areaName: row.areaName,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+      // Статус у старій таблиці — рядок, а не час. Для 'cancelled' беремо updated_at (момент, коли стан
+      // востаннє фіксувався оператором): інакше після перемикання читачів скасоване вікно знову
+      // виглядало б як заплановане. Це стосується ЛИШЕ історичних рядків: реальний час скасування пише
+      // ingest (markMissingEventsCancelled), і в минуле його не відновити.
+      cancelledAt: row.status === 'cancelled' ? row.updatedAt : null,
+      externalId: row.externalId,
+    });
 
-    if (!event) throw new Error(`upsert into outage_events failed for key "${eventKey}"`);
-
-    // energy_normalize_address() — та сама функція БД, що й для outages.addresses_normalized.
-    await db.execute(sql`
-      INSERT INTO outage_event_addresses (event_id, address_raw, address_normalized)
-      VALUES (${event.id}, ${row.addressesRaw}, energy_normalize_address(${row.addressesRaw}))
-      ON CONFLICT DO NOTHING
-    `);
+    await upsertOutageEventAddress(db, eventId, row.addressesRaw);
   }
 
   const [totals] = (await db.execute(sql`

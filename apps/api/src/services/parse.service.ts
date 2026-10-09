@@ -4,14 +4,17 @@ import { ChernihivAdapter } from '../parsers/chernihiv.adapter.js';
 import { ChernihivWebAdapter } from '../parsers/chernihiv-web.adapter.js';
 import { TelegramChannelAdapter } from '../parsers/telegram-channel.adapter.js';
 import { TelegramBotAdapter } from '../parsers/telegram-bot.adapter.js';
-import { ISourceAdapter, ParseResult } from '../parsers/adapter.js';
+import { ISourceAdapter, NormalizedOutage, ParseResult } from '../parsers/adapter.js';
 import { db } from '../db/connection.js';
-import { parseRuns, outages, sources, incidents, gridStatus, telegramPosts as telegramPostsTable } from '../db/schema.js';
+import { parseRuns, outages, sources, incidents, gridStatus, telegramPosts as telegramPostsTable, outageEvents, outageEventAddresses } from '../db/schema.js';
 import { contentHash } from '../utils/hash.js';
 import { normalizeAddress, normalizeOutageLocation } from '../parsers/normalizer.js';
 import { updateOutageStatuses } from './outage.service.js';
 import { logger } from '../utils/logger.js';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { mergeDuplicateOutages, outageEventKey } from './outage-grouping.js';
+import { outageCategoryFromReason } from './outage-classification.js';
+import { markMissingEventsCancelled, upsertOutageEvent, upsertOutageEventAddress } from '../db/outage-events-writer.js';
 
 function getAdapters(): ISourceAdapter[] {
   if (env.USE_MOCK_ADAPTER) return [new MockAdapter()];
@@ -30,6 +33,188 @@ function getAdapters(): ISourceAdapter[] {
   const adapters: ISourceAdapter[] = [primary, new TelegramChannelAdapter()];
   if (env.TELEGRAM_BOT_ENABLED) adapters.push(new TelegramBotAdapter());
   return adapters;
+}
+
+/** Підсумок dual-write одного прогону: скільки подій дає старий шлях і скільки їх у новій таблиці. */
+export interface IngestOutagesResult {
+  /** Рядків у стрічці оператора (рядок = адреса). */
+  rowsInFeed: number;
+  /** Скільки подій дає СТАРИЙ шлях згортання на цій самій стрічці. */
+  eventsOldPath: number;
+  /** Скільки унікальних ключів подій дала нова таблиця (логіка ingest). */
+  eventsNewPath: number;
+  /** Скільки рядків outage_events лежить у БД за ключами цієї стрічки. */
+  eventsInTable: number;
+  /** Скільки адрес у outage_event_addresses за ключами цієї стрічки. */
+  addressesInTable: number;
+  /** Скільки подій позначено скасованими цим прогоном. */
+  cancelledMarked: number;
+  /** Причини, які класифікатор не відніс до відомої категорії ('other') — для warn, без адрес. */
+  unclassifiedReasons: string[];
+}
+
+/**
+ * Dual-write (крок 4 плану міграції): ОДНА транзакція пише і старі рядки `outages` (рядок = адреса,
+ * як і раніше), і канонічну подію в `outage_events` разом з її адресами. Ключ події та категорію
+ * беруть ті самі функції, що й backfill (`outageEventKey`/`outageCategoryFromReason`): друга копія
+ * логіки означала б два джерела правди (invariant 3 у skills/outage-data-core).
+ *
+ * Читачів не перемикає: усе, що бачить застосунок, досі приходить зі старої таблиці.
+ */
+export async function ingestOutages(
+  sourceId: string,
+  sourceName: string,
+  feed: NormalizedOutage[],
+  options: { now?: Date } = {},
+): Promise<IngestOutagesResult> {
+  const now = options.now ?? new Date();
+  const seenEventKeys: string[] = [];
+  const unclassifiedReasons = new Set<string>();
+
+  // Число подій по СТАРОМУ шляху — та сама функція, що стоїть у /outages. Це тимчасовий
+  // діагностичний виклик: він зникає разом із mergeDuplicateOutages на кроці 6 плану.
+  const eventsOldPath = mergeDuplicateOutages(
+    feed.map((outage) => ({
+      startsAt: outage.startsAt,
+      endsAt: outage.endsAt,
+      areaName: normalizeOutageLocation(outage.areaName, outage.addressesRaw),
+      addressesRaw: outage.addressesRaw,
+      reason: outage.reason,
+    })),
+  ).length;
+
+  const cancelledMarked = await db.transaction(async (tx) => {
+    for (const outage of feed) {
+      const normArea = normalizeOutageLocation(outage.areaName, outage.addressesRaw);
+      const normAddr = normalizeAddress(outage.addressesRaw);
+      const hash = contentHash(
+        `${sourceId}-${normArea}-${outage.addressesRaw}-${outage.startsAt.toISOString()}-${outage.endsAt.toISOString()}`,
+      );
+
+      const isCurrent = outage.startsAt <= now && outage.endsAt >= now;
+      const initialStatus = isCurrent ? 'active' : outage.startsAt > now ? 'scheduled' : 'finished';
+
+      await tx
+        .insert(outages)
+        .values({
+          sourceId,
+          source: sourceName,
+          externalId: outage.externalId ?? null,
+          startsAt: outage.startsAt,
+          endsAt: outage.endsAt,
+          areaName: normArea,
+          addressesRaw: outage.addressesRaw,
+          addressesNormalized: normAddr,
+          reason: outage.reason,
+          queue: outage.queue,
+          contentHash: hash,
+          status: initialStatus,
+          firstSeenAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [outages.contentHash, outages.sourceId],
+          set: {
+            areaName: normArea,
+            addressesRaw: outage.addressesRaw,
+            addressesNormalized: normAddr,
+            reason: outage.reason,
+            queue: outage.queue,
+            status: initialStatus,
+            updatedAt: now,
+          },
+        });
+
+      // Канонічна подія: ключ БЕЗ адрес — саме він згортає 30 адресних рядків у 6 подій.
+      const eventKey = outageEventKey({
+        startsAt: outage.startsAt,
+        endsAt: outage.endsAt,
+        areaName: normArea,
+        addressesRaw: outage.addressesRaw,
+        reason: outage.reason,
+      });
+      const category = outageCategoryFromReason(outage.reason);
+      if (category === 'other') unclassifiedReasons.add((outage.reason ?? '(порожня причина)').slice(0, 120));
+
+      const eventId = await upsertOutageEvent(tx, {
+        sourceId,
+        eventKey,
+        category,
+        reason: outage.reason,
+        areaName: normArea,
+        startsAt: outage.startsAt,
+        endsAt: outage.endsAt,
+        // Dual-write не вигадує історію: скасування ставить блок нижче, за фактом зникнення вікна.
+        cancelledAt: null,
+        externalId: outage.externalId ?? null,
+      });
+      await upsertOutageEventAddress(tx, eventId, outage.addressesRaw);
+      seenEventKeys.push(eventKey);
+    }
+
+    // Події, яких більше немає у стрічці, хоч вони ще не почалися: оператор їх скасував.
+    // Порожня стрічка нікого не скасовує (див. markMissingEventsCancelled).
+    return markMissingEventsCancelled(tx, sourceId, seenEventKeys, now);
+  });
+
+  // Діагностика dual-write: скільки подій та адрес реально лежить у нових таблицях за ключами цієї
+  // стрічки. Query builder, а не сирий sql: у сирому шаблоні drizzle не мапить параметри під колонки.
+  let counts = { events: 0, addresses: 0 };
+  const uniqueEventKeys = [...new Set(seenEventKeys)];
+  if (uniqueEventKeys.length > 0) {
+    const [eventsRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outageEvents)
+      .where(and(eq(outageEvents.sourceId, sourceId), inArray(outageEvents.eventKey, uniqueEventKeys)));
+    const [addressesRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(outageEventAddresses)
+      .innerJoin(outageEvents, eq(outageEventAddresses.eventId, outageEvents.id))
+      .where(and(eq(outageEvents.sourceId, sourceId), inArray(outageEvents.eventKey, uniqueEventKeys)));
+    counts = { events: eventsRow?.count ?? 0, addresses: addressesRow?.count ?? 0 };
+  }
+
+  return {
+    rowsInFeed: feed.length,
+    eventsOldPath,
+    eventsNewPath: new Set(seenEventKeys).size,
+    eventsInTable: counts.events,
+    addressesInTable: counts.addresses,
+    cancelledMarked,
+    unclassifiedReasons: [...unclassifiedReasons],
+  };
+}
+
+/** Лог звірки dual-write: обидва шляхи мусять бачити однакову кількість подій (крок 4 плану). */
+function logDualWriteComparison(sourceId: string, result: IngestOutagesResult): void {
+  logger.info(
+    {
+      sourceId,
+      rowsInFeed: result.rowsInFeed,
+      eventsOldPath: result.eventsOldPath,
+      eventsNewPath: result.eventsNewPath,
+      eventsInTable: result.eventsInTable,
+      addressesInTable: result.addressesInTable,
+      cancelledMarked: result.cancelledMarked,
+    },
+    'Outage dual-write: events by old path vs outage_events',
+  );
+
+  if (result.eventsOldPath !== result.eventsInTable) {
+    logger.warn(
+      { sourceId, eventsOldPath: result.eventsOldPath, eventsInTable: result.eventsInTable },
+      'Outage dual-write MISMATCH: old path and outage_events disagree',
+    );
+  }
+
+  // Категорія 'other' — не помилка, а сигнал: регекси класифікатора треба розширити.
+  // Пишемо лише причини (без адрес), щоб не тягнути персональні дані в логи.
+  if (result.unclassifiedReasons.length > 0) {
+    logger.warn(
+      { sourceId, count: result.unclassifiedReasons.length, samples: result.unclassifiedReasons.slice(0, 5) },
+      'Outage dual-write: reasons without a known category',
+    );
+  }
 }
 
 export async function runParse(sourceId: string) {
@@ -96,48 +281,10 @@ export async function runParse(sourceId: string) {
     await mkdir(snapshotDirectory, { recursive: true });
     await writeFile(new URL(`${run.id}.json`, snapshotDirectory), JSON.stringify({ primary: primaryData.rawSnapshot, secondary: secondaryData.map(({ adapter: adapterName, data: result }) => ({ adapter: adapterName, snapshot: result.rawSnapshot, posts: result.posts })) }), 'utf8');
 
-    // 1. Upsert Outages
-    for (const outage of primaryData.outages) {
-      const normArea = normalizeOutageLocation(outage.areaName, outage.addressesRaw);
-      const normAddr = normalizeAddress(outage.addressesRaw);
-      const hash = contentHash(
-        `${sourceId}-${normArea}-${outage.addressesRaw}-${outage.startsAt.toISOString()}-${outage.endsAt.toISOString()}`,
-      );
-
-      const isCurrent = outage.startsAt <= now && outage.endsAt >= now;
-      const initialStatus = isCurrent ? 'active' : outage.startsAt > now ? 'scheduled' : 'finished';
-
-      await db
-        .insert(outages)
-        .values({
-          sourceId,
-          source: adapter.name,
-          externalId: outage.externalId ?? null,
-          startsAt: outage.startsAt,
-          endsAt: outage.endsAt,
-          areaName: normArea,
-          addressesRaw: outage.addressesRaw,
-          addressesNormalized: normAddr,
-          reason: outage.reason,
-          queue: outage.queue,
-          contentHash: hash,
-          status: initialStatus,
-          firstSeenAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [outages.contentHash, outages.sourceId],
-          set: {
-            areaName: normArea,
-            addressesRaw: outage.addressesRaw,
-            addressesNormalized: normAddr,
-            reason: outage.reason,
-            queue: outage.queue,
-            status: initialStatus,
-            updatedAt: now,
-          },
-        });
-    }
+    // 1. Upsert Outages + dual-write канонічних подій в ОДНІЙ транзакції (крок 4 плану міграції).
+    //    Читачі поки що читають стару таблицю — тут для них нічого не змінюється.
+    const ingest = await ingestOutages(sourceId, adapter.name, primaryData.outages, { now });
+    logDualWriteComparison(sourceId, ingest);
 
     // Persist Telegram post IDs in their own table; channel content never becomes an outage record.
     for (const post of telegramPosts) {
