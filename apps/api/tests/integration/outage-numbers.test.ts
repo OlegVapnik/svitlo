@@ -9,10 +9,11 @@
  * (`mergeDuplicateOutages`) і дає 6, а `/outages/stats` рахує сирі рядки й дає 30 —
  * саме тому цей тест ЧЕРВОНИЙ: він і є доказом, що моделі потрібна `outage_events`.
  *
- * Потребує окремої БД (щоб не чіпати робочу):
+ * Потребує окремої БД (щоб не чіпати робочу); без TEST_DATABASE_URL файл ПРОПУСКАЄТЬСЯ (skipped),
+ * щоб `pnpm test` лишався зеленим без БД. «Червоний» прогін — явно, через `test:integration`:
  *   docker compose exec -T db createdb -U energymon energymon_test
  *   TEST_DATABASE_URL=postgresql://energymon:energymon@localhost:5432/energymon_test \   (scan:allow: local dev default, not a secret)
- *     pnpm --filter @energy-monitor/api exec vitest run tests/integration/outage-numbers.test.ts
+ *     pnpm --filter @energy-monitor/api test:integration
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readdir, readFile } from 'node:fs/promises';
@@ -150,13 +151,12 @@ async function ensureSchema(): Promise<void> {
   }
 }
 
-describe('numbers must match: 6 events described by 30 address rows', () => {
-  beforeAll(async () => {
-    expect(
-      TEST_DATABASE_URL,
-      'TEST_DATABASE_URL is required: create a throwaway DB with `docker compose exec -T db createdb -U energymon energymon_test` and pass postgresql://energymon:energymon@localhost:5432/energymon_test', // scan:allow local dev default
-    ).not.toBe('');
+// Без TEST_DATABASE_URL файл пропускается (skipped) вместо падения: `pnpm test` остаётся зелёным
+// без БД, а «красный»/зелёный прогон против реальной схемы делается явно — `pnpm test:integration`.
+const describeWithDb = describe.skipIf(!TEST_DATABASE_URL);
 
+describeWithDb('numbers must match: 6 events described by 30 address rows', () => {
+  beforeAll(async () => {
     const databaseName = new URL(TEST_DATABASE_URL).pathname.replace(/^\//, '');
     if (!/_test$/.test(databaseName)) {
       throw new Error(
