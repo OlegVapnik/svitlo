@@ -6,7 +6,8 @@
  * інакше два джерела правди розійдуться. Нормалізацію адреси робить сама БД (`energy_normalize_address`),
  * щоб не мати другої реалізації нормалізації в TypeScript.
  *
- * Запуск:  DATABASE_URL=... pnpm --filter @energy-monitor/api exec tsx src/db/backfill-outage-events.ts
+ * Запуск:  pnpm --filter @energy-monitor/api db:backfill-events
+ *          (еквівалент: DATABASE_URL=... pnpm --filter @energy-monitor/api exec tsx src/db/backfill-outage-events.ts)
  * Ідемпотентний: upsert за (source_id, event_key) — повторний запуск не створює нових подій.
  * Читачів не перемикає: стара таблиця `outages` не змінюється (dual-write і перемикання — кроки 4–5).
  */
