@@ -9,6 +9,11 @@ const envSchema = z.object({
   // Джиттер (хвилини), що додається до інтервалу опитування, щоб не бити рівно по розкладу (анти-бот).
   PARSE_INTERVAL_JITTER_MINUTES: z.coerce.number().default(5),
   PARSE_TIMEOUT_MS: z.coerce.number().default(30000),
+  // Каталог сырых ответов оператора (PII-риск: адреса/ПИБ могут встречаться).
+  // Держим ВНЕ src/dist, путь без "snapshots/" (иначе .gitignore-правило `snapshots/`
+  // совпадёт с любой вложенной папкой и каталог никогда не создастся). В контейнере
+  // переопределяется на /var/lib/energy-monitor/snapshots (docker-compose.yml).
+  SNAPSHOT_DIR: z.string().default('../../operator-samples/raw-snapshots'),
   PARSER_USER_AGENT: z.string().default('EnergyMonitor/1.0'),
   SOURCE_URL: z.string().url().default('http://manual-import.invalid/disabled'),
   // Публічний веб-API оператора (сторінка /power_outages). Увімкнює автоматичне

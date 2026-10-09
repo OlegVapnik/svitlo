@@ -7,9 +7,12 @@ nohup.out
 .DS_Store
 coverage/
 .playwright/
-snapshots/*.html
-snapshots/*.json
+snapshots/
 !snapshots/.gitkeep
+/apps/api/snapshots/
+!/apps/api/snapshots/.gitkeep
+/apps/api/dist/snapshots/
+/apps/api/src/snapshots/
 # Operator response samples may contain account identifiers, names, addresses, and session tokens
 /1/
 /operator-samples/
