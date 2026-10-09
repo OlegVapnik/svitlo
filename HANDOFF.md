@@ -11,15 +11,15 @@
 | Что | Значение |
 |---|---|
 | Ветка | `ai/stage1-ops` — **локальная, не запушена** (upstream не задан) |
-| HEAD | этот файл — `docs(repo): add HANDOFF.md — branch state, done/left steps, commands, red test`; перед ним `337951a docs(skills): record the postgres.js Date-param footgun in db-migrations` |
+| HEAD | `c30db48 feat(api): read canonical outage events in stats, status and incidents`; под ним `e67a3e4 fix(api): make outage ingest idempotent across both unique keys` |
 | База | `main` = `33fa832 chore: initial commit (baseline before audit fixes)` |
 | Соседняя ветка | `ai/stage0-bleeding-stop` = `fcadd58` (аварийные фиксы Stage 0) |
-| Рабочее дерево | чистое |
-| Сделано по плану | шаги **0, 1, 2, 3, 4** |
-| Осталось | шаги **5, 6, 7** (7 уже описан, действий не требует), **8** — отдельный релиз |
-| Приёмочный тест | `tests/integration/outage-numbers.test.ts` — **КРАСНЫЙ by design**: 3 из 6 кейсов (см. §5) |
-| Рабочая БД (dev) | 32 строки `outages` → 6 событий / 32 адреса в `outage_events*`, 0 отменённых |
-| Свежий бэкап | `../energy-monitor-backups/energymon_after_dual_write_2026-10-09_1832.dump` (44 545 B; проверен восстановлением: 32 / 6 / 32) |
+| Рабочее дерево | `AGENTS.md` — правка владельца (раздел «Экономный режим»), не закоммичена намеренно; всё остальное закоммичено |
+| Сделано по плану | шаги **0, 1, 2, 3, 4** + **шаг 5 частично** (`/outages/stats`, `/status`, `/incidents`) |
+| Осталось | шаг 5: `/outages` (список) и `/reliability`/`power-summary` (там мешает фильтр `queue`, см. §9.4); шаги **6, 7**, **8** — отдельный релиз |
+| Приёмочный тест | `tests/integration/outage-numbers.test.ts` — **ЗЕЛЁНЫЙ: 6/6** (был красный 3 из 6) на 2026-10-10 |
+| Рабочая БД (dev) | 36 строк `outages` → 9 событий / 38 адресов в `outage_events*`, 0 отменённых; **живой парсинг включён** (`ENABLE_SCHEDULER=true`) |
+| Свежий бэкап | `../energy-monitor-backups/energymon_before_live_parse_20261010_0146.dump` (44 333 B; снят перед живым парсингом) |
 
 ## 2. Что сделано (шаги 0–4 + инфраструктура)
 
@@ -259,3 +259,89 @@ curl -s localhost:3001/api/v1/status | head -c 300
 - [ ] числа в рабочей БД не «поехали» (сверка из лога `ingestOutages()`: строки ленты = адреса,
       события обоих путей равны);
 - [ ] перед любым шагом против рабочей БД — свежий дамп по §4/§7 и его проверка восстановлением.
+
+## 9. Сессия 2026-10-10: живой парсинг включён, цифры сведены
+
+### 9.1 Ингест падал на живом фиде (исправлено, проверено)
+
+`POST /api/v1/admin/parse` против настоящего web-API оператора возвращал
+`{"error":"duplicate key value violates unique constraint \"outages_source_external_id_uq\""}`,
+`parse_runs`: `status=error, records_found=0`. Оператор при этом **отвечал** — падали мы сами.
+
+Причина (воспроизведено): у `outages` два уникальных индекса — `(content_hash, source_id)`
+и частичный `(source, external_id) WHERE external_id IS NOT NULL`, а `onConflictDoUpdate` целился только
+в первый. Web-адаптер склеивает адресные строки в одну подію и подменяет `addresses_raw` на суммаризацию
+(→ другой `content_hash`), а `external_id` остаётся от «ребёнка» (`cityId:type:street:houses:start:end`,
+`parsers/chernihiv-web.adapter.ts:146`) → конфликт по второму индексу.
+
+Фикс (`e67a3e4`, `parse.service.ts`): upsert явный — поиск строки по ЛЮБОМУ из двух ключей, затем
+`UPDATE` (сохраняет `first_seen_at`) или `INSERT ... onConflictDoNothing()` как защита от гонки.
+Проверено: два живых прогона подряд → `status=success, records_found=7`, счётчики не поехали
+(36 `outages` / 9 событий / 38 адресов).
+
+### 9.2 Автоопрос оператора включён
+
+В `.env` добавлено `ENABLE_SCHEDULER=true` (файл gitignored). Логи api:
+`Parse scheduler enabled; initial parse scheduled` → `Starting initial parse run` →
+`runStatus:"success", recordsFound:7, telegramPosts:20`. Интервал `PARSE_INTERVAL_MINUTES=30`
+(минимум из `scraper-adapter-hardening`), есть джиттер `PARSE_INTERVAL_JITTER_MINUTES=5`.
+**Не реализовано:** circuit breaker (3 подряд неудачи → пауза 30 мин → 1 ч → 3 ч → 6 ч) и `dataStale`
+по источнику — `scheduler/cron.ts` просто повторяет прогон. Если оператор заблокирует IP, планировщик
+будет молча стучаться каждые 30 минут; обходов бана в проекте нет и быть не должно.
+
+### 9.3 Шаг 5, часть 1: читатели перешли на `outage_events` (`c30db48`)
+
+- `/outages/stats` — распределения по событиям (сумма `byDay` = число событий), активные/запланированные
+  считаются из `cancelled_at`/`starts_at`/`ends_at`;
+- `/status` — `activeOutages`/`scheduledOutages` из `outage_events`;
+- `/incidents` — карточки `kind:'outage'` = проекция событий `emergency|repair` c адресами из
+  `outage_event_addresses`; событие с `ends_at IS NULL` никогда не показывается «усуненим»;
+- `backfill-outage-events.ts` прогоняет `area_name` через `normalizeOutageLocation` (тот же нормализатор,
+  что ingest), а по существующим данным выполнен разовый `UPDATE`: 29+7 строк `outages` и 6+3 события
+  с «ДЕСНЯНСЬКЕ» приведены к «Деснянське» (в UI был выбор из двух «районов» для одного села).
+
+Сверка на живых данных (через nginx :3000): `/outages` `meta.total = 9`, `/outages/stats` сумма `byDay = 9`,
+`/status` 0 активных + 7 запланированных (9 минус 2 прошедших режимных окна), `/incidents` — 5 карточек
+`outage` (5 ремонтов), `/reliability` за 09.10 — 2 окна. `GET /` → HTTP 200.
+Тесты: `outage-numbers.test.ts` 6/6, весь `tests/integration` 21/21, `verify.sh` — все шаги PASS.
+
+### 9.4 Что осталось кривым (следующая работа)
+
+1. **Одно окно публикуется несколькими строками с разным `ends_at`** — видно на 13.10 и 14.10:
+   `08:00–17:00` (7 адресов) + `08:00–19:00` (1 адрес), причина одна и та же. `outageEventKey()`
+   включает `endsAt`, поэтому это две події и две карточки в UI. При этом `upsertOutageEvent()` уже
+   **умеет** сливать окна (`least(starts_at)` / `greatest(ends_at)`) — то есть задумано, что ключ без
+   `ends_at`. План: убрать `endsAt` из `outageEventKey()` (ключ = местность+старт+причина), затем
+   одноразово пересобрать ключи **TypeScript-скриптом, который вызывает реальный `outageEventKey()`**
+   (не SQL — правило из `outage-data-core`), слить осиротевшие адреса и удалить дубли; обновить
+   ожидания в `outage-events-ingest.test.ts`. Перед этим — свежий дамп.
+2. **`/outages` (список) и `/reliability`/`power-summary` читают легаси-таблицу** с `mergeDuplicateOutages`.
+   Цифры при этом сходятся (ключ слияния совпадает с `event_key`), но `MAX_ROWS_FOR_GROUPING = 1000`
+   и `meta.total` остаются легаси-ограничением. Переключение упирается в **фильтр `queue`**: в
+   `outage_events` нет колонки `queue`, а страница «Відключення» реально его передаёт
+   (`apps/web/src/pages/OutagesPage.tsx:80`, селект «Черга 1..6» в `FilterPanel.tsx:83-97`).
+   Решение до переключения: либо колонка `queue` в событиях, либо маппинг улица→черга через
+   `street_queues`, либо честное удаление фильтра из UI вместе с API.
+3. `power-summary` (`getPowerSummary`) и `/status.powerSummary` ещё считают по `outages` — переключить
+   вместе с `/reliability`.
+4. Circuit breaker и `dataStale` по источнику (см. §9.2).
+
+### 9.5 Упаковка в APK для Android 13+ (план, не начато)
+
+Факты (проверены в коде/конфигах): веб — PWA, раздаётся nginx-ом как статика; клиент ходит на
+**относительный** `/api/v1` (`apps/web/src/api/client.ts`), а `VITE_API_BASE_URL` **запекается в бандл
+на сборке** (золотое правило 13). Значит для нативной оболочки нужно решить две вещи:
+базовый URL API должен быть абсолютным (`https://<домен>/api/v1`) и API должен разрешать этот origin.
+
+| Вариант | Как | Плюсы | Требования/риски |
+|---|---|---|---|
+| TWA / Bubblewrap | `npx @bubblewrap/cli init --manifest https://<домен>/manifest.webmanifest`, `build` → AAB/APK | лёгкий, полный Chrome-движок, обновляется вместе с сайтом | **нужен HTTPS-домен** + `/.well-known/assetlinks.json` (Digital Asset Links) + Chrome на устройстве; офлайн — только через service worker |
+| Capacitor | `npx cap add android`, копия `apps/web/dist` внутрь APK | работает без домена и офлайн, WebView из APK | API должен быть доступен по сети; origin `capacitor://localhost` → CORS/allowlist на API; бандл и данные обновлять через Play/APK |
+
+Минимальные параметры под требование «Android 13 минимум»: `minSdkVersion 33`; `targetSdkVersion 34+`
+(требование Google Play для новых публикаций), `compileSdk` 34; подпись — свой keystore (хранить вне репо),
+артефакт `aab` для Play и `apk` для сайдлоада.
+
+**Что нужно решить до старта:** (а) есть ли HTTPS-домен для приложения (это же нужно для PWA/установки —
+проверить по `skills/ops-deploy-check`); (б) офлайн обязателен или онлайн достаточно; (в) распространение —
+Play Store или APK вручную. От этого зависит TWA vs Capacitor.
