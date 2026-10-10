@@ -25,6 +25,7 @@
 import type { OperatorStateCode } from '@svitlo/shared';
 import { env } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { validateScheduleSlots } from './data-quality.js';
 import { compareQueueCodes } from './queues.service.js';
 
 /** Джерело в `schedule_slots.source`: видно, що слоти прийшли з дзеркала, а не зі «змін» каналу. */
@@ -67,6 +68,8 @@ export type MirrorSchedule = {
 export type MirrorImportResult = {
   /** Скільки рядків реально записано. */
   imported: number;
+  /** Скільки слотів відхилено валідатором якості даних. */
+  rejected?: number;
   /** Черги, яких торкнувся імпорт. */
   queues: string[];
   /** Дати (YYYY-MM-DD), яких торкнувся імпорт. */
@@ -429,7 +432,33 @@ type RegionalSlots = { region: string; slots: MirrorSlot[] };
  * старий») виглядає як справжній графік, але ним не є — це гірше за чесний збій імпорту.
  */
 async function writeMirrorSlots(batches: RegionalSlots[]): Promise<MirrorImportResult> {
-  const slots = batches.flatMap((batch) => batch.slots.map((slot) => ({ ...slot, region: batch.region })));
+  let totalRejected = 0;
+  const validatedBatches: RegionalSlots[] = [];
+
+  for (const batch of batches) {
+    if (batch.slots.length === 0) continue;
+    const validation = validateScheduleSlots(batch.slots, {
+      regionCpu: batch.region,
+      sourceKey: MIRROR_SCHEDULE_SOURCE,
+      allowPastDates: true, // Згідно API-CONTRACT: липневі дати дзеркала зберігаємо, застарілість визначає UI/API
+    });
+    if (validation.rejected.length > 0) {
+      totalRejected += validation.rejected.length;
+      logger.warn(
+        {
+          region: batch.region,
+          rejectedCount: validation.rejected.length,
+          sampleReasons: validation.rejected.slice(0, 3).map((r) => r.reason),
+        },
+        'Data quality: mirror schedule slots rejected',
+      );
+    }
+    if (validation.accepted.length > 0) {
+      validatedBatches.push({ region: batch.region, slots: validation.accepted });
+    }
+  }
+
+  const slots = validatedBatches.flatMap((batch) => batch.slots.map((slot) => ({ ...slot, region: batch.region })));
   const keys = [...new Set(slots.map((slot) => `${slot.region}|${slot.queue}|${slot.date}`))];
 
   let imported = 0;
@@ -466,6 +495,7 @@ async function writeMirrorSlots(batches: RegionalSlots[]): Promise<MirrorImportR
 
   return {
     imported,
+    rejected: totalRejected,
     queues: [...new Set(slots.map((slot) => slot.queue))].sort(compareQueueCodes),
     dates: [...new Set(slots.map((slot) => slot.date))].sort(),
     regions: [...new Set(slots.map((slot) => slot.region))].sort(),

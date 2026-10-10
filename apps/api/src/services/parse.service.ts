@@ -399,8 +399,14 @@ export async function runParse(sourceId: string) {
     if (env.MIRROR_SCHEDULE_ENABLED) {
       try {
         const mirrorImport = await importMirrorScheduleFromSource();
+        if (mirrorImport.rejected && mirrorImport.rejected > 0) {
+          logger.warn(
+            { sourceId, rejected: mirrorImport.rejected },
+            'Mirror schedule import: slots rejected by data quality validator',
+          );
+        }
         logger.info(
-          { sourceId, imported: mirrorImport.imported, queues: mirrorImport.queues, dates: mirrorImport.dates },
+          { sourceId, imported: mirrorImport.imported, rejected: mirrorImport.rejected ?? 0, queues: mirrorImport.queues, dates: mirrorImport.dates },
           'Mirror schedule auto-import finished',
         );
       } catch (mirrorError) {
