@@ -251,3 +251,30 @@ export const outageFiltersSchema = {
     return result;
   },
 };
+
+/**
+ * Елемент звіту покриття областей (GET /api/v1/regions/coverage).
+ * Тільки фактичні дані з БД, без мережевих запитів.
+ */
+export interface RegionCoverageItem {
+  cpu: string;
+  nameUa: string;
+  queues: number;
+  slots: number;
+  lastDate: string | null;
+  freshnessHours: number | null;
+  stale: boolean;
+  sources: string[];
+  covered: boolean;
+}
+
+export interface RegionCoverageMeta {
+  checkedAt: string;
+  coveredRegions: number;
+  staleRegions: number;
+}
+
+export interface RegionCoverageResponse {
+  data: RegionCoverageItem[];
+  meta: RegionCoverageMeta;
+}

@@ -1,8 +1,9 @@
-import type { RegionSummary } from '@svitlo/shared';
+import type { RegionCoverageItem, RegionCoverageResponse, RegionSummary } from '@svitlo/shared';
 import { isRegionCpu } from '@svitlo/shared';
 import { env } from '../config.js';
 import { AppError } from '../utils/errors.js';
 import { peekMirrorSnapshot, queueCodesOfRegion, regionsFromPayload } from './mirror-schedule.service.js';
+import { kyivDayStart } from './power-summary.js';
 import { compareQueueCodes } from './queues.service.js';
 
 /**
@@ -112,3 +113,150 @@ function regionsFromSnapshot(snapshot: { payload: Record<string, unknown> }): Ar
     queues: queueCodesOfRegion(snapshot.payload, region.cpu),
   }));
 }
+
+export type RegionFreshness = {
+  freshnessHours: number | null;
+  stale: boolean;
+  covered: boolean;
+};
+
+/**
+ * Чистий розрахунок свіжості графіка області відносно поточного київського часу.
+ *
+ * Правила:
+ * - Немає дати (null) → covered: false, freshnessHours: null, stale: true.
+ * - Графік на сьогодні або майбутнє → covered: true, freshnessHours: 0, stale: false.
+ * - Графік у минулому → diffHours (від початку доби останнього графіка до початку поточної доби).
+ *   stale: true, якщо diffHours > 48 (старше 48 годин). Рівно 48 год — межа (не застарілий).
+ */
+export function calculateRegionFreshness(
+  lastDate: string | null,
+  now: Date = new Date(),
+): RegionFreshness {
+  if (!lastDate) {
+    return { freshnessHours: null, stale: true, covered: false };
+  }
+  const todayYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+
+  if (lastDate >= todayYmd) {
+    return { freshnessHours: 0, stale: false, covered: true };
+  }
+
+  const nowDayStart = kyivDayStart(now);
+  const lastDateDayStart = kyivDayStart(new Date(`${lastDate}T12:00:00Z`));
+  const diffHours = Math.max(0, Math.round((nowDayStart.getTime() - lastDateDayStart.getTime()) / 3_600_000));
+
+  return {
+    freshnessHours: diffHours,
+    stale: diffHours > 48,
+    covered: true,
+  };
+}
+
+/**
+ * Звіт покриття та свіжості даних по всіх областях України (GET /api/v1/regions/coverage).
+ * Читає ТІЛЬКИ БД, жодних мережевих запитів.
+ */
+export async function getRegionsCoverage(now: Date = new Date()): Promise<RegionCoverageResponse> {
+  const { db } = await import('../db/connection.js');
+  const { regions, regionQueues, scheduleSlots } = await import('../db/schema.js');
+  const { sql } = await import('drizzle-orm');
+
+  const [regionRows, queueRows, slotRows] = await Promise.all([
+    db.select({ cpu: regions.cpu, nameUa: regions.nameUa, isActive: regions.isActive }).from(regions),
+    db
+      .select({
+        cpu: regionQueues.cpu,
+        queuesCount: sql<number>`count(distinct ${regionQueues.queue})::int`,
+      })
+      .from(regionQueues)
+      .groupBy(regionQueues.cpu),
+    db
+      .select({
+        cpu: scheduleSlots.region,
+        slotsCount: sql<number>`count(*)::int`,
+        lastDate: sql<string | null>`max(${scheduleSlots.date})::text`,
+        sources: sql<string[]>`array_agg(distinct ${scheduleSlots.source})`,
+      })
+      .from(scheduleSlots)
+      .groupBy(scheduleSlots.region),
+  ]);
+
+  const queuesByCpu = new Map<string, number>();
+  for (const q of queueRows) {
+    queuesByCpu.set(q.cpu, q.queuesCount);
+  }
+
+  const slotsByCpu = new Map<string, { slotsCount: number; lastDate: string | null; sources: string[] }>();
+  for (const s of slotRows) {
+    const cleanSources = (s.sources ?? []).filter((src): src is string => typeof src === 'string' && src.length > 0).sort();
+    slotsByCpu.set(s.cpu, {
+      slotsCount: s.slotsCount,
+      lastDate: s.lastDate,
+      sources: cleanSources,
+    });
+  }
+
+  const items: RegionCoverageItem[] = [];
+  const handledCpus = new Set<string>();
+
+  for (const r of regionRows) {
+    if (!r.isActive) continue;
+    handledCpus.add(r.cpu);
+    const slotInfo = slotsByCpu.get(r.cpu);
+    const queues = queuesByCpu.get(r.cpu) ?? 0;
+    const slots = slotInfo?.slotsCount ?? 0;
+    const lastDate = slotInfo?.lastDate ?? null;
+    const sources = slotInfo?.sources ?? [];
+    const freshness = calculateRegionFreshness(lastDate, now);
+
+    items.push({
+      cpu: r.cpu,
+      nameUa: r.nameUa,
+      queues,
+      slots,
+      lastDate,
+      freshnessHours: freshness.freshnessHours,
+      stale: freshness.stale,
+      sources,
+      covered: freshness.covered,
+    });
+  }
+
+  for (const [cpu, slotInfo] of slotsByCpu) {
+    if (handledCpus.has(cpu)) continue;
+    const queues = queuesByCpu.get(cpu) ?? 0;
+    const freshness = calculateRegionFreshness(slotInfo.lastDate, now);
+    items.push({
+      cpu,
+      nameUa: cpu,
+      queues,
+      slots: slotInfo.slotsCount,
+      lastDate: slotInfo.lastDate,
+      freshnessHours: freshness.freshnessHours,
+      stale: freshness.stale,
+      sources: slotInfo.sources,
+      covered: freshness.covered,
+    });
+  }
+
+  items.sort((a, b) => a.nameUa.localeCompare(b.nameUa, 'uk') || a.cpu.localeCompare(b.cpu));
+
+  const coveredRegions = items.filter((item) => item.covered).length;
+  const staleRegions = items.filter((item) => item.stale).length;
+
+  return {
+    data: items,
+    meta: {
+      checkedAt: now.toISOString(),
+      coveredRegions,
+      staleRegions,
+    },
+  };
+}
+
