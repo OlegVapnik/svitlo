@@ -19,3 +19,7 @@ snapshots/
 /sample-responses/
 # Working notes / drafts (not part of the product)
 ALL_IN_ONE.md
+# Contract / service documents: personal data (names, emails, requisites) and NDA terms — never commit
+*.docx
+*.doc
+*.odt

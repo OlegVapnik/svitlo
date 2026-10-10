@@ -1,5 +1,5 @@
 {
-    "CodeGPT.apiKey": "CodeGPT Plus",
+    "CodeGPT.apiKey": "CodeGPT Plus Beta",
     "tailwindCSS.includeLanguages": { "typescriptreact": "javascript", "typescript": "javascript" },
     "tailwindCSS.experimental.classRegex": [["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]],
     "css.lint.unknownAtRules": "ignore",
@@ -22,5 +22,21 @@
         }
     ],
     "sqltools.results.limit": 200,
-    "sqltools.autoOpenSessionFiles": false
+    "sqltools.autoOpenSessionFiles": false,
+    "terminal.integrated.defaultProfile.linux": "zsh",
+    "editor.formatOnSave": true,
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/dist": true,
+        "**/coverage": true,
+        "**/operator-samples": true,
+        "**/.kilo/worktrees": true
+    },
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/dist/**": true,
+        "**/coverage/**": true,
+        "**/operator-samples/**": true,
+        "**/.kilo/worktrees/**": true
+    }
 }

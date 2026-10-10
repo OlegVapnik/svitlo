@@ -137,6 +137,9 @@ svitlo/
    ├─ normalizer.ts: normalizeAddress / normalizeAreaName / normalizeOutageLocation
    ├─ upsert outages (уникальность: (content_hash, source_id) и (source, external_id))
    ├─ upsert incidents (external_id UNIQUE) + telegram_posts
+   ├─ АВТОИМПОРТ ГПВ: telegram-schedule.service.importTelegramSchedule() → schedule_slots (source='telegram')
+   │     читает telegram_posts за 14 суток — «Моя черга» обновляется сама при любой правке в канале
+   │     оператора; ошибка импорта не валит прогон (warn + старые слоты остаются)
    ├─ update grid_status (последний level/message)
    └─ updateOutageStatuses()  (пересчёт scheduled/active/finished)
 
@@ -153,6 +156,7 @@ svitlo/
 ```
 
 `runParse` не падает целиком, если основной источник недоступен (WAF/IP-ban): warning + продолжение вторичными источниками.
+Так же устойчив и автоимпорт ГПВ из Telegram-канала: он идёт ПОСЛЕ основной ленты и заполняет `schedule_slots` даже когда веб-API оператора отдал 0 записей.
 
 ---
 
@@ -179,6 +183,8 @@ svitlo/
 | DELETE | `/admin/street-queues/:street` | — | `{data:{removed:boolean}}` | Bearer |
 | POST | `/admin/parse` | — | `{data:[{sourceId,name,recordsFound|error}]}` — немедленный парс активных источников | Bearer |
 | POST | `/admin/schedules/import` | body `{queue,date,payload{status,aData[],aState}}` | `{queue,date,imported,mergedIntervals}` | Bearer |
+| POST | `/admin/schedules/fetch` | body `{queue,date}` | `{queue,date,imported,mergedIntervals,intervals}`; 502 при недоступності оператора. Публічний `info_schedule` — **заглушка** (`aData: null` завжди), тому зазвичай `intervals: 0` (HANDOFF §18.9) | Bearer |
+| POST | `/admin/schedules/import-telegram` | — | `{data:{posts,matchedPosts,imported,queues[],dates[]}}` — ГПВ із публічних постів каналу оператора, `source='telegram'`, без капчі й ПД | Bearer |
 | GET | `/docs` | — | Swagger UI | — |
 
 Auth: `Authorization: Bearer ${ADMIN_TOKEN}` — плагин `plugins/auth.ts` (декоратор `fastify.authenticate`, ошибки 401/403 через `AppError`). Глобально: `@fastify/cors` (`origin:'*'`), `helmet`, rate-limit **100 req/min на IP**.
@@ -196,7 +202,7 @@ Drizzle-схема: `apps/api/src/db/schema.ts`. Миграции — «сыры
 | `addresses` | id, type(`district\|street\|settlement`), name_uk, name_ru, name_normalized, parent_id, city, source | сид + миграции 0002/0004 | addresses.service (`suggest`) |
 | `incidents` | id, source_id, external_id (UNIQUE), source_url, title, description, started_at, eta_at, severity, status | parse.service | incidents.service |
 | `telegram_posts` | id, post_id (UNIQUE), post_text, published_at, link, kind, raw_snapshot_ref, created_at | parse.service | аудит/дедуп |
-| `schedule_slots` | id, queue, date, time_from, time_to, state_code, state_name, state_color, source(`manual`), created_at; индекс `(queue,date)` | `/admin/schedules/import` | `/schedules`, `/street-queues/schedule` |
+| `schedule_slots` | id, queue, date, time_from, time_to, state_code, state_name, state_color, source(`manual\|operator\|telegram`), created_at; индекс `(queue,date)` | `/admin/schedules/import`, `/admin/schedules/import-telegram`, **parse.service (автоимпорт из Telegram-канала каждый прогон)** | `/schedules`, `/street-queues/schedule` |
 | `street_queues` | street_normalized (PK), street_name, queue, updated_at | `/admin/street-queues` | street-queues.service, `/streets` |
 | `grid_status` | id, source_id, level(`stable\|warning\|emergency`), message, updated_at | parse.service | `/status` |
 | `contacts` | id, type, label, value, region | сид | `/contacts` |
@@ -229,7 +235,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 | Файл | Роль |
 |---|---|
-| `parse.service.ts` | оркестрация парса: выбор адаптеров, устойчивость к падению источника, запись в `outages`/`incidents`/`grid_status`/`telegram_posts` |
+| `parse.service.ts` | оркестрация парса: выбор адаптеров, устойчивость к падению источника, запись в `outages`/`incidents`/`grid_status`/`telegram_posts`, автоимпорт ГПВ из Telegram-канала в `schedule_slots` |
 | `outage.service.ts` | `getOutages` (фильтры + dedupe + пагинация, `MAX_ROWS_FOR_GROUPING=1000`), `getOutageById`, `getOutageStats` (SQL-агрегаты во времени Киева), `updateOutageStatuses` |
 | `outage-grouping.ts` | `outageEventKey`, `mergeDuplicateOutages`, `summarizeAffectedAddresses`, `streetFromAddresses` |
 | `outage-classification.ts` | регулярки «авария / ремонт / режимное ограничение (ГПВ)» |
@@ -417,7 +423,7 @@ docker compose up -d --force-recreate web   # если nginx отдаёт ста
 4. «Мій графік» на главной — **пусто**: реальные ГПВ не импортированы (`schedule_slots` пуст, `street_queues` пуст). Нужен реальный импорт из браузера (userscript → `POST /admin/schedules/import`); демо-подстановки в коде нет.
 5. Проверить в UI, что страница «Контакти» рендерит текст (данные из `contacts` есть, вопрос — к вёрстке/локализации).
 6. Консолидация CA оператора: в репе два файла (`apps/api/operator-ca.pem`, `docker/operator-oblenergo-ca.pem`) — решить, оставить один источник истины.
-7. Оператор (chernihivoblenergo.com.ua) может блокировать IP — тогда `/admin/parse` возвращает ошибки в `results[].error`; обходной путь — выждать бан или парсить с другого IP.
+7. Оператор (chernihivoblenergo.com.ua) может блокировать IP — тогда `/admin/parse` возвращает ошибки в `results[].error`; обходной путь — выждать бан или парсить с другого IP. **Знято 2026-10-10:** оператор дав дозвіл — обхід дозволено (див. `AGENTS.md`).
 8. Инициализировать git-репозиторий (сейчас `.git` отсутствует) — иначе нет истории и ревью.
 9. Гигиена секретов: во временных файлах (`/tmp/*`) могли остаться `ADMIN_TOKEN` и номера лицевых счетов — удалить.
 

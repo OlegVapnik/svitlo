@@ -5,10 +5,10 @@ const envSchema = z.object({
   API_PORT: z.coerce.number().default(3001),
   API_HOST: z.string().default('0.0.0.0'),
   ADMIN_TOKEN: z.string().default('development-admin-token'),
-  // Мінімум 30 хвилин — вимога skills/scraper-adapter-hardening: оператор сидить за WAF, і часті
-  // автоматичні запити виглядають як бот. Менше значення — помилка конфігурації на старті,
-  // а не «легше» опитування: лікується паузою circuit breaker, а не частими запитами.
-  PARSE_INTERVAL_MINUTES: z.coerce.number().int().min(30).default(60),
+  // Раніше мінімум був 30 хв («щоб не забанило WAF» — вимога skills/scraper-adapter-hardening).
+  // Після дозволу оператора (2026-10-10, див. AGENTS.md) 30 хв — лише типовий дефолт, а не вимога.
+  // Нижня межа 1 лишена, щоб 0 / від'ємне не зробили cron недійсним.
+  PARSE_INTERVAL_MINUTES: z.coerce.number().int().min(1).default(60),
   // Джиттер (хвилини), що зсуває момент запиту, щоб не бити рівно по розкладу (анти-бот).
   // Мусить бути меншим за інтервал, інакше запуск напливає на наступний слот — перевірка нижче.
   PARSE_INTERVAL_JITTER_MINUTES: z.coerce.number().min(0).default(5),
@@ -34,6 +34,33 @@ const envSchema = z.object({
   CHERNIHIV_REQUEST_DELAY_MS: z.coerce.number().default(1000),
   // Прогрів сесії: спершу GET /power_outages (cookies), потім POST /api/list_acc — як у браузера.
   CHERNIHIV_SESSION_WARMUP: z.string().default('true').transform((value) => value.toLowerCase() === 'true'),
+  // Публічний метод оператора `POST /api/info_schedule {queue, curr_dt}` — без капчі й без ПД.
+  // ВАЖЛИВО (перевірено 10.10.2026, 12 запитів із контейнера, черги 2/2, 2, 1): метод — **заглушка**,
+  // він завжди віддає `200 {"status":"ok","aData":null}`, тобто реальних інтервалів у ньому немає.
+  // Справжній погодинний ГПВ віддає лише `POST /api/info_schedule_part`, і він за Cloudflare Turnstile
+  // (`400 {"error":"No captcha"}` без токена). Токен автоматично НЕ добуваємо — див. AGENTS.md,
+  // «Operator schedule and anti-bot boundary»; тому `schedule_slots` наповнюється вручну/з інших джерел.
+  // Неповний TLS-ланцюжок закриває операторський CA з бандла
+  // (docker-compose.yml → NODE_EXTRA_CA_CERTS), тому перевірка сертифіката лишається увімкненою.
+  OPERATOR_SCHEDULE_URL: z.string().url().default('https://interruptions.energy.cn.ua/api/info_schedule'),
+  // «Дзеркало» погодинного ГПВ — публічний JSON (Cloudflare Worker над DTEK-подібним API), той самий
+  // формат читає Java-ядро `core/` (`BlackoutScheduleProvider`). Це єдине відоме джерело ПОВНОГО
+  // добового ГПВ по Чернігівській області: `info_schedule_part` за Turnstile, а Telegram-канал пише
+  // лише «зміни» (HANDOFF §18.9). ПД немає (коди черг і півгодинні коди стану), капчі немає.
+  MIRROR_SCHEDULE_ENABLED: z.string().default('true').transform((value) => value.toLowerCase() === 'true'),
+  MIRROR_SCHEDULE_URL: z.string().url().default('https://dtek-api.svitlo-proxy.workers.dev/'),
+  // `cpu` області в дзеркалі: Чернігівська область (перевірено живим запитом 10.10.2026).
+  // Це лише ТИПОВА область для API: дзеркало віддає всі області одним payload, тож `?region=`
+  // у /api/v1/schedules і /api/v1/queues працює для будь-якої області без правок конфіга.
+  MIRROR_SCHEDULE_REGION: z.string().default('chernihivska-oblast'),
+  // Які області писати в БД під час імпорту (cron/адмінка). Порожньо = усі, що є у фіді:
+  // мультирегіональність не має залежати від того, що хтось не забув дописати область у .env.
+  // Явний список `cpu` через кому звужує імпорт (напр. 'chernihivska-oblast,kyiv-city').
+  MIRROR_SCHEDULE_IMPORT_REGIONS: z.string().default('').transform((value) => value.split(',').map((item) => item.trim()).filter(Boolean)),
+  // TTL кешу payload у пам'яті (с): менший за PARSE_INTERVAL_MINUTES, щоб дані лишались свіжими,
+  // але сторінка не смикала дзеркало на кожен запит.
+  MIRROR_SCHEDULE_TTL_SEC: z.coerce.number().int().min(0).default(600),
+  MIRROR_SCHEDULE_TIMEOUT_MS: z.coerce.number().default(15000),
   USE_MOCK_ADAPTER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   ENABLE_SCHEDULER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   // Довірені проксі (діапазони proxy-addr через кому), напр. "loopback,uniquelocal".

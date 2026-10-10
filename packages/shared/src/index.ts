@@ -33,6 +33,36 @@ export interface OutageDetailResponse { data: Outage; }
 export interface OutageStatsResponse { data: OutageStats; }
 export interface IncidentListResponse { data: Incident[]; }
 export interface ContactListResponse { data: Contact[]; }
+/**
+ * Область ГПВ у каталозі `GET /api/v1/regions`. `cpu` — ідентифікатор із дзеркала
+ * (`chernihivska-oblast`, `kyiv-city`), він же ключ у `schedule_slots.region`.
+ */
+export interface RegionSummary {
+  cpu: string;
+  /** Українська назва для показу. Якщо фід її не віддав — це сам `cpu` (вигадувати назву не можна). */
+  nameUa: string;
+  /** Англійська назва, якщо дзеркало її віддає; інакше `null` (трансліт не вигадуємо). */
+  nameEn: string | null;
+  /** Черги області у форматі застосунку (`1/1`, `2/2`): фід або вже збережені слоти. */
+  queues: string[];
+  /** Скільки слотів області збережено в БД (0 = ще не імпортовано). */
+  slots: number;
+  /** Остання дата зі слотами в БД (`YYYY-MM-DD`) або `null`. */
+  lastDate: string | null;
+}
+
+export interface RegionListResponse { data: RegionSummary[]; }
+
+/** Формат `cpu` області: kebab-case з малих латинських літер і цифр. */
+export const REGION_CPU_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Чи схоже значення на `cpu` області. Використовується для валідації `?region=`: сміття в параметрі —
+ * це помилка запиту, а коректний, але невідомий `cpu` — ні (він дає чесний порожній графік).
+ */
+export function isRegionCpu(value: unknown): value is string {
+  return typeof value === 'string' && REGION_CPU_PATTERN.test(value.trim());
+}
 export interface OutageStats { byHour: Array<{ hour: number; count: number; totalMinutes: number }>; byDay: Array<{ date: string; count: number; totalMinutes: number }>; byArea: Array<{ areaName: string; count: number; totalMinutes: number }>; heatmap: Array<{ dayOfWeek: number; hour: number; count: number }>; totalActive: number; totalScheduled: number; }
 
 /** Підсумок по часовому вікну: скільки часу без світла та скільки зі світлом. */
@@ -94,17 +124,28 @@ export interface ReliabilityResponse {
 
 export function getOperatorState(states: Record<string, OperatorState>, queue: number): OperatorState | undefined { return states[String(queue)]; }
 
+/** Один інтервал ГПВ у відповіді оператора. Один источник правды для живої і ручної відповіді. */
+export const operatorIntervalSchema = z.object({
+  time_from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time_from должно быть HH:MM (00:00-23:59)'),
+  time_to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time_to должно быть HH:MM (00:00-23:59)'),
+  queue: z.union([z.number().int().min(1).max(3), z.string().regex(/^[123]$/)]),
+});
+
 export const operatorScheduleResponseSchema = z.object({
   status: z.string().optional(),
-  aData: z.array(
-    z.object({
-      time_from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time_from должно быть HH:MM (00:00-23:59)'),
-      time_to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time_to должно быть HH:MM (00:00-23:59)'),
-      queue: z.union([z.number().int().min(1).max(3), z.string().regex(/^[123]$/)]),
-    }),
-  ),
+  aData: z.array(operatorIntervalSchema),
   aState: z.record(z.string(), z.object({ name: z.string(), color: z.string() })),
 });
+
+/**
+ * Жива відповідь оператора (`POST /api/info_schedule`, капчі немає): `aData` приходить `null`,
+ * коли на цю чергу/дату погодинного ГПВ не публікували (перевірено 10.10.2026). Для автозавантаження
+ * і ручної вставки це не помилка, а «розкладу немає» — тому тут масив nullable.
+ */
+export const operatorScheduleLiveSchema = operatorScheduleResponseSchema.extend({
+  aData: z.array(operatorIntervalSchema).nullable(),
+});
+export type OperatorScheduleLivePayload = z.infer<typeof operatorScheduleLiveSchema>;
 
 const QUEUE_REGEX = /^\d+(?:\/\d+)?$/;
 
@@ -133,17 +174,9 @@ export const queueCodeSchema = z.string().regex(QUEUE_REGEX, 'Queue должно
 export const scheduleImportRequestSchema = z.object({
   queue: queueCodeSchema,
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date должно быть YYYY-MM-DD'),
-  payload: z.object({
-    status: z.string().optional(),
-    aData: z.array(
-      z.object({
-        time_from: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time_from должно быть HH:MM (00:00-23:59)'),
-        time_to: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'time_to должно быть HH:MM (00:00-23:59)'),
-        queue: z.union([z.number().int().min(1).max(3), z.string().regex(/^[123]$/)]),
-      }),
-    ),
-    aState: z.record(z.string(), z.object({ name: z.string(), color: z.string() })),
-  }),
+  // Той самий payload, що віддає оператор: `aData: null` — це «графіка на цю чергу/дату немає»,
+  // а не помилка введення (раніше така вставка відхилялася з 400).
+  payload: operatorScheduleLiveSchema,
 });
 
 /** Данные, которые отдаёт GET /api/v1/schedules/:queue. */

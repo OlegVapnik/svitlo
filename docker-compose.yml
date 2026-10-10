@@ -28,6 +28,15 @@ x-api-env: &api-env
   # Рідше опитування (30 хв) + джиттер, бо розклад ГПВ змінюється нечасто, а WAF не любить регулярність.
   PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}
   PARSE_INTERVAL_JITTER_MINUTES: ${PARSE_INTERVAL_JITTER_MINUTES:-5}
+  # «Дзеркало» погодинного ГПВ (публічний JSON, той самий формат читає Java-ядро core/):
+  # єдине джерело ПОВНОГО добового ГПВ по області, бо info_schedule_part за Turnstile, а Telegram
+  # канал пише лише «зміни». Капчі й персональних даних немає. Вимкнути можна тут одним прапорцем.
+  MIRROR_SCHEDULE_ENABLED: ${MIRROR_SCHEDULE_ENABLED:-true}
+  MIRROR_SCHEDULE_URL: ${MIRROR_SCHEDULE_URL:-https://dtek-api.svitlo-proxy.workers.dev/}
+  MIRROR_SCHEDULE_REGION: ${MIRROR_SCHEDULE_REGION:-chernihivska-oblast}
+  MIRROR_SCHEDULE_IMPORT_REGIONS: ${MIRROR_SCHEDULE_IMPORT_REGIONS:-}
+  MIRROR_SCHEDULE_TTL_SEC: ${MIRROR_SCHEDULE_TTL_SEC:-600}
+  MIRROR_SCHEDULE_TIMEOUT_MS: ${MIRROR_SCHEDULE_TIMEOUT_MS:-15000}
   NODE_ENV: production
   LOG_LEVEL: info
   TZ: Europe/Kyiv

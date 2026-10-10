@@ -121,8 +121,30 @@ export const incidents = pgTable('incidents', {
   status: text('status').notNull().default('active')
 });
 
+export const regions = pgTable('regions', {
+  cpu: text('cpu').primaryKey(),
+  nameUa: text('name_ua').notNull(),
+  nameEn: text('name_en'),
+  isActive: boolean('is_active').notNull().default(true),
+  discoveredAt: timestamp('discovered_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const regionQueues = pgTable('region_queues', {
+  cpu: text('cpu').notNull().references(() => regions.cpu, { onDelete: 'cascade' }),
+  queue: text('queue').notNull(),
+  groupKey: text('group_key').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.cpu, table.queue] }),
+  queueIdx: index('region_queues_queue_idx').on(table.queue),
+}));
+
 export const scheduleSlots = pgTable('schedule_slots', {
   id: uuid('id').primaryKey().defaultRandom(),
+  region: text('region').notNull().default('chernihivska-oblast'),
   queue: text('queue').notNull(),
   date: date('date', { mode: 'string' }).notNull(), // YYYY-MM-DD (Kyiv local date)
   timeFrom: text('time_from').notNull(),
@@ -133,8 +155,8 @@ export const scheduleSlots = pgTable('schedule_slots', {
   source: text('source').notNull().default('manual'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  uniqueSlot: uniqueIndex('schedule_slots_queue_date_time_from_uq').on(table.queue, table.date, table.timeFrom),
-  queueDateIdx: index('schedule_slots_queue_date_idx').on(table.queue, table.date),
+  uniqueSlot: uniqueIndex('schedule_slots_region_queue_date_time_from_uq').on(table.region, table.queue, table.date, table.timeFrom),
+  queueDateIdx: index('schedule_slots_region_queue_date_idx').on(table.region, table.queue, table.date),
 }));
 
 export const streetQueues = pgTable('street_queues', {

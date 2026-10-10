@@ -1,12 +1,25 @@
 {
-  "recommendations": [
-    "mtxr.sqltools",
-    "mtxr.sqltools-driver-pg",
-    "bradlc.vscode-tailwindcss",
-    "esbenp.prettier-vscode",
-    "vitest.explorer",
-    "ms-azuretools.vscode-containers",
-    "redhat.vscode-yaml",
-    "mikestead.dotenv"
-  ]
+    "recommendations": [
+        "kilocode.kilo-code",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "formulahendry.auto-rename-tag",
+        "ecmel.vscode-html-css",
+        "usernamehw.errorlens",
+        "oderwat.indent-rainbow",
+        "ritwickdey.liveserver",
+        "vitest.explorer",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg",
+        "ms-azuretools.vscode-containers",
+        "eamodio.gitlens",
+        "mhutchie.git-graph",
+        "redhat.vscode-yaml",
+        "mikestead.dotenv",
+        "dotjoshjohnson.xml",
+        "bbenoist.qml",
+        "delgan.qml-format",
+        "theqtcompany.qt-core",
+        "theqtcompany.qt-qml"
+    ]
 }

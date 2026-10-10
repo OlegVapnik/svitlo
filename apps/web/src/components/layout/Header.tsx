@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { Zap } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle.js';
 import { LanguageToggle } from '../ui/LanguageToggle.js';
+import { RegionSelect } from '../ui/RegionSelect.js';
 import { FreshnessChip } from '../status/FreshnessChip.js';
 
 /**
- * Верхняя панель: узнаваемый логотип, состояние источника данных (свежесть/ошибка) и переключатели.
+ * Верхняя панель: узнаваемый логотип, состояние источника данных (свежесть/ошибка),
+ * выбор области (мультирегіональність) и переключатели.
  * Свежесть вынесена в шапку намеренно: «данные устарели» должно быть видно с любой страницы,
  * а не только на главной (skills/frontend-ui-change, PWA).
  */
@@ -26,7 +28,8 @@ export const Header = () => {
           </span>
         </Link>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <RegionSelect />
           <FreshnessChip />
           <LanguageToggle />
           <ThemeToggle />

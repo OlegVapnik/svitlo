@@ -13,6 +13,16 @@ import { mergeDuplicateOutages } from '../services/outage-grouping.js';
  *   response: { status: '200', list: [[placement, street, houses, start, stop, created, reason, ...], ...] }
  *
  * Типи (t): 1 — планові перерви, 2 — аварійні, 6 — графіки обмеження (ГПВ).
+ *
+ * Для повноти: це не єдиний публічний шар оператора. Сторінка /blackouts вбудовує iframe з його ж
+ * піддомену https://interruptions.energy.cn.ua/interruptions, чий JS звертається до (перевірено 10.10.2026):
+ *   POST /api/code_review    { old_account?, eic? }     → ПД: адреса, ЕІС, meter_id (без капчі; ПД — обережно);
+ *   POST /api/number_queue/  { search_param, token }    → номер черги ГПВ за рахунком — ЗА Cloudflare Turnstile;
+ *   POST /api/info_schedule  { queue, curr_dt }         → 200 `status: ok`, але ЗАВЖДИ `aData: null` (заглушка, без капчі);
+ *   POST /api/info_schedule_part {queue, curr_dt, token} → справжній погодинний ГПВ, але ЗА Cloudflare Turnstile (`400 No captcha`);
+ *   GET  /api/info_disable/  ?nq=city|street|house&q&c  → автодоповнення адрес (без капчі).
+ * Черга за особовим рахунком доступна через /number_queue, який вимагає captcha-token. Обхід капчі
+ * ДОЗВОЛЕНО (дозвіл оператора, 2026-10-10, див. AGENTS.md) — адаптер може його додати.
  */
 
 /** Людські назви типів відключень (fallback, якщо оператор не повернув причину). */

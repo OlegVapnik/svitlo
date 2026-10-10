@@ -2,6 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import type { QueueSummary } from '@svitlo/shared';
 
 /**
+ * Область легасі-даних. Адресний довідник (`street_queues`) поки описує лише Чернігівщину:
+ * у таблиці немає області, тож для інших областей показуємо 0 вулиць — краще порожньо, ніж чужі
+ * адреси, приписані до черги іншої області (вигаданих даних не буває, див. hard stop #14).
+ */
+const LEGACY_REGION = 'chernihivska-oblast';
+
+/**
  * Список очередей приложения — ТОЛЬКО из реальных данных: интервалы графика (schedule_slots)
  * и привязки улиц (street_queues). Перечня очередей «в коде» нет: если БД пуста, ответ пустой,
  * и UI честно говорит «графік не імпортовано», а не предлагает выдуманные черги.
@@ -35,24 +42,31 @@ export function mergeQueues(slotsRows: QueueSlotRow[], streetRows: QueueStreetRo
   return [...byQueue.values()].sort((a, b) => compareQueueCodes(a.queue, b.queue));
 }
 
-/** Читает очереди из БД. Импорт connection — динамический: сервис остаётся тестируемым без пула. */
-export async function listQueues(): Promise<QueueSummary[]> {
+/**
+ * Читает очереди из БД. Импорт connection — динамический: сервис остаётся тестируемым без пула.
+ *
+ * `region` (cpu области) сужает выборку до слотов этой области. Без `region` — поведение v1
+ * (все слоты), чтобы старые клиенты не изменились (контракт /tmp/API-CONTRACT-regions.md).
+ */
+export async function listQueues(region?: string): Promise<QueueSummary[]> {
   const { db } = await import('../db/connection.js');
   const { scheduleSlots, streetQueues } = await import('../db/schema.js');
-  const { sql } = await import('drizzle-orm');
+  const { eq, sql } = await import('drizzle-orm');
+  const slotsQuery = db
+    .select({
+      queue: scheduleSlots.queue,
+      slots: sql<number>`count(*)::int`,
+      lastDate: sql<string | null>`max(${scheduleSlots.date})::text`,
+    })
+    .from(scheduleSlots);
+  const streetsQuery = db
+    .select({ queue: streetQueues.queue, streets: sql<number>`count(*)::int` })
+    .from(streetQueues)
+    .groupBy(streetQueues.queue);
   const [slotsRows, streetRows] = await Promise.all([
-    db
-      .select({
-        queue: scheduleSlots.queue,
-        slots: sql<number>`count(*)::int`,
-        lastDate: sql<string | null>`max(${scheduleSlots.date})::text`,
-      })
-      .from(scheduleSlots)
-      .groupBy(scheduleSlots.queue),
-    db
-      .select({ queue: streetQueues.queue, streets: sql<number>`count(*)::int` })
-      .from(streetQueues)
-      .groupBy(streetQueues.queue),
+    region ? slotsQuery.where(eq(scheduleSlots.region, region)).groupBy(scheduleSlots.queue) : slotsQuery.groupBy(scheduleSlots.queue),
+    // Вулиці показуємо лише для легасі-області: для інших адрес у нас немає (див. LEGACY_REGION).
+    !region || region === LEGACY_REGION ? streetsQuery : Promise.resolve([]),
   ]);
   return mergeQueues(slotsRows, streetRows);
 }

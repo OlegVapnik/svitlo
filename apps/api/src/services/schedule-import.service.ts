@@ -1,4 +1,4 @@
-import type { OperatorScheduleResponse, ScheduleIntervalUtc } from '@svitlo/shared';
+import type { OperatorScheduleLivePayload, ScheduleIntervalUtc } from '@svitlo/shared';
 import { kyivOffsetMinutes } from './schedule-normalizer.js';
 
 export type ScheduleImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };
@@ -9,13 +9,16 @@ export function localTimeForUtc(iso: string, date: string): string {
 }
 
 /**
- * Импорт ручного графика. Персональные данные из ответов не принимаются и не сохраняются;
+ * Импорт графика. Персональные данные из ответов не принимаются и не сохраняются;
  * в БД попадают только aData (интервалы) и aState (названия/цвета).
+ * `payload.aData === null` (жива відповідь оператора «ГПВ на цю дату немає») — це 0 слотів, не помилка.
  */
 export async function importOperatorSchedule(
   queue: string,
   date: string,
-  payload: OperatorScheduleResponse,
+  payload: OperatorScheduleLivePayload,
+  /** 'manual' — людина вставила JSON; 'operator' — автозавантаження з /api/info_schedule (без капчі). */
+  source: 'manual' | 'operator' = 'manual',
 ): Promise<ScheduleImportResult> {
   const mergedRawSlots = mergeRawScheduleSlots(payload);
 
@@ -27,20 +30,22 @@ export async function importOperatorSchedule(
     for (const slot of mergedRawSlots) {
       await tx.insert(scheduleSlots).values({
         queue, date, timeFrom: slot.time_from, timeTo: slot.time_to,
-        stateCode: slot.queue, stateName: slot.stateName, stateColor: slot.stateColor, source: 'manual',
+        stateCode: slot.queue, stateName: slot.stateName, stateColor: slot.stateColor, source,
       });
     }
   });
 
-  return { queue, date, imported: payload.aData.length, mergedIntervals: mergedRawSlots.length };
+  return { queue, date, imported: payload.aData?.length ?? 0, mergedIntervals: mergedRawSlots.length };
 }
 
-export function mergeRawScheduleSlots(payload: OperatorScheduleResponse) {
+export function mergeRawScheduleSlots(payload: OperatorScheduleLivePayload) {
   const result: Array<{ time_from: string; time_to: string; queue: 1 | 2 | 3; stateName: string; stateColor: string }> = [];
-  for (const slot of payload.aData) {
+  // `aData: null` = «графіка на цю чергу/дату немає» (жива відповідь оператора) — це не помилка.
+  for (const slot of payload.aData ?? []) {
     const previous = result.at(-1);
-    const state = payload.aState[String(slot.queue)]!;
-    const stateCode = slot.queue as 1 | 2 | 3;
+    // Невідомий код стану не має ламати імпорт: підписуємо нейтрально (як normalizeScheduleResponse).
+    const state = payload.aState[String(slot.queue)] ?? { name: String(slot.queue), color: '#AFAFAF' };
+    const stateCode = Number(slot.queue) as 1 | 2 | 3;
     if (previous && previous.queue === stateCode && previous.time_to === slot.time_from) {
       previous.time_to = slot.time_to;
     } else {
@@ -52,26 +57,58 @@ export function mergeRawScheduleSlots(payload: OperatorScheduleResponse) {
 
 export type QueueScheduleMeta = { count: number; source: string | null; lastImportedAt: string | null };
 
-/** Метаданные импорта по очереди/дате: количество слотов, источник и время последнего импорта. */
-export async function getQueueScheduleMeta(queue: string, date: string): Promise<QueueScheduleMeta> {
+/**
+ * Типова область застосунку (з конфіга) — читаємо ЛІНИВО: цей модуль імпортують юніт-тести
+ * нормалізації, які працюють без DATABASE_URL, а статичний імпорт `config.js` упав би вже на імпорті
+ * (zod-схема вимагає DATABASE_URL). Так само ліниво тут підключається й `db/connection.js`.
+ */
+async function defaultRegion(): Promise<string> {
+  const { env } = await import('../config.js');
+  return env.MIRROR_SCHEDULE_REGION;
+}
+
+/**
+ * Метаданные импорта по очереди/дате: количество слотов, источник и время последнего импорта.
+ *
+ * `region` (cpu области) — типова область застосунку, якщо не передано. Без нього кількість і джерело
+ * змішували б «2/2 Чернігівської» і «2/2 Львівської» в одне число, тому фільтр за областю обовʼязковий.
+ */
+export async function getQueueScheduleMeta(
+  queue: string,
+  date: string,
+  region?: string,
+): Promise<QueueScheduleMeta> {
+  const targetRegion = region ?? (await defaultRegion());
   const { db } = await import('../db/connection.js');
   const { scheduleSlots } = await import('../db/schema.js');
   const { and, eq, desc } = await import('drizzle-orm');
   const rows = await db
     .select({ source: scheduleSlots.source, createdAt: scheduleSlots.createdAt })
     .from(scheduleSlots)
-    .where(and(eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)))
+    .where(and(eq(scheduleSlots.region, targetRegion), eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)))
     .orderBy(desc(scheduleSlots.createdAt));
   const latest = rows[0];
   if (!latest) return { count: 0, source: null, lastImportedAt: null };
   return { count: rows.length, source: latest.source, lastImportedAt: latest.createdAt.toISOString() };
 }
 
-export async function getQueueSchedule(queue: string, date: string): Promise<ScheduleIntervalUtc[]> {
+/**
+ * Слоти однієї області/черги/дати у UTC. Невідома область дає порожній масив — це не помилка
+ * (контракт: невідома область = чесний порожній графік, а не чужий).
+ */
+export async function getQueueSchedule(
+  queue: string,
+  date: string,
+  region?: string,
+): Promise<ScheduleIntervalUtc[]> {
+  const targetRegion = region ?? (await defaultRegion());
   const { db } = await import('../db/connection.js');
   const { scheduleSlots } = await import('../db/schema.js');
   const { and, eq } = await import('drizzle-orm');
-  const rows = await db.select().from(scheduleSlots).where(and(eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)));
+  const rows = await db
+    .select()
+    .from(scheduleSlots)
+    .where(and(eq(scheduleSlots.region, targetRegion), eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)));
   const toUtc = (time: string, end: boolean) => {
     if (end && time === '00:00') {
       const nextDay = new Date(`${date}T00:00:00Z`);

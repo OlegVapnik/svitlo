@@ -14,7 +14,8 @@
     "test:integration": "vitest run tests/integration",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:backfill-events": "tsx src/db/backfill-outage-events.ts"
+    "db:backfill-events": "tsx src/db/backfill-outage-events.ts",
+    "probe:operator-account": "node scripts/operator-account.mjs"
   },
   "dependencies": {
     "@svitlo/shared": "workspace:*",
@@ -30,7 +31,6 @@
     "node-cron": "^3.0.3",
     "pino": "^9.5.0",
     "pino-pretty": "^13.0.0",
-    "playwright": "^1.49.0",
     "postgres": "^3.4.5",
     "zod": "^3.24.1"
   },
@@ -38,6 +38,7 @@
     "@types/node": "^22.10.0",
     "@types/node-cron": "^3.0.11",
     "drizzle-kit": "^0.30.0",
+    "playwright": "^1.49.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.0"

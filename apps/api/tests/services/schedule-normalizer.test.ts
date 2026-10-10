@@ -102,7 +102,7 @@ describe('schedule normalization to UTC', () => {
   test('aState colours from the operator stay 6-digit HEX (не подменяются палитрой)', () => {
     // Фикстура оператора: цвета слотов приходят из aState и НЕ перекрашиваются палитрой приложения —
     // подмена цветов означала бы подделку данных источника (skills/outage-data-core).
-    const operatorPayload = {
+    const operatorPayload: OperatorScheduleResponse = {
       status: 'ok',
       aData: [{ time_from: '00:00', time_to: '06:00', queue: 3 }],
       aState: {

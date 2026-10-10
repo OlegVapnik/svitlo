@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Building2, CalendarDays, MapPin, PhoneCall, TriangleAlert, Zap, ZapOff } from 'lucide-react';
+import { ArrowRight, CalendarDays, RefreshCw, TriangleAlert, Zap, ZapOff } from 'lucide-react';
 import { StatusIndicator } from '../components/status/StatusIndicator.js';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
@@ -11,10 +12,13 @@ import { MyQueueHero } from '../components/status/MyQueueHero.js';
 import { IncidentBanner } from '../components/incidents/IncidentBanner.js';
 import { OutageCard } from '../components/outages/OutageCard.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
+import { Button } from '../components/ui/Button.js';
+import { cn } from '../lib/cn.js';
 import { StatCard } from '../components/ui/StatCard.js';
 import { useIncidents, useOutages, useQueueSchedule, useReliability, useStatus } from '../api/queries.js';
 import { useMyAddress } from '../hooks/useMyAddress.js';
 import { useMyQueues } from '../hooks/useMyQueues.js';
+import { useRegion } from '../hooks/useRegion.js';
 import type { Outage } from '@svitlo/shared';
 
 /** Сегодняшняя дата по Киеву в формате YYYY-MM-DD — API расписаний работает в этой зоне. */
@@ -34,7 +38,10 @@ function kyivToday(): string {
  */
 export const HomePage: React.FC = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   const today = kyivToday();
+  const { currentRegion, currentRegionData } = useRegion();
 
   const { data: statusData, isLoading: statusLoading } = useStatus();
   const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability();
@@ -43,7 +50,7 @@ export const HomePage: React.FC = () => {
   const { queues } = useMyQueues();
   const { address } = useMyAddress();
   const selectedQueue = queues[0];
-  const { data: scheduleData, isLoading: scheduleLoading, isError: scheduleError } = useQueueSchedule(selectedQueue, today);
+  const { data: scheduleData, isLoading: scheduleLoading, isError: scheduleError } = useQueueSchedule(selectedQueue, today, currentRegion);
 
   const status = statusData?.data;
   const activeIncidents = (incidentsData?.data ?? []).filter((incident) => incident.status === 'active');
@@ -59,6 +66,20 @@ export const HomePage: React.FC = () => {
   })) as Outage[];
 
   const schedule = scheduleData?.data;
+
+  /**
+   * Ручное обновление без перезагрузки страницы: инвалидирует всё, что видно на экране
+   * (отключения, статус, инциденты, график) и дожидается повторных запросов.
+   * Данные берутся из базы, куда планировщик пишет снимки оператора.
+   */
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await queryClient.invalidateQueries();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-8">
@@ -80,9 +101,22 @@ export const HomePage: React.FC = () => {
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('home.title')}</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">{t('home.subtitle')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">{currentRegionData.nameUa || t('home.subtitle')}</p>
           </div>
-          {status?.lastUpdatedAt && <LastUpdated timestamp={status.lastUpdatedAt} />}
+          <div className="flex flex-wrap items-center gap-2">
+            {status?.lastUpdatedAt && <LastUpdated timestamp={status.lastUpdatedAt} />}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refresh}
+              disabled={refreshing}
+              aria-label={t('common.refresh')}
+              className="gap-1.5"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} aria-hidden />
+              {refreshing ? t('common.refreshing') : t('common.refresh')}
+            </Button>
+          </div>
         </div>
 
         <StatusIndicator level={status?.grid.level ?? 'stable'} message={status?.grid.message} />
@@ -97,16 +131,6 @@ export const HomePage: React.FC = () => {
       </section>
 
       <SourceHealthBanner />
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t('home.quickLinks')}</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <QuickLink to="/my-address" icon={MapPin} label={t('nav.myAddress')} hint={t('home.myAddressHint')} />
-          <QuickLink to="/queues" icon={CalendarDays} label={t('nav.queues')} hint={t('home.mySchedule')} />
-          <QuickLink to="/streets" icon={Building2} label={t('nav.streets')} hint={t('home.streetsHint')} />
-          <QuickLink to="/contacts" icon={PhoneCall} label={t('home.hotline')} hint={t('home.hotlineNumber')} />
-        </div>
-      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -141,35 +165,3 @@ export const HomePage: React.FC = () => {
     </div>
   );
 };
-
-interface QuickLinkProps {
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  hint: string;
-}
-
-/** Быстрая ссылка с иконкой-плиткой: один и тот же вид для адреса, очередей, улиц и телефона. */
-function QuickLink({ to, icon: Icon, label, hint }: QuickLinkProps) {
-  return (
-    <Link
-      to={to}
-      className="group flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4 shadow-card transition-colors hover:border-primary/40 hover:bg-accent/40"
-    >
-      <span className="flex min-w-0 items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-foreground">{label}</span>
-          <span className="block truncate text-xs text-muted-foreground">{hint}</span>
-        </span>
-      </span>
-      <ArrowRight
-        className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-        aria-hidden
-      />
-    </Link>
-  );
-}
-

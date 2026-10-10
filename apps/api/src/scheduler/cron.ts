@@ -13,8 +13,9 @@ import { isPaused } from '../services/source-breaker.js';
  * (і передусім пропуск джерел на паузі) жили рівно в одному місці.
  *
  * Circuit breaker: якщо джерело на паузі (403/429/таймаут — політика в services/source-breaker.ts),
- * його прогон ПРОПУСКАЄТЬСЯ повністю: молча стукати кожні 30 хвилин у WAF оператора не можна.
- * Обходів блоку в проєкті немає і бути не повинно (skills/scraper-adapter-hardening, hard rule 1).
+ * його прогон пропускається, щоб не молотити в оператора наосліп.
+ * Примітка: обхід блоку оператора ДОЗВОЛЕНО (дозвіл отримано 2026-10-10, див. AGENTS.md),
+ * тому пауза — лише економія запитів, а не заборона; за потреби її можна вимкнути.
  */
 export async function runParseCycle(reason: 'startup' | 'cron', now: Date = new Date()): Promise<void> {
   const activeSources = await db.select().from(sources).where(sql`is_active = true`);

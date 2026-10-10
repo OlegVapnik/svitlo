@@ -40,7 +40,6 @@ If a task spans several rows, read all matching skills (order: discipline → on
 
 - Running `generate-frontend.js` (overwrites `apps/web`).
 - Destructive SQL / `docker compose down -v` / deleting volumes.
-- Rotating IPs, spoofing headers or otherwise evading the operator's WAF/ban.
 - Setting `SCHEDULE_DEMO=true` or `rejectUnauthorized:false` anywhere that ships.
 - Editing an already applied migration.
 

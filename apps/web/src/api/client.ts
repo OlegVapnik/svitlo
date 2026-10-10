@@ -48,16 +48,40 @@ export const api = {
   fetchHealth: () => fetcher('/health'),
   suggestAddresses: (query: string, limit = 8, signal?: AbortSignal) =>
     fetcher(`/addresses/suggest?q=${encodeURIComponent(query)}&limit=${limit}`, { signal }),
-  fetchQueueSchedule: (queue: string, date: string) =>
-    fetcher(`/schedules?${new URLSearchParams({ queue, date }).toString()}`),
+  fetchQueueSchedule: (queue: string, date: string, region?: string) => {
+    const params = new URLSearchParams({ queue, date });
+    if (region) params.set('region', region);
+    return fetcher(`/schedules?${params.toString()}`);
+  },
   fetchStreetQueues: (signal?: AbortSignal) => fetcher('/street-queues', { signal }),
-  /** Реальный список очередей (только то, что есть в БД: слоты графика и привязки улиц). */
-  fetchQueues: (signal?: AbortSignal) => fetcher('/queues', { signal }),
+  /** Реальный список очередей (GET /api/v1/queues?region=...). */
+  fetchQueues: (region?: string, signal?: AbortSignal) => {
+    const q = region ? `?${new URLSearchParams({ region }).toString()}` : '';
+    return fetcher(`/queues${q}`, { signal });
+  },
+  /** Каталог областей (GET /api/v1/regions, контракт /tmp/API-CONTRACT-regions.md). */
+  fetchRegions: (signal?: AbortSignal) => fetcher('/regions', { signal }),
+  /**
+   * Перевірка за особовим рахунком: повертає вулицю та чергу з довідника (GET /places/:account).
+   * 404 = номера немає в довіднику (див. ApiError.code === 'PLACE_NOT_FOUND').
+   */
+  fetchPlace: (account: string, signal?: AbortSignal) =>
+    fetcher(`/places/${encodeURIComponent(account)}`, { signal }),
   fetchStreetSchedule: (street: string, date?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({ street });
     if (date) params.set('date', date);
     return fetcher(`/street-queues/schedule?${params.toString()}`, { signal });
   },
+  /**
+   * Ручной запуск парсинга реальных источников (admin). Ответ: `{ data: [{ sourceId, name, recordsFound }] }`.
+   * Токен вводит человек и он не сохраняется. Публичного триггера парсинга нет намеренно: иначе
+   * кто угодно мог бы заставлять бекенд ходить к оператору.
+   */
+  parseNow: (token: string) =>
+    fetcher('/admin/parse', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    }),
   upsertStreetQueue: (street: string, queue: string, token: string) =>
     fetcher('/admin/street-queues', {
       method: 'PUT',
@@ -78,5 +102,27 @@ export const api = {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify({ queue, date, payload }),
+    }),
+  /**
+   * Автозавантаження погодинного ГПВ прямо з оператора (admin). Ендпоінт оператора
+   * (`POST /api/info_schedule`) віддає графік за номером черги БЕЗ капчі й без персональних
+   * даних, тому тут не потрібні ні браузер, ні Turnstile-токен — лише черга, дата й адмін-токен.
+   */
+  fetchScheduleNow: (queue: string, date: string, token: string) =>
+    fetcher('/admin/schedules/fetch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ queue, date }),
+    }),
+  /**
+   * Імпорт ГПВ з ПУБЛІЧНОГО Telegram-каналу оператора (admin). Мережа для цього не потрібна:
+   * бекенд читає вже збережені пости каналу (`telegram_posts`) і пише `schedule_slots`.
+   * Капчі й персональних даних у цих постах немає.
+   */
+  importTelegramSchedule: (token: string) =>
+    fetcher('/admin/schedules/import-telegram', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({}),
     }),
 };

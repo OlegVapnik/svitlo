@@ -1,23 +1,56 @@
 ---
 name: scraper-adapter-hardening
-description: "Rules and checklist for the Svitlo source adapters (operator chernihivoblenergo web API, Telegram channel/bot, mock): contract tests with scrubbed fixtures, strict validation of external responses, loud failure on format change, rate limiting, backoff and circuit breaker, handling of WAF/IP blocks (without evasion), PII removal before storage. Use for any change in apps/api/src/parsers, parse.service.ts, scheduler, snapshots, or when the source returns errors or empty data. Триггеры: парсер, адаптер, оператор заблокировал, 403, 429, WAF, бан IP, telegram, снапшот, парсинг, list_acc."
+description: "Cookbook for Svitlo source adapters (operator web API, hourly schedules, Telegram, mock): public-source recipes, contract tests with scrubbed fixtures, strict validation, loud failure on format change, backoff, circuit breaker and PII removal. Use for adapters, scheduler, snapshots and source errors/empty data. Триггери: парсер, адаптер, снапшот, пустые данные, info_schedule, info_disable, list_acc, telegram,.parse_runs."
 ---
 
-# Source adapters: hardening
+# Source adapters: cookbook
 
-Context: the main source is an operator endpoint (`GET /power_outages` → `POST /api/list_acc`, types 1,2,6) that is not a public API and sits behind a WAF that has already blocked the IP. Telegram parsing reads public channel pages. Both can change without notice.
-Goal: **when the source changes or blocks us, we fail loudly, stop hammering, keep serving the last good data, and tell a human.**
+Context: the main outage source is АТ «Чернігівобленерго» (`GET /power_outages` →
+`POST /api/list_acc`, types 1,2,6); hourly schedule data uses the public
+`POST /api/info_schedule`. Telegram parsing reads public channel pages. Sources can
+change without notice.
+Goal: **when a source changes or blocks us, fail loudly, keep serving last good
+data, and tell a human — with a recipe, not a guess.**
 
 ## Hard rules
 
-1. **No block evasion.** Do not add proxy/IP rotation, header spoofing, captcha solving or "try from another IP" logic. If the operator blocks us: stop, back off, record it, and escalate to the project owner (ask the operator for an official data feed or permission). Respect `Retry-After` (`parseRetryAfter` exists).
-2. **Low and polite load**: one request chain per parse run, `requestDelayMs` between calls, `PARSE_INTERVAL_MINUTES` ≥ 30, identifiable `User-Agent`. Never parse in a loop on error.
-3. **Never store PII.** Responses may contain account numbers and session data. Scrub *before* writing to DB, logs, `rawSnapshot` or fixtures (see `secrets-pii-hygiene`).
-4. **TLS verification stays on.** The operator serves an incomplete chain; the fix is `NODE_EXTRA_CA_CERTS` with their CA (already mounted). Never set `rejectUnauthorized: false`.
+1. **Never store PII.** Responses may contain account numbers and session data.
+   Scrub *before* writing to DB, logs, `rawSnapshot` or fixtures (see
+   `secrets-pii-hygiene`).
+2. **TLS verification stays on.** Never set `rejectUnauthorized: false`.
+
+## Public sources: recipes (use these, in this order)
+
+### Hourly schedule (ГПВ) — `POST /api/info_schedule`
+- Request: `{ queue, curr_dt }` on `https://interruptions.energy.cn.ua`
+  (base `CHERNIHIV_SCHEDULE_BASE_URL`, queue selected by the user client-side,
+  no token, no PII).
+- Parse `aData` + `aState` at the boundary with a zod schema; normalise with
+  `schedule-normalizer.service.ts`; keep UTC conversion via `kyivWallClockToUtc`.
+- `aData: null` (or empty `aState`) → no slots → EMPTY result, never a synthetic
+  schedule (golden rule 14 in `svitlo-onboarding`).
+- Import flow for operators/broken pages: `ScheduleImportPage` (copy-paste),
+  schedule lands through `POST /admin/schedules/import`.
+
+### Address autocomplete — `GET /api/info_disable`
+- `?nq=city|street|house&q=<query>&c=<cityId>` — no captcha, feeds
+  `AddressCombobox` / `places.service.ts`.
+
+### Registered outages — `POST /api/list_acc`
+- Warm session first: `GET /power_outages` → cookies, then
+  `POST /api/list_acc { req_param }` with `c`, `t` (1 planned, 2 emergency,
+  6 ГПВ); rows via `parseListAccRow`.
+- On 403/429/timeout/TLS-abort the adapter raises `SourceBlockedError` with
+  `retryAfterMs`; circuit breaker (`source-breaker.ts`) pauses the source and
+  exposes `nextAttemptAt`. Do not "fix" a block by hammering the same endpoint.
+
+### Telegram
+- Parse public channel pages; classify text with `classifyTelegramText`
+  (table-driven tests; new rule ⇒ new case).
 
 ## Validate the external shape
 
-Every adapter must parse the raw response with a zod schema *at the boundary* (`parseListAccRow` and friends):
+Every adapter must parse the raw response with a zod schema *at the boundary*:
 
 - unknown/extra fields → ignore;
 - missing required fields or an unexpected top-level shape → throw `SourceFormatError` with the source name, the failing path and a **sanitised** 200-char sample;
@@ -26,9 +59,10 @@ Every adapter must parse the raw response with a zod schema *at the boundary* (`
 ## Run-level behaviour (`runParse` / `parse_runs`)
 
 - Record every run: status, `records_found`, `records_rejected`, duration, error message (sanitised).
-- Failure of the main source must not stop secondary sources (current behaviour — keep it) **and** must not overwrite good data with an empty result. An empty successful response is suspicious: if the previous run found >0 events and this one found 0, mark the run `suspect` and keep existing data unless the source explicitly says "none".
+- Failure of the main source must not stop secondary sources **and** must not overwrite good data with an empty result. An empty successful response is suspicious: if the previous run found >0 events and this one found 0, mark the run `suspect` and keep existing data unless the source explicitly says "none".
 - Circuit breaker: after 3 consecutive failures, pause the source for an increasing time (30 min → 1 h → 3 h → 6 h) and expose it in `/status` (`dataStale`, `lastError`, `nextAttemptAt`).
 - Keep `sources.last_success_at` / `last_error` accurate; they feed monitoring.
+- Scheduler cadence: `PARSE_INTERVAL_MINUTES` (+ jitter) in `apps/api/src/config.ts`; compose defaults in `docker-compose.yml`.
 
 ## Time and addresses
 
@@ -53,4 +87,4 @@ Every adapter must parse the raw response with a zod schema *at the boundary* (`
 
 ## Definition of done
 
-Fixtures + contract tests added, PII scan clean, failure paths covered (format drift, block, empty), `parse_runs` shows the new fields, and nothing in the change retries aggressively or bypasses a block.
+Fixtures + contract tests added, PII scan clean, failure paths covered (format drift, block, empty), `parse_runs` shows the new fields, and the source recipe above is the one actually used.

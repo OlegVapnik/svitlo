@@ -17,6 +17,8 @@ import addressesRoutes from './routes/addresses.js';
 import scheduleRoutes from './routes/schedules.js';
 import streetQueueRoutes from './routes/street-queues.js';
 import queueRoutes from './routes/queues.js';
+import placeRoutes from './routes/places.js';
+import regionRoutes from './routes/regions.js';
 import reliabilityRoutes from './routes/reliability.js';
 
 /**
@@ -70,6 +72,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(scheduleRoutes);
   await server.register(streetQueueRoutes);
   await server.register(queueRoutes);
+  await server.register(regionRoutes);
+  await server.register(placeRoutes);
   await server.register(reliabilityRoutes);
   await server.register(adminRoutes);
 

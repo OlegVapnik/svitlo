@@ -16,6 +16,8 @@ import { mergeDuplicateOutages, outageEventKey } from './outage-grouping.js';
 import { outageCategoryFromReason } from './outage-classification.js';
 import { markMissingEventsCancelled, upsertOutageEvent, upsertOutageEventAddress, type Database } from '../db/outage-events-writer.js';
 import { clearSourcePause, recordSourceFailure, recordSourceSuccess } from './source-breaker-state.js';
+import { importTelegramSchedule } from './telegram-schedule.service.js';
+import { importMirrorScheduleFromSource } from './mirror-schedule.service.js';
 import { sanitizeSourceError } from './source-breaker.js';
 import type { SourceFailureKind } from '../parsers/source-errors.js';
 
@@ -359,6 +361,54 @@ export async function runParse(sourceId: string) {
         kind: post.kind,
         rawSnapshotRef: snapshotPath,
       }).onConflictDoNothing();
+    }
+
+    // АВТОМАТИЧНИЙ імпорт погодинного ГПВ у `schedule_slots`: «Моя черга» оновлюється при будь-якій
+    // зміні графіка оператором, без кнопки в адмінці (HANDOFF §18.9.1).
+    //
+    // Читаємо не щойно зібрані пости в пам'яті, а базу за 14 діб (`importTelegramSchedule`): сторінка
+    // каналу віддає лише останні ~20 постів, тож «зміна» на 6 жовтня в пам'ять уже не потрапляє, а
+    // раніше записані слоти треба не втратити й перевірити повторно. Тому беремо надмножество з БД.
+    // Імпорт ідемпотентний: рядки `source = 'telegram'` за тими ж чергою/датою перезаписуються, ручний
+    // і операторський імпорт не чіпаються. Збій імпорту НЕ валить парсинг — слоти лишаються попередні.
+    try {
+      const scheduleImport = await importTelegramSchedule();
+      logger.info(
+        {
+          sourceId,
+          posts: scheduleImport.posts,
+          matchedPosts: scheduleImport.matchedPosts,
+          imported: scheduleImport.imported,
+          queues: scheduleImport.queues,
+          dates: scheduleImport.dates,
+        },
+        'Telegram schedule auto-import finished',
+      );
+    } catch (scheduleError) {
+      logger.warn(
+        { err: scheduleError, sourceId },
+        'Telegram schedule auto-import failed; keeping existing schedule_slots',
+      );
+    }
+
+    // АВТОМАТИЧНИЙ імпорт ПОВНОГО добового ГПВ із публічного «дзеркала» (MIRROR_SCHEDULE_URL).
+    // Telegram пише лише «зміни» (окремі черги+час), а сайт оператора віддає заглушку/капчу
+    // (HANDOFF §18.9), тому єдине джерело 48 півгодинних значень на кожну чергу — дзеркало.
+    // Той самий формат читає Java-ядро `core/`. Імпорт ідемпотентний і пише лише `source='mirror'`,
+    // ручні/операторські/telegram-рядки не затираються. Збій НЕ валить парсинг: слоти лишаються.
+    if (env.MIRROR_SCHEDULE_ENABLED) {
+      try {
+        const mirrorImport = await importMirrorScheduleFromSource();
+        logger.info(
+          { sourceId, imported: mirrorImport.imported, queues: mirrorImport.queues, dates: mirrorImport.dates },
+          'Mirror schedule auto-import finished',
+        );
+      } catch (mirrorError) {
+        logger.warn(
+          { err: mirrorError, sourceId },
+          'Mirror schedule auto-import failed; keeping existing schedule_slots',
+        );
+      }
     }
 
     // Upsert / update source incidents without discarding outage announcements.

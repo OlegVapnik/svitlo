@@ -11,12 +11,12 @@ import { Skeleton } from '../components/ui/Skeleton.js';
 import { EmptyState } from '../components/common/EmptyState.js';
 import { ErrorState } from '../components/common/ErrorState.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
-import { useStreetQueues, useStreetSchedule } from '../api/queries.js';
+import { useRegion } from '../hooks/useRegion.js';
+import { useQueues, useStreetQueues, useStreetSchedule } from '../api/queries.js';
 import { api } from '../api/client.js';
 import { formatDateTime, formatTimeRange } from '../lib/date.js';
 import { cn } from '@/lib/cn';
 
-const QUEUE_OPTIONS = ['1', '2', '3', '1/1', '1/2', '2/2'];
 const STREET_KEY = 'streetsPageStreet';
 
 function kyivDate(offsetDays = 0): string {
@@ -34,11 +34,17 @@ function kyivDate(offsetDays = 0): string {
 export const StreetsPage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { currentRegion } = useRegion();
+  const { data: queuesData } = useQueues(currentRegion);
+  const queueOptions = useMemo(() => {
+    const list = (queuesData?.data ?? []).map((q) => q.queue);
+    return list.length > 0 ? list : ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2'];
+  }, [queuesData]);
   const [street, setStreet] = useState(() => localStorage.getItem(STREET_KEY) || '');
   const [day, setDay] = useState<0 | 1>(0);
   const [token, setToken] = useState('');
   const [newStreet, setNewStreet] = useState('');
-  const [newQueue, setNewQueue] = useState('2/2');
+  const [newQueue, setNewQueue] = useState('1/1');
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminMessage, setAdminMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -189,7 +195,7 @@ export const StreetsPage: React.FC = () => {
             <div className="space-y-1.5">
               <label htmlFor="admin-queue" className="text-xs font-semibold text-foreground">{t('streets.adminQueue')}</label>
               <select id="admin-queue" value={newQueue} onChange={(event) => setNewQueue(event.target.value)} className="h-11 rounded-xl border border-input bg-background px-3 text-sm text-foreground">
-                {QUEUE_OPTIONS.map((queue) => <option key={queue} value={queue}>{queue}</option>)}
+                {queueOptions.map((queue) => <option key={queue} value={queue}>{queue}</option>)}
               </select>
             </div>
             <Button

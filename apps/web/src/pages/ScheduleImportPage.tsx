@@ -1,29 +1,48 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Upload, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, RefreshCw, ShieldAlert, Download, MessageCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button.js';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Input } from '../components/ui/Input.js';
 import { api, ApiError } from '../api/client.js';
+import { Select } from '../components/ui/Select.js';
+import { useFetchScheduleNow, useImportTelegramSchedule, useParseNow, useQueues } from '../api/queries.js';
+import { useRegion } from '../hooks/useRegion.js';
+import { cn } from '../lib/cn.js';
 
 type ImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };
 /** Локальная форма ошибки для рендера: код, сообщение и (если есть) детали валидации. */
 type ImportError = { code: string; message: string; details?: Array<{ path: string; message: string }> };
 
 /**
- * Ручной импорт графика оператора: сайт оператора отдаёт JSON только в авторизованной браузерной
- * сессии, поэтому копипаст — единственный легальный путь (WAF/бан не обходим). Токен и вставленный
- * JSON живут только в этом компоненте и уходят лишь на /admin/schedules/import.
+ * Імпорт графіка оператора. Два шляхи:
+ *  1) «Завантажити графік з оператора» — бекенд питає публічний `POST /api/info_schedule`
+ *     (капчі немає, ПД немає — лише номер черги й дата). ВАЖЛИВО: це **заглушка** оператора,
+ *     вона завжди повертає `aData: null`, тому реальних інтервалів ця кнопка не дає
+ *     (перевірено 10.10.2026; справжній ГПВ — тільки `info_schedule_part`, він за Turnstile, і
+ *     ми його не обходимо);
+ *  2) ручна вставка JSON — фактичний робочий шлях наповнення `schedule_slots`.
+ * Токен і вставлений JSON живуть лише в цьому компоненті й ідуть тільки на /admin/schedules/*.
  */
 export const ScheduleImportPage: React.FC = () => {
   const { t } = useTranslation();
-  const [queue, setQueue] = useState('2/2');
+  const { currentRegion } = useRegion();
+  const { data: queuesData, isLoading: queuesLoading } = useQueues(currentRegion);
+  const knownQueues = queuesData?.data ?? [];
+  // Без выдуманного дефолта: очередь выбирается только из реального списка (GET /api/v1/queues).
+  const [queue, setQueue] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [json, setJson] = useState('');
   const [token, setToken] = useState('');
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<ImportError | null>(null);
   const [busy, setBusy] = useState(false);
+  const [parseMsg, setParseMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [fetchMsg, setFetchMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [telegramMsg, setTelegramMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const parseNow = useParseNow();
+  const fetchNow = useFetchScheduleNow();
+  const importTelegram = useImportTelegramSchedule();
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -52,6 +71,92 @@ export const ScheduleImportPage: React.FC = () => {
     }
   };
 
+  /**
+   * Немедленный запуск парсинга реальных источников оператора (POST /admin/parse).
+   * Требует админ-токен: публично дёргать запросы к оператору нельзя.
+   */
+  const askOperator = async () => {
+    setParseMsg(null);
+    try {
+      const result = (await parseNow.mutateAsync(token)) as {
+        data?: Array<{ recordsFound?: number; error?: string }>;
+      };
+      const rows = result.data ?? [];
+      const records = rows.reduce((sum, row) => sum + (row.recordsFound ?? 0), 0);
+      const failed = rows.filter((row) => row.error).length;
+      setParseMsg({
+        kind: failed > 0 ? 'err' : 'ok',
+        text: t('scheduleImport.parseSuccess', { sources: rows.length, records, failed }),
+      });
+    } catch (error) {
+      setParseMsg({
+        kind: 'err',
+        text: t('scheduleImport.parseError', {
+          message: error instanceof ApiError ? error.message : t('scheduleImport.network'),
+        }),
+      });
+    }
+  };
+
+  /**
+   * Запит публічного методу оператора (POST /admin/schedules/fetch): потрібні черга, дата й адмін-токен.
+   * Порожній результат (intervals = 0) — очікуваний: публічний `info_schedule` завжди порожній
+   * (`aData: null`), а метод з даними (`info_schedule_part`) закритий Turnstile і ми його не обходимо.
+   */
+  const fetchFromOperator = async () => {
+    setFetchMsg(null);
+    try {
+      const result = (await fetchNow.mutateAsync({ queue, date, token })) as {
+        data?: { mergedIntervals?: number; intervals?: number };
+      };
+      const intervals = result.data?.intervals ?? 0;
+      setFetchMsg({
+        kind: 'ok',
+        text:
+          intervals > 0
+            ? t('scheduleImport.fetchSuccess', { queue, date, intervals, merged: result.data?.mergedIntervals ?? 0 })
+            : t('scheduleImport.fetchEmpty', { queue, date }),
+      });
+    } catch (error) {
+      setFetchMsg({
+        kind: 'err',
+        text: t('scheduleImport.fetchError', {
+          message: error instanceof ApiError ? error.message : t('scheduleImport.network'),
+        }),
+      });
+    }
+  };
+
+  /**
+   * Імпорт ГПВ з публічного Telegram-каналу оператора (POST /admin/schedules/import-telegram).
+   * Назовні мережа не потрібна: бекенд бере вже збережені пости каналу. Капчі й ПД там немає.
+   * Це той шлях, який реально дає черги+час (HANDOFF §18.9).
+   */
+  const importFromTelegram = async () => {
+    setTelegramMsg(null);
+    try {
+      const result = (await importTelegram.mutateAsync(token)) as {
+        data?: { imported?: number; posts?: number; matchedPosts?: number; queues?: string[] };
+      };
+      const imported = result.data?.imported ?? 0;
+      const queues = (result.data?.queues ?? []).join(', ');
+      setTelegramMsg({
+        kind: 'ok',
+        text:
+          imported > 0
+            ? t('scheduleImport.telegramSuccess', { imported, queues, posts: result.data?.posts ?? 0 })
+            : t('scheduleImport.telegramEmpty'),
+      });
+    } catch (error) {
+      setTelegramMsg({
+        kind: 'err',
+        text: t('scheduleImport.telegramError', {
+          message: error instanceof ApiError ? error.message : t('scheduleImport.network'),
+        }),
+      });
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-16 md:pb-6">
       <header className="space-y-0.5">
@@ -72,7 +177,24 @@ export const ScheduleImportPage: React.FC = () => {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="import-queue" className="text-xs font-semibold text-foreground">{t('scheduleImport.queueLabel')}</label>
-                <Input id="import-queue" value={queue} onChange={(event) => setQueue(event.target.value)} required className="h-11" />
+                {/* Выпадающий список реальных черг — вместо ручного ввода (раньше был зашитый '2/2'). */}
+                <Select
+                  id="import-queue"
+                  value={queue}
+                  onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setQueue(event.target.value)}
+                  required
+                  disabled={knownQueues.length === 0}
+                  className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">
+                    {queuesLoading ? t('queues.loading') : t('scheduleImport.queuePlaceholder')}
+                  </option>
+                  {knownQueues.map((item) => (
+                    <option key={item.queue} value={item.queue}>
+                      {item.queue}{item.lastDate ? ` — ${item.lastDate}` : ''}
+                    </option>
+                  ))}
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <label htmlFor="import-date" className="text-xs font-semibold text-foreground">{t('scheduleImport.dateLabel')}</label>
@@ -132,6 +254,62 @@ export const ScheduleImportPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          <div className="mt-4 space-y-3 border-t border-border pt-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={fetchFromOperator}
+                disabled={!queue || !date || !token || fetchNow.isPending}
+                className="gap-2"
+              >
+                <Download className={cn('h-4 w-4', fetchNow.isPending && 'animate-spin')} aria-hidden />
+                {fetchNow.isPending ? t('scheduleImport.fetchRunning') : t('scheduleImport.fetchNow')}
+              </Button>
+              <span className="text-xs text-muted-foreground">{t('scheduleImport.fetchHint')}</span>
+            </div>
+            {fetchMsg && (
+              <p role="status" className={cn('text-xs', fetchMsg.kind === 'ok' ? 'text-success' : 'text-destructive')}>
+                {fetchMsg.text}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={importFromTelegram}
+                disabled={!token || importTelegram.isPending}
+                className="gap-2"
+              >
+                <MessageCircle className={cn('h-4 w-4', importTelegram.isPending && 'animate-spin')} aria-hidden />
+                {importTelegram.isPending ? t('scheduleImport.telegramRunning') : t('scheduleImport.telegramNow')}
+              </Button>
+              <span className="text-xs text-muted-foreground">{t('scheduleImport.telegramHint')}</span>
+            </div>
+            {telegramMsg && (
+              <p role="status" className={cn('text-xs', telegramMsg.kind === 'ok' ? 'text-success' : 'text-destructive')}>
+                {telegramMsg.text}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={askOperator}
+                disabled={!token || parseNow.isPending}
+                className="gap-2"
+              >
+                <RefreshCw className={cn('h-4 w-4', parseNow.isPending && 'animate-spin')} aria-hidden />
+                {parseNow.isPending ? t('scheduleImport.parseRunning') : t('scheduleImport.parseNow')}
+              </Button>
+              <span className="text-xs text-muted-foreground">{t('scheduleImport.parseHint')}</span>
+            </div>
+            {parseMsg && (
+              <p role="status" className={cn('text-xs', parseMsg.kind === 'ok' ? 'text-success' : 'text-destructive')}>
+                {parseMsg.text}
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
