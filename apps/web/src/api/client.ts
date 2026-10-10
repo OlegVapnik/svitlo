@@ -51,6 +51,8 @@ export const api = {
   fetchQueueSchedule: (queue: string, date: string) =>
     fetcher(`/schedules?${new URLSearchParams({ queue, date }).toString()}`),
   fetchStreetQueues: (signal?: AbortSignal) => fetcher('/street-queues', { signal }),
+  /** Реальный список очередей (только то, что есть в БД: слоты графика и привязки улиц). */
+  fetchQueues: (signal?: AbortSignal) => fetcher('/queues', { signal }),
   fetchStreetSchedule: (street: string, date?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({ street });
     if (date) params.set('date', date);

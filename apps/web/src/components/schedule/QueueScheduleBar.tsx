@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { OFF_STATE_CODE, formatMinutesUk, minutesOfDay, minutesToHm, scheduleWindow } from '../../lib/scheduleWindow.js';
 
@@ -6,21 +7,31 @@ type Props = {
   intervals: ScheduleIntervalUtc[];
   date: string;
   now?: Date;
+  /** Переопределить текст пустой полосы (по умолчанию — t('schedule.notImported')). */
   emptyLabel?: string;
   /** Показывать строку-итог под полосой. Герой главной выводит её сам, поэтому передаёт false. */
   showSummary?: boolean;
 };
 
+/** Время «до» по Киеву — границы интервалов приходят в UTC. */
+function kyivHm(iso: string): string {
+  return new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+}
+
 /**
  * Полоса суток 00:00–24:00 по графику очереди. Расчёт окна (что сейчас, когда следующее, сколько
  * без света за день) живёт в lib/scheduleWindow.ts: тот же расчёт использует герой главной,
  * поэтому цифры в двух блоках не могут разойтись.
+ *
+ * Тексты — через i18n (раньше были захардкожены по-украински и не переводились вместе с интерфейсом).
  */
-export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new Date(), emptyLabel = 'Графік не імпортовано', showSummary = true }) => {
+export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new Date(), emptyLabel, showSummary = true }) => {
+  const { t } = useTranslation();
+
   if (!intervals.length) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-card/60 p-6 text-center text-sm text-muted-foreground">
-        {emptyLabel}
+        {emptyLabel ?? t('schedule.notImported')}
       </div>
     );
   }
@@ -55,7 +66,7 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
           );
         })}
         {nowMinutes != null && nowMinutes >= 0 && nowMinutes <= 1440 && (
-          <div className="absolute inset-y-0 w-0.5 bg-foreground" style={{ left: `${(nowMinutes / 1440) * 100}%` }} aria-label="Зараз" />
+          <div className="absolute inset-y-0 w-0.5 bg-foreground" style={{ left: `${(nowMinutes / 1440) * 100}%` }} aria-label={t('schedule.now')} />
         )}
       </div>
 
@@ -80,12 +91,12 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
       {showSummary && (
         <div className="flex flex-wrap gap-3 text-sm">
           {current?.stateCode === OFF_STATE_CODE && (
-            <span className="font-medium text-destructive">Зараз відключення — до {new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv', hour: '2-digit', minute: '2-digit' }).format(new Date(current.endsAt))}</span>
+            <span className="font-medium text-destructive">{t('schedule.nowOff', { time: kyivHm(current.endsAt) })}</span>
           )}
           {nextInMinutes != null && (
-            <span className="font-medium text-foreground">Наступне відключення через {formatMinutesUk(nextInMinutes)}</span>
+            <span className="font-medium text-foreground">{t('schedule.nextOff', { time: formatMinutesUk(nextInMinutes) })}</span>
           )}
-          <span className="text-muted-foreground">Без світла за день: {formatMinutesUk(offMinutes)}</span>
+          <span className="text-muted-foreground">{t('schedule.offPerDay', { time: formatMinutesUk(offMinutes) })}</span>
         </div>
       )}
     </div>

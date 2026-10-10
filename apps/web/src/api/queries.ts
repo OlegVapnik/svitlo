@@ -7,6 +7,7 @@ import type {
   OutageDetailResponse,
   OutageStatus,
   QueueScheduleData,
+  QueueSummary,
   ReliabilityResponse,
   StatusResponse,
   StreetQueuePair,
@@ -89,6 +90,16 @@ export const useHealth = () => useQuery({
 export const useStreetQueues = () => useQuery<{ data: StreetQueuePair[] }>({
   queryKey: ['streetQueues'],
   queryFn: () => api.fetchStreetQueues(),
+});
+
+/**
+ * Список очередей для страницы «Мої черги». Источник — реальные данные (GET /api/v1/queues),
+ * а не зашитый в веб массив: если импорта не было, список пустой и страница это признаёт.
+ */
+export const useQueues = () => useQuery<{ data: QueueSummary[] }>({
+  queryKey: ['queues'],
+  queryFn: () => api.fetchQueues(),
+  staleTime: 60_000,
 });
 
 export const useStreetSchedule = (street: string, date: string) => useQuery<{ data: StreetScheduleData }>({

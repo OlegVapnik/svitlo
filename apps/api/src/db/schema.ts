@@ -147,6 +147,17 @@ export const streetQueues = pgTable('street_queues', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Довідник «особовий рахунок → вулиця + черга» (міграція 0011). Наповнюється з даних оператора
+ * через адмін-маршрут; ПІБ та номери квартир тут не зберігаються.
+ */
+export const subscriberPlaces = pgTable('subscriber_places', {
+  account: text('account').primaryKey(),
+  street: text('street').notNull(),
+  queue: text('queue').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const gridStatus = pgTable('grid_status', {
   id: uuid('id').primaryKey().defaultRandom(),
   sourceId: uuid('source_id').references(() => sources.id).notNull(),

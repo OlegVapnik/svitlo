@@ -36,6 +36,10 @@ description: "Conventions and checklist for changing the Svitlo React/Vite/Tailw
 - Test both themes (`class="dark"`) and 360 px width: this is a phone-first PWA used when the lights are out, often with a bad connection and low battery.
   If this session has no browser, take real screenshots instead of guessing:
   `node skills/frontend-ui-change/scripts/screenshot.mjs --mobile --mock-schedule --out /tmp/shots`
+  **Restart Vite after editing `i18n/*.json` or `index.html`/`vite.config.ts`**: the dev server caches
+  transformed modules by URL+mtime, so a fresh tab may receive the OLD dictionary and the page shows raw
+  keys (`queues.codePlaceholder`) while `curl /src/i18n/uk.json` already returns the new ones. Kill it with
+  `fuser -k 5173/tcp` — never `pkill -f 'vite --port 5173'` (the pattern matches pkill's own command line).
   (headless Chromium from the playwright cache via CDP, no dependencies; `--mock-schedule` intercepts
   `/api/v1/schedules` in the browser so a realistic graph can be checked without touching the DB or
   `SCHEDULE_DEMO`). It prints a DOM probe (hero colour/size, card bg/border) — compare those numbers with

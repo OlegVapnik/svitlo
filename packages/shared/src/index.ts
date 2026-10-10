@@ -108,6 +108,22 @@ export const operatorScheduleResponseSchema = z.object({
 
 const QUEUE_REGEX = /^\d+(?:\/\d+)?$/;
 
+/** Тот же формат очереди строкой — веб строит из него RegExp, не подтягивая zod в бандл. */
+export const QUEUE_CODE_PATTERN = '^\\d+(?:\\/\\d+)?$';
+
+/** Формат особового рахунку (9–12 цифр) — строкой, по той же причине, что и QUEUE_CODE_PATTERN. */
+export const ACCOUNT_NUMBER_PATTERN = '^\\d{9,12}$';
+
+/** Особовий рахунок: только цифры, 9–12 знаков. */
+export const accountNumberSchema = z.string().trim().regex(new RegExp(ACCOUNT_NUMBER_PATTERN), 'Особовий рахунок — 9–12 цифр');
+
+/** Ввод довідника «рахунок → вулиця + черга» (адмін-маршрут PUT /api/v1/admin/places). */
+export const subscriberPlaceInputSchema = z.object({
+  account: accountNumberSchema,
+  street: z.string().trim().min(2, 'Назва вулиці — мінімум 2 символи'),
+  queue: z.string().trim().regex(new RegExp(QUEUE_CODE_PATTERN), 'Черга має вигляд "3" або "2/2"'),
+});
+
 /**
  * Единый формат кода очереди: «3» или «2/2». Один источник правды для импорта графика,
  * списка моих очередей и маршрута GET /schedules (раньше regex дублировался по файлам).
@@ -139,6 +155,26 @@ export interface QueueScheduleData {
   source: string | null;
   /** Время последнего ручного импорта по этой очереди/дате (ISO) либо null. */
   lastImportedAt: string | null;
+}
+
+export interface QueueSummary {
+  /** Код очереди: «3» или «2/2». */
+  queue: string;
+  /** Сколько интервалов графика импортировано по всем датам (schedule_slots). */
+  slots: number;
+  /** Последняя дата, на которую есть график (YYYY-MM-DD), либо null. */
+  lastDate: string | null;
+  /** Сколько улиц привязано к очереди в street_queues. */
+  streets: number;
+}
+
+/** Особовий рахунок → вулиця + черга (довідник для перевірки даних, GET /api/v1/places/:account). */
+export interface SubscriberPlace {
+  account: string;
+  street: string;
+  queue: string;
+  /** Когда запись обновляли из данных оператора (ISO). */
+  updatedAt: string;
 }
 
 /** Ответ автодополнения/поиска улицы с привязанной очередью. */
