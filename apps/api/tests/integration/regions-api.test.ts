@@ -87,6 +87,8 @@ describeWithDb('Мультирегіональний API: каталог обл�
     await db.delete(scheduleSlots);
     await db.delete(regionQueueCatalog);
     await db.delete(regionCatalog);
+    const { streetQueues: sq } = await import('../../src/db/schema.js');
+    await db.delete(sq);
   });
 
   it('GET /api/v1/regions: каталог із БД, коли дзеркало недоступне, назва не вигадується', async () => {

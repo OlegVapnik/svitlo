@@ -1,51 +1,66 @@
 import { normalizeAddressQuery } from '../parsers/address-matcher.js';
-import { db } from '../db/connection.js';
 import { streetQueues } from '../db/schema.js';
-import { asc, eq, sql } from 'drizzle-orm';
-import type { StreetQueuePair } from '@svitlo/shared';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import type { StreetQueuePair, StreetScheduleData } from '@svitlo/shared';
 import { getQueueSchedule, getQueueScheduleMeta } from './schedule-import.service.js';
-import type { StreetScheduleData } from '@svitlo/shared';
+import { DEFAULT_REGION } from './regions.service.js';
 
-function toPair(row: { streetNormalized: string; streetName: string; queue: string; updatedAt: Date | string }): StreetQueuePair {
+function toPair(row: { streetNormalized: string; streetName: string; queue: string; updatedAt: Date | string; region?: string }): StreetQueuePair {
   return {
     streetNormalized: row.streetNormalized,
     streetName: row.streetName,
     queue: row.queue,
     updatedAt: new Date(row.updatedAt).toISOString(),
+    region: row.region,
   };
 }
 
-export async function listStreetQueues(): Promise<StreetQueuePair[]> {
-  const rows = await db.select().from(streetQueues).orderBy(asc(streetQueues.streetName));
+export async function listStreetQueues(region = DEFAULT_REGION): Promise<StreetQueuePair[]> {
+  const { db } = await import('../db/connection.js');
+  const rows = await db
+    .select()
+    .from(streetQueues)
+    .where(eq(streetQueues.region, region))
+    .orderBy(asc(streetQueues.streetName));
   return rows.map(toPair);
 }
 
-export async function findStreetQueue(street: string): Promise<StreetQueuePair | null> {
+export async function findStreetQueue(street: string, region = DEFAULT_REGION): Promise<StreetQueuePair | null> {
+  const { db } = await import('../db/connection.js');
   const normalized = normalizeAddressQuery(street);
   if (!normalized) return null;
-  const [row] = await db.select().from(streetQueues).where(eq(streetQueues.streetNormalized, normalized)).limit(1);
+  const [row] = await db
+    .select()
+    .from(streetQueues)
+    .where(and(eq(streetQueues.region, region), eq(streetQueues.streetNormalized, normalized)))
+    .limit(1);
   return row ? toPair(row) : null;
 }
 
-/** Создаёт или перезаписывает пару «улица → очередь». Ключ — нормализованное имя. */
-export async function upsertStreetQueue(street: string, queue: string): Promise<StreetQueuePair> {
+/** Создаёт или перезаписывает пару «улица → очередь». Ключ — (region, street_normalized). */
+export async function upsertStreetQueue(street: string, queue: string, region = DEFAULT_REGION): Promise<StreetQueuePair> {
+  const { db } = await import('../db/connection.js');
   const normalized = normalizeAddressQuery(street);
   if (!normalized) throw new Error('Не удалось нормализовать название улицы');
   const streetName = street.trim();
   const [row] = await db
     .insert(streetQueues)
-    .values({ streetNormalized: normalized, streetName, queue })
+    .values({ region, streetNormalized: normalized, streetName, queue })
     .onConflictDoUpdate({
-      target: streetQueues.streetNormalized,
+      target: [streetQueues.region, streetQueues.streetNormalized],
       set: { streetName, queue, updatedAt: sql`now()` },
     })
     .returning();
   return toPair(row!);
 }
 
-export async function removeStreetQueue(streetNormalized: string): Promise<boolean> {
+export async function removeStreetQueue(streetNormalized: string, region = DEFAULT_REGION): Promise<boolean> {
+  const { db } = await import('../db/connection.js');
   const normalized = normalizeAddressQuery(streetNormalized);
-  const removed = await db.delete(streetQueues).where(eq(streetQueues.streetNormalized, normalized)).returning({ key: streetQueues.streetNormalized });
+  const removed = await db
+    .delete(streetQueues)
+    .where(and(eq(streetQueues.region, region), eq(streetQueues.streetNormalized, normalized)))
+    .returning({ key: streetQueues.streetNormalized });
   return removed.length > 0;
 }
 
@@ -53,14 +68,17 @@ export async function removeStreetQueue(streetNormalized: string): Promise<boole
  * Возвращает график привязанной к улице очереди. Если улица не привязана —
  * queue = null и пустые интервалы (страница покажет подсказку).
  */
-export async function getStreetSchedule(street: string, date: string): Promise<StreetScheduleData> {
+export async function getStreetSchedule(street: string, date: string, region = DEFAULT_REGION): Promise<StreetScheduleData> {
   const normalized = normalizeAddressQuery(street);
-  const pair = normalized ? await findStreetQueue(street) : null;
+  const pair = normalized ? await findStreetQueue(street, region) : null;
   const queue = pair?.queue ?? null;
   if (!queue) {
-    return { street, streetNormalized: normalized, queue: null, date, intervals: [], source: null, lastImportedAt: null };
+    return { street, streetNormalized: normalized, queue: null, date, intervals: [], source: null, lastImportedAt: null, region };
   }
-  const [meta, intervals] = await Promise.all([getQueueScheduleMeta(queue, date), getQueueSchedule(queue, date)]);
+  const [meta, intervals] = await Promise.all([
+    getQueueScheduleMeta(queue, date, region),
+    getQueueSchedule(queue, date, region),
+  ]);
   return {
     street,
     streetNormalized: normalized,
@@ -69,5 +87,6 @@ export async function getStreetSchedule(street: string, date: string): Promise<S
     intervals,
     source: meta.source,
     lastImportedAt: meta.lastImportedAt,
+    region,
   };
 }

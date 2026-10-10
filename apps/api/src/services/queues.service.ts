@@ -2,11 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import type { QueueSummary } from '@svitlo/shared';
 
 /**
- * Область легасі-даних. Адресний довідник (`street_queues`) поки описує лише Чернігівщину:
- * у таблиці немає області, тож для інших областей показуємо 0 вулиць — краще порожньо, ніж чужі
- * адреси, приписані до черги іншої області (вигаданих даних не буває, див. hard stop #14).
+ * Область легасі-даних (Чернігівщина).
+ * Раніше таблиця `street_queues` описувала лише Чернігівщину та не мала колонки `region`.
+ * З міграцією 0013 таблиця підтримує `region`, тож кожна область повертає лише власні вулиці,
+ * а якщо адрес для області ще немає — чесний порожній список (0 вулиць).
  */
-const LEGACY_REGION = 'chernihivska-oblast';
+export const LEGACY_REGION = 'chernihivska-oblast';
 
 /**
  * Список очередей приложения — ТОЛЬКО из реальных данных: интервалы графика (schedule_slots)
@@ -61,12 +62,10 @@ export async function listQueues(region?: string): Promise<QueueSummary[]> {
     .from(scheduleSlots);
   const streetsQuery = db
     .select({ queue: streetQueues.queue, streets: sql<number>`count(*)::int` })
-    .from(streetQueues)
-    .groupBy(streetQueues.queue);
+    .from(streetQueues);
   const [slotsRows, streetRows] = await Promise.all([
     region ? slotsQuery.where(eq(scheduleSlots.region, region)).groupBy(scheduleSlots.queue) : slotsQuery.groupBy(scheduleSlots.queue),
-    // Вулиці показуємо лише для легасі-області: для інших адрес у нас немає (див. LEGACY_REGION).
-    !region || region === LEGACY_REGION ? streetsQuery : Promise.resolve([]),
+    region ? streetsQuery.where(eq(streetQueues.region, region)).groupBy(streetQueues.queue) : streetsQuery.groupBy(streetQueues.queue),
   ]);
   return mergeQueues(slotsRows, streetRows);
 }

@@ -219,6 +219,8 @@ export interface StreetQueuePair {
   /** Привязанная очередь, например "3" или "2/2". */
   queue: string;
   updatedAt: string;
+  /** Область прив'язки (cpu, напр. 'chernihivska-oblast'). */
+  region?: string;
 }
 
 export interface StreetScheduleData extends Omit<QueueScheduleData, 'queue'> {
@@ -226,12 +228,15 @@ export interface StreetScheduleData extends Omit<QueueScheduleData, 'queue'> {
   streetNormalized: string;
   /** Привязанная очередь или null, если улица не найдена в street_queues. */
   queue: string | null;
+  /** Область прив'язки (cpu). */
+  region?: string;
 }
 
 /** Публичная/админская запись пары «улица → очередь». */
 export const streetQueueInputSchema = z.object({
   street: z.string().trim().min(2, 'Укажите название улицы'),
   queue: z.string().trim().regex(QUEUE_REGEX, 'Черга має бути виду "3" або "2/2"'),
+  region: z.string().optional(),
 });
 
 export type StreetQueueInput = z.infer<typeof streetQueueInputSchema>;
