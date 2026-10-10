@@ -92,7 +92,7 @@ export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoad
             type="button"
             onClick={() => setGranularity(tab.id)}
             className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
-              granularity === tab.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+              granularity === tab.id ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {tab.label}

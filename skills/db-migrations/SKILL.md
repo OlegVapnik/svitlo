@@ -16,7 +16,7 @@ description: "How to change the PostgreSQL schema in Svitlo safely: SQL migratio
 
 ## Checklist for a schema change
 
-1. Back up: `docker compose exec -T db pg_dump -U energymon -d energymon -Fc > backup_$(date +%F_%H%M).dump` and check the file is not empty.
+1. Back up: `docker compose exec -T db pg_dump -U svitlo -d svitlo -Fc > backup_$(date +%F_%H%M).dump` and check the file is not empty.
 2. Next number: `ls apps/api/src/db/migrations | sort | tail -3` → create `000(N+1)_<snake_case_topic>.sql`. Never edit an applied migration.
 3. Write idempotent SQL: `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE VIEW/FUNCTION`.
 4. Update `schema.ts` to match, and the shared zod/types in `packages/shared/src/index.ts` if the API shape changes.
@@ -24,7 +24,7 @@ description: "How to change the PostgreSQL schema in Svitlo safely: SQL migratio
    ```bash
    pnpm --filter @svitlo/api db:migrate
    pnpm --filter @svitlo/api db:migrate   # must be a no-op
-   docker compose exec -T db psql -U energymon -d energymon -c '\d <table>'
+   docker compose exec -T db psql -U svitlo -d svitlo -c '\d <table>'
    ```
 6. Typecheck + tests: `bash skills/svitlo-onboarding/scripts/verify.sh`.
 7. Write the rollback statement as a comment at the top of the file (even if it is "none, data migration").

@@ -1,11 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
 export default defineConfig({
   plugins: [
     react(),
+    // Tailwind v4 подключается плагином Vite (в v3 это был postcss.config.js + tailwind.config.ts).
+    tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
@@ -14,8 +17,8 @@ export default defineConfig({
         lang: 'uk',
         start_url: '/',
         display: 'standalone',
-        theme_color: '#1e40af',
-        background_color: '#0f172a',
+        theme_color: '#f3efe6',
+        background_color: '#f3efe6',
         icons: [
           {
             src: '/icons/icon.svg',
@@ -44,7 +47,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      // import.meta.dirname вместо __dirname: Vite 8 ругается на __dirname (native config loader).
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   server: {

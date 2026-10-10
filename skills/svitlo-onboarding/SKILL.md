@@ -27,7 +27,7 @@ PWA "Svitlo — Чернігів": shows power outages (planned / emergency / re
 
 - **Outage** — a source record (table `outages`): time range, area, addresses, reason, queue, status.
 - **Incident** — a feed item: a projection of outages (`kind:'outage'`) plus messages (`kind:'report'`).
-- **Schedule (ГПВ)** — `schedule_slots`, `street_queues`; hourly intervals per queue. `schedule-mock.service` = DEMO only.
+- **Schedule (ГПВ)** — `schedule_slots`, `street_queues`; hourly intervals per queue. Синтетики нет: пустая таблица → пустые `intervals`.
 
 ## Golden rules (violating any of these has already caused bugs)
 
@@ -38,13 +38,13 @@ PWA "Svitlo — Чернігів": shows power outages (planned / emergency / re
 5. **`energy_normalize_address()`** may change only through a *new* migration and a recomputation of `name_normalized`.
 6. **Do not add new calls to `mergeDuplicateOutages`.** Deduplication belongs at ingest — see `outage-data-core`.
 7. **Secrets/PII**: never print, commit or log `ADMIN_TOKEN`, operator raw responses, account numbers (`лицевой счёт`). See `secrets-pii-hygiene`.
-8. **Tailwind semantic classes** (`bg-card`, `text-muted-foreground`, …) work only if the token exists in BOTH `globals.css` and `tailwind.config.ts`.
+8. **Tailwind v4 semantic classes** (`bg-card`, `text-muted-foreground`, …) live in ONE place — `apps/web/src/styles/globals.css`: `@theme inline { --color-card: hsl(var(--card)); }` gives the class, the value sits in `:root` **and** `.dark`. There is no `tailwind.config.*` (v4 is CSS-first); a new token = one `--color-*` line + values for both themes.
 9. **All browser HTTP goes through `apps/web/src/api/client.ts`.** No bare `fetch('/api/v1/…')` in pages.
 10. **API envelope**: success `{ data, meta? }`, error `{ error: { code, message, details? } }` via `AppError`.
 11. **Imports** in both apps use the `.js` extension on relative paths; web alias `@/` → `apps/web/src`.
 12. **Admin routes** (`/api/v1/admin/*`) require `Authorization: Bearer ${ADMIN_TOKEN}`.
 13. **Docker**: `x-api-env` in compose overrides `.env`; `VITE_API_BASE_URL` is baked into the web bundle (rebuild web after changing it); after a web rebuild do a hard reload (PWA cache) — do not "fix" that in code.
-14. **Demo data is never real data.** Do not ship `SCHEDULE_DEMO=true` to production; anything demo must carry `demo:true` and be shown as such.
+14. **Никакого выдуманного графика.** Демо-подстановка (`SCHEDULE_DEMO` + `schedule-mock.service`) **удалена 2026-10-10**: если слотов нет, API отдаёт пустой `intervals` и `source: null`, UI — «Графік не імпортовано». Не возвращайте синтетику «чтобы было красиво»: человек планирует по этому графику день.
 15. Rate limit is 100 req/min per IP — check `trustProxy` before load-testing or deploying behind nginx.
 
 ## Where to look
@@ -55,9 +55,9 @@ PWA "Svitlo — Чернігів": shows power outages (planned / emergency / re
 | why an event is not shown as an emergency | `apps/api/src/services/outage-classification.ts` |
 | why the list has fewer rows than the DB | `apps/api/src/services/outage-grouping.ts` (`mergeDuplicateOutages`) |
 | "light on/off" and reliability | `power-summary*.ts`, `reliability.ts` |
-| empty "My schedule" | `apps/api/src/routes/schedules.ts` (`demo`, `SCHEDULE_DEMO`), table `schedule_slots` |
+| empty "My schedule" | table `schedule_slots` пустая (импорт графика не делали: `POST /admin/schedules/import`) |
 | the outage timeline chart | `apps/web/src/pages/OutagesPage.tsx` (tab `chart`) → `components/outages/OutageTimeline.tsx` |
-| an element without background/border | `components/ui/*`, `styles/globals.css`, `tailwind.config.ts` |
+| an element without background/border | `components/ui/*`, `styles/globals.css` (`@theme inline`), `skills/frontend-ui-change` |
 | street → queue | table `street_queues`, `StreetsPage.tsx`, `AddressCombobox.tsx` |
 
 ## Commands
@@ -70,7 +70,7 @@ pnpm --filter @svitlo/web  test
 pnpm --filter @svitlo/api  db:migrate
 docker compose up -d --build && docker compose ps
 docker compose logs --tail=200 api web
-docker compose exec -T db psql -U energymon -d energymon -c 'select count(*) from outages'
+docker compose exec -T db psql -U svitlo -d svitlo -c 'select count(*) from outages'
 bash skills/svitlo-onboarding/scripts/verify.sh      # runs the standard checks and prints a summary
 ```
 

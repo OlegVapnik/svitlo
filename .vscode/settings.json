@@ -14,8 +14,8 @@
             "driver": "PostgreSQL",
             "server": "localhost",
             "port": 5432,
-            "database": "energymon",
-            "username": "energymon",
+            "database": "svitlo",
+            "username": "svitlo",
             "askForPassword": true,
             "connectionTimeout": 15,
             "previewLimit": 50

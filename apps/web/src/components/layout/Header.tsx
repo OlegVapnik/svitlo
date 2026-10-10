@@ -17,7 +17,7 @@ export const Header = () => {
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="container flex h-14 items-center justify-between gap-2">
         <Link to="/" className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs">
             <Zap className="h-5 w-5" aria-hidden />
           </span>
           <span className="min-w-0 leading-tight">

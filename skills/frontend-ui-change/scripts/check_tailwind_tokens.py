@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-Find Tailwind semantic color classes that will generate NO CSS because the token is
-missing from tailwind.config.* or globals.css (shadcn-style: bg-card, text-muted-foreground, ...).
+Find Tailwind semantic color classes that will generate NO CSS, because the token is
+missing from the `@theme` block in globals.css (shadcn-style: bg-card, text-muted-foreground, ...).
+
+Tailwind v4 is CSS-first: design tokens live in apps/web/src/styles/globals.css only.
+  @theme inline { --color-card: hsl(var(--card)); }   -> class bg-card / text-card exists
+  :root / .dark { --card: 0 0% 100%; }                 -> values for light / dark theme
+There is no tailwind.config.* anymore, so the config file is not required.
 
 Usage:  python3 check_tailwind_tokens.py [REPO_ROOT]
         python3 check_tailwind_tokens.py . --web apps/web
 
-Heuristic, no Node needed. Convention assumed: config maps colors to hsl(var(--name)) / var(--name),
-and a class like `text-muted-foreground` is valid when `--muted-foreground` is mapped in the config.
-Exit code 1 when problems are found.
+Heuristic, no Node needed. Exit code 1 when problems are found.
 """
 import re
 import sys
@@ -16,13 +19,14 @@ from pathlib import Path
 
 PREFIXES = ("bg", "text", "border", "ring", "outline", "fill", "stroke", "from", "via", "to",
             "divide", "placeholder", "decoration", "caret", "accent", "shadow", "ring-offset")
-# Default shadcn token names. Extra names are discovered from globals.css.
+# Default shadcn token names. Extra names are discovered from the @theme block in globals.css.
 SHADCN = {"background", "foreground", "card", "card-foreground", "popover", "popover-foreground",
           "primary", "primary-foreground", "secondary", "secondary-foreground", "muted",
           "muted-foreground", "accent", "accent-foreground", "destructive",
           "destructive-foreground", "border", "input", "ring"}
-# CSS variables that are not colors
-NON_COLOR_VARS = {"radius"}
+# CSS variables in :root/.dark that are not colors (and are used by other tokens, not by classes).
+NON_COLOR_VARS = {"radius", "shadow-color"}
+
 
 
 def read(p: Path) -> str:
@@ -39,35 +43,44 @@ def main() -> int:
     if "--web" in sys.argv:
         web = root / sys.argv[sys.argv.index("--web") + 1]
 
-    cfg = next((web / n for n in ("tailwind.config.ts", "tailwind.config.js", "tailwind.config.cjs",
-                                  "tailwind.config.mjs") if (web / n).exists()), None)
     css = web / "src" / "styles" / "globals.css"
-    if cfg is None or not css.exists():
-        print(f"ERROR: need {web}/tailwind.config.* and {css}")
+    if not css.exists():
+        print(f"ERROR: need {css} (Tailwind v4 keeps the tokens in the @theme block)")
         return 2
 
-    cfg_text, css_text = read(cfg), read(css)
-    css_vars = {v for v in re.findall(r"--([a-zA-Z0-9-]+)\s*:", css_text)} - NON_COLOR_VARS
-    mapped = set(re.findall(r"var\(\s*--([a-zA-Z0-9-]+)\s*\)", cfg_text))
+    css_text = read(css)
+    # Everything between `@theme {` / `@theme inline {` and the closing brace at column 0
+    # (nested @keyframes close with an indented brace, so this stays unambiguous).
+    theme_text = "\n".join(
+        m.group(1) for m in re.finditer(r"@theme(?:\s+inline)?\s*\{(.*?)\n\}", css_text, re.S))
+    theme_vars = set(re.findall(r"--([a-zA-Z0-9-]+)\s*:", theme_text))
+    css_vars = {v for v in re.findall(r"--([a-zA-Z0-9-]+)\s*:", css_text)} - theme_vars - NON_COLOR_VARS
+    # Token names that produce a class: --color-card -> bg-card / text-card / border-card ...
+    mapped = set(re.findall(r"--color-([a-zA-Z0-9-]+)\s*:", theme_text))
+    # Theme entries that point at a runtime variable, e.g. --color-card: hsl(var(--card)).
+    required = set(re.findall(r"var\(\s*--([a-zA-Z0-9-]+)\s*\)", theme_text))
+
 
     problems = 0
-    unmapped = sorted(css_vars - mapped)
+    # Runtime vars (--card, --status-stable, ...) that no @theme entry points at.
+    unmapped = sorted(css_vars - mapped - required)
     if unmapped:
         problems += 1
-        print("Defined in globals.css but NOT mapped in tailwind config (classes will not exist):")
+        print("Defined in globals.css but NOT mapped in @theme (classes will not exist):")
         for v in unmapped:
             print(f"  --{v}")
         print()
 
-    undefined_in_css = sorted(mapped - css_vars)
+    # @theme entries pointing at runtime vars that globals.css never defines.
+    undefined_in_css = sorted((required - NON_COLOR_VARS) - css_vars)
     if undefined_in_css:
         problems += 1
-        print("Mapped in tailwind config but NOT defined in globals.css (colors will be empty):")
+        print("Mapped in @theme but NOT defined in :root/.dark (colors will be empty):")
         for v in undefined_in_css:
             print(f"  --{v}")
         print()
 
-    known = SHADCN | css_vars
+    known = SHADCN | (required - NON_COLOR_VARS)
     names = sorted(known, key=len, reverse=True)
     name_re = "|".join(re.escape(n) for n in names)
     pref_re = "|".join(sorted((re.escape(p) for p in PREFIXES), key=len, reverse=True))
@@ -109,7 +122,7 @@ def main() -> int:
     if problems == 0:
         print("OK: all semantic tokens are defined and mapped.")
         return 0
-    print("FAILED: fix tokens in BOTH globals.css and tailwind.config.*")
+    print("FAILED: fix the tokens in globals.css (@theme / @theme inline / :root / .dark).")
     return 1
 
 

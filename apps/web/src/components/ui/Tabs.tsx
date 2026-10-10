@@ -103,7 +103,7 @@ export function TabsTrigger({ value, children, className }: TabsTriggerProps) {
       onClick={() => setValue(value)}
       className={cn(
         'flex min-h-[40px] flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
-        selected ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+        selected ? 'bg-card text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground',
         className,
       )}
     >

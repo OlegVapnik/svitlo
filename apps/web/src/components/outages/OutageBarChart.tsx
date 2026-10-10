@@ -93,7 +93,7 @@ export const OutageBarChart: React.FC<OutageBarChartProps> = ({ byArea, byDay })
   }, [viewMode, metric, byArea, byDay, isDark]);
 
   return (
-    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-sm">
+    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-xs">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
         <h3 className="font-semibold text-sm text-foreground">
           {t('charts.byArea', 'Статистика відключень')}

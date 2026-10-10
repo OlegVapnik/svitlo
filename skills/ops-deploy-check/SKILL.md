@@ -31,7 +31,7 @@ Restart: `docker compose up -d` (images exist) or `docker compose up -d --build`
 ## 2. Traps specific to this project
 
 - `x-api-env` in `docker-compose.yml` **overrides `.env`**. Changing `ENABLE_SCHEDULER` in `.env` does nothing until you edit the compose file. Prefer `${ENABLE_SCHEDULER:-true}` style references so `.env` is the single source.
-- Current prod flags are wrong for a live product: `ENABLE_SCHEDULER=false` (data never refreshes), `SCHEDULE_DEMO=true` (fake schedule shown to residents). Target prod: scheduler **on**, demo **off**.
+- Current prod flags are wrong for a live product: `ENABLE_SCHEDULER=false` (data never refreshes). Демо-графика в коде больше нет (`SCHEDULE_DEMO` удалён 2026-10-10), «фейковый график» при пустой `schedule_slots` технически невозможен — придёт пустой список. Target prod: scheduler **on**.
 - `VITE_API_BASE_URL` is baked at build time. Use the relative `/api/v1` and let nginx proxy; a `http://localhost:3001/...` value breaks every non-local deployment.
 - `migrate` uses `image: svitlo-api:latest` — make sure it is the image built in this `up --build`, not a stale tag.
 - Toolchain mismatch: host node 26 / pnpm 11 vs image node 22 / pnpm 9.15. Test in the container.
@@ -99,10 +99,10 @@ Also: run the api as a non-root user (`USER node` in `Dockerfile.api`), pin vers
 **Backups**
 ```bash
 # nightly (cron on the host), keep 14 days
-docker compose exec -T db pg_dump -U energymon -d energymon -Fc > /backups/energymon_$(date +%F).dump
+docker compose exec -T db pg_dump -U svitlo -d svitlo -Fc > /backups/energymon_$(date +%F).dump
 find /backups -name 'energymon_*.dump' -mtime +14 -delete
 # restore test (do it once, for real, on a scratch DB)
-docker compose exec -T db pg_restore -U energymon -d energymon_restore_test --clean --if-exists < /backups/energymon_YYYY-MM-DD.dump
+docker compose exec -T db pg_restore -U svitlo -d svitlo_restore_test --clean --if-exists < /backups/energymon_YYYY-MM-DD.dump
 ```
 Manual data (`street_queues`, `schedule_slots`, `contacts`) is the part that cannot be re-fetched.
 

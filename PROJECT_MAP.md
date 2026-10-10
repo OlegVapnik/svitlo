@@ -52,7 +52,7 @@ pnpm --filter @svitlo/web dev      # vite, proxy /api → http://localhost:3001
 |---|---|
 | 3000 | web (nginx, статика + прокси `/api/` → `api:3001`) |
 | 3001 | API (Fastify), `/docs` — Swagger |
-| 5432 | PostgreSQL (energymon/energymon/energymon) |
+| 5432 | PostgreSQL (роль/база `svitlo`, пароль `energymon`, только 127.0.0.1) |
 
 > Локальный тулчейн в этой машине: node v26, pnpm 11, Docker 29. Образы собираются на **node:22-alpine + pnpm 9.15**, т.е. версии в контейнере и на хосте расходятся — не удивляйтесь разному поведению.
 
@@ -88,10 +88,9 @@ svitlo/
 │  ├─ src/components/{ui,layout,outages,incidents,status,search,schedule,common}
 │  ├─ src/api/{client,queries}.ts
 │  ├─ src/hooks/*, src/lib/*, src/i18n/{config.ts,uk.json,ru.json}
-│  ├─ src/styles/globals.css   # CSS-переменные светлой/тёмной темы
-│  ├─ tailwind.config.ts       # маппинг семантических цветов на CSS-переменные (см. §12)
+│  ├─ src/styles/globals.css   # Tailwind v4 CSS-first: @theme-токены + переменные светлой/тёмной темы
 │  ├─ vite.config.ts           # alias @→src, proxy /api, vite-plugin-pwa
-│  └─ public/{manifest.json,icons/icon.svg}
+│  └─ public/{icons/icon.svg}   ← манифест генерирует vite-plugin-pwa (manifest.webmanifest)
 ├─ packages/shared/src/index.ts# типы + zod-схемы (Outage, Incident, OutageStats, ReliabilityReport, …)
 ├─ generate-frontend.js        # LEGACY-генератор файлов (Windows-путь, не запускать) — см. §12
 ├─ .env / .env.example
@@ -106,7 +105,7 @@ svitlo/
 |---|---|---|---|
 | **Outage** (відключення) | таблица `outages` | запись источника: `starts_at…ends_at`, район, адреса, причина, `queue`, `status` | `/outages` (список, календарь, теплокарта, диаграммы, **график**), `/status`, `/reliability` |
 | **Incident** (аварія / ремонт) | таблица `incidents` + проекция из `outages` | единая лента: `kind:'outage'` (аварийные/ремонтные отключения оператора) и `kind:'report'` (сообщения Telegram/новости) | `/incidents`, блок на главной, счётчики в `/status` |
-| **Schedule** (ГПВ, черги) | `schedule_slots` (реальные), `street_queues` (улица→очередь), `schedule-mock.service` (ДЕМО) | почасовые интервалы очередей 1/2/3 на дату | `/queues` («Мої черги»), `/streets`, блок «Мій графік» на главной |
+| **Schedule** (ГПВ, черги) | `schedule_slots` (реальные), `street_queues` (улица→очередь) | почасовые интервалы очередей на дату; синтетики в коде нет (пусто = пусто) | `/queues` («Мої черги»), `/streets`, герой «є світло / немає» на главной |
 
 Классификация отключений — `apps/api/src/services/outage-classification.ts` (регулярки по тексту):
 
@@ -150,7 +149,7 @@ svitlo/
                                   сортировка active → scheduled → resolved
  GET /status       grid_status + deduped outages + getIncidents + getPowerSummary
  GET /reliability  buildReliabilityReport(now, deduped rows) — дни/недели/месяцы с начала месяца
- GET /schedules    schedule_slots, либо DEMO при SCHEDULE_DEMO=true и отсутствии строк
+ GET /schedules    schedule_slots (queue+date); пусто → intervals: [] и source: null
 ```
 
 `runParse` не падает целиком, если основной источник недоступен (WAF/IP-ban): warning + продолжение вторичными источниками.
@@ -222,7 +221,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 **Композиция** — `src/server.ts`: `cors → helmet → rate-limit → auth → swagger` + 10 роутеров; собственный `setErrorHandler` (ZodError → 400, `AppError` → его code, прочее → 500/statusCode). Планировщик включается **только** при `ENABLE_SCHEDULER && !USE_MOCK_ADAPTER`.
 
-**Конфиг** — `src/config.ts`: единая zod-схема `env` (defaults для всего: `CHERNIHIV_*`, `TELEGRAM_*`, `SCHEDULE_DEMO`, `USE_MOCK_ADAPTER`, `ENABLE_SCHEDULER`, `NOMINATIM_*`, `TZ`). Новую настройку добавлять: `config.ts` → `.env.example` → `x-api-env` в `docker-compose.yml`.
+**Конфиг** — `src/config.ts`: единая zod-схема `env` (defaults для всего: `CHERNIHIV_*`, `TELEGRAM_*`, `USE_MOCK_ADAPTER`, `ENABLE_SCHEDULER`, `NOMINATIM_*`, `TZ`). Новую настройку добавлять: `config.ts` → `.env.example` → `x-api-env` в `docker-compose.yml`.
 
 **Роутеры** (`src/routes/`, все `export default async function …Routes(fastify)`): `health`, `outages`, `incidents`, `status`, `contacts`, `addresses`, `schedules`, `street-queues`, `reliability`, `admin`. Валидация входа — zod-схемы из `@svitlo/shared` (`outageFiltersSchema`, `scheduleImportRequestSchema`, `streetQueueInputSchema`).
 
@@ -244,7 +243,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 | ~~`geocode.service.ts`~~ | **удалён 2026-10-10**: был мёртвый фейк — Nominatim не вызывался, возвращались фиксированные координаты, файл никто не импортировал |
 | `schedule-import.service.ts` | `importOperatorSchedule`, `mergeRawScheduleSlots`, `getQueueSchedule`, `getQueueScheduleMeta` |
 | `schedule-normalizer.ts` | `normalizeScheduleResponse` — операторский HH:MM (Киев) → UTC-интервалы |
-| `schedule-mock.service.ts` | `DEMO_SCHEDULES`, `demoScheduleForQueue` — синтетика для UI, всегда с флагом `demo:true` |
+| ~~`schedule-mock.service.ts`~~ | **удалён 2026-10-10**: синтетический демо-график (`SCHEDULE_DEMO`) вырезан из `config.ts`, `.env.example` и compose. Пустая таблица = пустые `intervals` |
 | `street-queues.service.ts` | CRUD «улица → очередь» + `getStreetSchedule(street, date)` |
 
 **Парсеры** (`src/parsers/`): `adapter.ts` (интерфейсы `ISourceAdapter`, `ParseResult`, `NormalizedOutage/Incident`), `chernihiv-web.adapter.ts` (основной: типы 1/2/6, `parseListAccRow`, `emergencyIncidentFromOutage`, `kyivWallClockToUtc`, `parseRetryAfter`, warmup сессии), `chernihiv.adapter.ts` (HTML-вариант), `telegram-channel.adapter.ts` (`TELEGRAM_RULES`, `classifyTelegramText`), `telegram-bot.adapter.ts`, `mock.adapter.ts`, `normalizer.ts` (адреса/районы/диапазоны дат), `address-matcher.ts` (`normalizeAddressQuery`, `transliterationVariants`, `rankAddressCandidate`).
@@ -288,7 +287,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 | `lib/date.ts` | `KYIV_TZ='Europe/Kyiv'`, `formatDateTime`, `formatTimeRange`, `formatRelative`, `isActive`, `isToday`, `isTomorrow` (date-fns + date-fns-tz, локаль `uk`) |
 | `lib/outage-dates.ts` | `kyivDateKey`, `kyivDayStart` (корректный DST-расчёт), `outageOverlapsKyivDay` |
 | `lib/outage-location.ts` | `resolveOutageMapPoint(areaName, addresses)` — таблица координат городов области + дефолт; `outageCategory(reason)` → `'incident' \| 'planned'` по регулярке «виконання ремонтних робіт / технічне обслуговування» (+ тест `outage-location.test.ts`) |
-| ~~`lib/demo-schedule.ts`~~ | **удалён 2026-10-10**: мёртвый демо-дубль фронта (никто не импортировал). Синтетику отдаёт только `schedule-mock.service` и всегда с флагом `demo:true` |
+| ~~`lib/demo-schedule.ts`~~ | **удалён 2026-10-10**: мёртвый демо-дубль фронта (никто не импортировал). Синтетики в кодовой базе больше нет вообще |
 
 ### 8.4 Компоненты (`src/components/`)
 
@@ -303,9 +302,9 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 ### 8.5 Стили, i18n, PWA
 
-- `styles/globals.css` — HSL CSS-переменные для `:root` и `.dark`; `tailwind.config.ts` мапит их в семантические классы (`bg-card`, `border-border`, `text-muted-foreground`, `bg-primary`, …) и `darkMode: 'class'`.
+- `styles/globals.css` — единственное место токенов (Tailwind v4 CSS-first): `@theme inline` мапит HSL CSS-переменные в семантические классы (`bg-card`, `border-border`, `text-muted-foreground`, `bg-primary`, …), значения — в `:root` и `.dark`; тёмная тема классовая (`@custom-variant dark (&:where(.dark, .dark *))`). `tailwind.config.ts` и `postcss.config.js` удалены, Tailwind подключён плагином `@tailwindcss/vite`.
 - i18n — `i18n/config.ts`: ресурсы `uk`/`ru`, язык из `localStorage['lang']`, fallback `uk`; пространства имён: `nav, status, outages, incidents, contacts, myAddress, common, charts, streets` (~90 ключей в каждом файле). **Хардкод украинских строк в JSX тоже встречается** (напр. названия вкладок графика) — при локализации искать и там.
-- PWA — `vite-plugin-pwa` (`manifest.json`, `registerSW.js`, `sw.js`, `workbox-*.js` в сборке); `runtimeCaching` для `/api/` = `NetworkFirst` с timeout 5 с; `navigateFallbackDenylist: [/^\/api\//]`. Побочный эффект: агрессивное кэширование статики → после пересборки нужен **hard reload (Ctrl+Shift+R)**.
+- PWA — `vite-plugin-pwa` (`manifest.webmanifest` из `vite.config.ts`, `registerSW.js`, `sw.js`, `workbox-*.js` в сборке); `runtimeCaching` для `/api/` = `NetworkFirst` с timeout 5 с; `navigateFallbackDenylist: [/^\/api\//]`. Побочный эффект: агрессивное кэширование статики → после пересборки нужен **hard reload (Ctrl+Shift+R)**.
 
 ---
 
@@ -322,7 +321,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 Особенности окружения API (`x-api-env` в compose — **жёстко перекрывает `.env`**):
 
-- `USE_MOCK_ADAPTER=false`, `ENABLE_SCHEDULER=false`, `TELEGRAM_BOT_ENABLED=false`, `SCHEDULE_DEMO=true`, `CHERNIHIV_WEB_ENABLED=true`, `CHERNIHIV_CITY_IDS=7422288601` (с. Деснянське), `CHERNIHIV_OUTAGE_TYPES=1,2,6`, `PARSE_INTERVAL_MINUTES=30` + jitter 5.
+- `USE_MOCK_ADAPTER=false`, `ENABLE_SCHEDULER=false`, `TELEGRAM_BOT_ENABLED=false`, `CHERNIHIV_WEB_ENABLED=true`, `CHERNIHIV_CITY_IDS=7422288601` (с. Деснянське), `CHERNIHIV_OUTAGE_TYPES=1,2,6`, `PARSE_INTERVAL_MINUTES=30` + jitter 5.
 - `NODE_EXTRA_CA_CERTS=/app/apps/api/operator-ca.pem` — оператор отдаёт неполную TLS-цепочку.
 - `NODE_OPTIONS=--dns-result-order=ipv4first` — иначе undici зависает на NAT64-адресе.
 - `TZ=Europe/Kyiv`, `NODE_ENV=production`.
@@ -352,7 +351,7 @@ pnpm --filter @svitlo/web test         # vitest (outage-location.test.ts)
 pnpm --filter @svitlo/api db:migrate   # tsx src/db/migrate.ts
 # db:seed убран 2026-10-10: он вставлял выдуманные contacts/outages/incidents (см. HANDOFF §13.3)
 pnpm --filter @svitlo/api db:generate  # drizzle-kit generate (руками почти не нужен)
-docker compose exec -T db psql -U energymon -d energymon -c 'select count(*) from outages'
+docker compose exec -T db psql -U svitlo -d svitlo -c 'select count(*) from outages'
 
 # --- данные ---
 curl -X POST localhost:3001/api/v1/admin/parse -H "Authorization: Bearer $ADMIN_TOKEN"
@@ -385,11 +384,11 @@ docker compose up -d --force-recreate web   # если nginx отдаёт ста
 
 ## 12. Подводные камни (грабли, уже на которые наступали)
 
-1. **Tailwind-токены.** Семантические классы (`bg-card`, `border-border`, `text-muted-foreground`, `bg-primary`, `bg-popover`, `text-foreground`, …) работают только потому, что в `apps/web/tailwind.config.ts` есть маппинг на CSS-переменные из `globals.css`. Пока маппинга не было, классы просто не генерировались → у выпадающего списка адресов был прозрачный фон. Добавляя новый токен — правьте **и** `globals.css`, **и** `tailwind.config.ts`.
+1. **Tailwind-токены.** Семантические классы (`bg-card`, `border-border`, `text-muted-foreground`, `bg-primary`, `bg-popover`, `text-foreground`, …) работают только потому, что в `apps/web/src/styles/globals.css` есть `@theme inline`-маппинг на CSS-переменные из `:root`/`.dark`. Пока маппинга не было, классы не генерировались → у выпадающего списка адресов был прозрачный фон. На Tailwind v4 (CSS-first) всё в одном файле: новый токен — `--color-x: hsl(var(--x))` в `@theme inline` + значение `--x` в `:root` **и** `.dark`. Проверка: `python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .`
 2. **PWA/SW кэш + nginx `immutable`.** После пересборки web пользователю может отдаваться старый бандл из service worker. Признак: в index.html новый хеш (`assets/index-*.js`), в браузере — старый. Лечение: hard reload (Ctrl+Shift+R) либо `docker compose up -d --force-recreate web`. Не «фиксите» это в коде, это ожидаемое поведение PWA.
 3. **`/outages/stats` vs `/status`.** Stats считает SQL-агрегатами **без** `mergeDuplicateOutages`, остальные ручки — с ним. Поэтому «За районами» и число событий в статистике не совпадают со списком. Если менять — помнить про 4 места (`outages`, `incidents`, `status`, `reliability`).
 4. **Планировщик выключен** (`ENABLE_SCHEDULER=false` в compose). Данные появляются только: (а) вручную `POST /admin/parse`, (б) импортом ГПВ, (в) на чистом томе — справочники из миграций (`0004` улицы, `0007` источник); выдуманных отключений больше не создаёт ни один сид (`db/seed.ts` удалён 2026-10-10). «Пусто на графике» ≠ баг фронта: сначала `parse_runs` и `select count(*) from outages`.
-5. **`SCHEDULE_DEMO` по умолчанию `false`** (`docker-compose.yml`, `apps/api/src/config.ts`); включается только в `.env` — для локальной демонстрации. Если `schedule_slots` пуст, `/schedules` вернёт **синтетический** график с `demo:true` только при включённом флаге. UI помечает его, но при отладке «странного» графика проверяйте поле `demo`/`source`.
+5. **Пустая таблица `schedule_slots` = пустые интервалы.** Синтетической подстановки нет: API вернёт `{intervals: [], source: null}`, UI покажет «Графік не імпортовано». Если график «странный» — смотрите `source`/`lastImportedAt`, а не флаг демо (его больше нет).
 6. **`useMyQueues` поддерживает только `'2/2'`** (хардкод в `addQueue`). Остальные очереди из списка 1/1…6/2 в localStorage не добавить без правки хука.
 7. **Поиск адресов** (`addresses.service.ts`): pg_trgm `similarity()*70` + `%`-оператор, плюс LIKE-подстрока и fallback по `outages.addresses_raw`; использует SQL-функцию **`energy_normalize_address()`** (unaccent + `ыэёїи→иееіі` + удаление префиксов «вул/ул/вулиця/село/с…»). Из-за substring-логики запрос «шел» **не** находит «Шевченка» (нет подстроки, similarity ниже порога) — это не регрессия, а свойство реализации. Справочник улиц наполняется курируемым сидом (миграция 0004 — с. Деснянське, ~20 улиц).
 8. **Секреты.** `.gitignore` исключает `/operator-samples/`, `/sample-responses/`, `snapshots/*.json|html`, `/1/` — ответы оператора могут содержать номера счетов/сессии. Не коммитить и не пересылать их. `ADMIN_TOKEN` — только в `.env`.
@@ -415,7 +414,7 @@ docker compose up -d --force-recreate web   # если nginx отдаёт ста
 1. Подтвердить, что под «графіком» имелась в виду именно вкладка **«Графіки» на `/outages`** (а не блок «Мій графік» на главной, не график на «Моя адреса» и не `/streets`).
 2. `/outages/stats` («За районами») отдаёт **сырые** цифры (в проверке — 30 вместо 6 дедуплицированных). Нужно решение: дедуплицировать stats или оставить как есть.
 3. Поиск адресов: оставить substring-поведение («шел» ≠ «Шевченка») или включить более мягкий fuzzy (понизить порог/добавить префиксы)?
-4. «Мій графік» на главной — **ДЕМО**: реальные ГПВ не импортированы (`schedule_slots` пуст, `street_queues` пуст). Нужен реальный импорт из браузера (userscript → `POST /admin/schedules/import`) или отключение `SCHEDULE_DEMO`.
+4. «Мій графік» на главной — **пусто**: реальные ГПВ не импортированы (`schedule_slots` пуст, `street_queues` пуст). Нужен реальный импорт из браузера (userscript → `POST /admin/schedules/import`); демо-подстановки в коде нет.
 5. Проверить в UI, что страница «Контакти» рендерит текст (данные из `contacts` есть, вопрос — к вёрстке/локализации).
 6. Консолидация CA оператора: в репе два файла (`apps/api/operator-ca.pem`, `docker/operator-oblenergo-ca.pem`) — решить, оставить один источник истины.
 7. Оператор (chernihivoblenergo.com.ua) может блокировать IP — тогда `/admin/parse` возвращает ошибки в `results[].error`; обходной путь — выждать бан или парсить с другого IP.
@@ -459,9 +458,9 @@ curl -s localhost:3000/ | grep -o 'assets/index-[^"]*\.js'   # убедитьс�
 | почему событие не показано как авария | `apps/api/src/services/outage-classification.ts` |
 | почему в списке меньше строк, чем в БД | `apps/api/src/services/outage-grouping.ts` (`mergeDuplicateOutages`) |
 | как считаются «світло є / немає» и надёжность | `apps/api/src/services/power-summary*.ts`, `apps/api/src/services/reliability.ts` |
-| почему пусто на «Мій графік» | `apps/api/src/routes/schedules.ts` (`demo`, `SCHEDULE_DEMO`) + наполнение `schedule_slots` |
+| почему пусто на «Мій графік» | таблица `schedule_slots` пустая; наполнение — `POST /admin/schedules/import` |
 | как рисуется «Графік відключень та ремонтів» | `apps/web/src/pages/OutagesPage.tsx` (вкладка `chart`) → `apps/web/src/components/outages/OutageTimeline.tsx` |
-| почему у элемента нет фона/рамки | `apps/web/src/components/ui/*`, `globals.css`, `tailwind.config.ts` (маппинг токенов) |
+| почему у элемента нет фона/рамки | `apps/web/src/components/ui/*`, `globals.css` (`@theme inline` — маппинг токенов) |
 | что за «очередь 2/2» и откуда она у улицы | таблица `street_queues`, `apps/web/src/pages/StreetsPage.tsx`, `apps/web/src/components/search/AddressCombobox.tsx` |
 
 ## Приложение B. Словарик домена

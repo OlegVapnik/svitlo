@@ -35,7 +35,7 @@ export const OutageMap: React.FC<OutageMapProps> = ({ outages }) => {
   const center: [number, number] = [51.5, 32.1];
 
   return (
-    <div className="w-full bg-card p-3 rounded-xl border border-border shadow-sm overflow-hidden">
+    <div className="w-full bg-card p-3 rounded-xl border border-border shadow-xs overflow-hidden">
       <div className="h-[400px] w-full rounded-lg overflow-hidden">
         <MapContainer
           center={center}

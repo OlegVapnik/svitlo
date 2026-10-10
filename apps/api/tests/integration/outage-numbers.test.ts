@@ -11,8 +11,8 @@
  *
  * Потребує окремої БД (щоб не чіпати робочу); без TEST_DATABASE_URL файл ПРОПУСКАЄТЬСЯ (skipped),
  * щоб `pnpm test` лишався зеленим без БД. «Червоний» прогін — явно, через `test:integration`:
- *   docker compose exec -T db createdb -U energymon energymon_test
- *   TEST_DATABASE_URL=postgresql://energymon:energymon@localhost:5432/energymon_test \   (scan:allow: local dev default, not a secret)
+ *   docker compose exec -T db createdb -U svitlo svitlo_test
+ *   TEST_DATABASE_URL=postgresql://svitlo:energymon@localhost:5432/svitlo_test \   (scan:allow: local dev default, not a secret)
  *     pnpm --filter @svitlo/api test:integration
  */
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';

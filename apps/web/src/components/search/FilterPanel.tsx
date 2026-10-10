@@ -54,7 +54,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             onClick={() => handleDatePreset(preset)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
               (filters.datePreset || 'all') === preset
-                ? 'bg-primary text-primary-foreground shadow-sm'
+                ? 'bg-primary text-primary-foreground shadow-xs'
                 : 'bg-muted/60 text-muted-foreground hover:bg-muted'
             }`}
           >

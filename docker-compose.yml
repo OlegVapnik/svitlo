@@ -4,8 +4,8 @@ x-api-build: &api-build
 
 x-api-env: &api-env
   # Password comes from .env (default keeps the existing volume working until the password is rotated
-  # with ALTER USER inside the DB: changing it here alone does NOT change an existing volume).
-  DATABASE_URL: postgresql://energymon:${POSTGRES_PASSWORD:-energymon}@db:5432/energymon
+  # with ALTER ROLE svitlo inside the DB: changing it here alone does NOT change an existing volume).
+  DATABASE_URL: postgresql://svitlo:${POSTGRES_PASSWORD:-energymon}@db:5432/svitlo
   API_PORT: "3001"
   API_HOST: "0.0.0.0"
   SNAPSHOT_DIR: /var/lib/svitlo/snapshots
@@ -28,9 +28,6 @@ x-api-env: &api-env
   # Рідше опитування (30 хв) + джиттер, бо розклад ГПВ змінюється нечасто, а WAF не любить регулярність.
   PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}
   PARSE_INTERVAL_JITTER_MINUTES: ${PARSE_INTERVAL_JITTER_MINUTES:-5}
-  # Синтетический график очередей — ТОЛЬКО для демонстрации. По умолчанию выключен:
-  # жителям нельзя показывать выдуманные расписания. Для локальной демо: SCHEDULE_DEMO=true в .env.
-  SCHEDULE_DEMO: ${SCHEDULE_DEMO:-false}
   NODE_ENV: production
   LOG_LEVEL: info
   TZ: Europe/Kyiv
@@ -46,9 +43,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: energymon
+      POSTGRES_USER: svitlo
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-energymon}
-      POSTGRES_DB: energymon
+      POSTGRES_DB: svitlo
     ports:
       # Доступ только через loopback: сервисы ходят в БД по compose-сети,
       # публиковать порт наружу не нужно (аудит, P0 3.3).
@@ -57,7 +54,7 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U energymon"]
+      test: ["CMD-SHELL", "pg_isready -U svitlo"]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -1,9 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { importOperatorSchedule, getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
+import { getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
 import { AppError } from '../utils/errors.js';
-import { demoScheduleForQueue } from '../services/schedule-mock.service.js';
-import { env } from '../config.js';
-import { normalizeScheduleResponse } from '../services/schedule-normalizer.js';
+import { queueCodeSchema } from '@svitlo/shared';
 
 /** Київська дата YYYY-MM-DD (типова, якщо клієнт не передав date). */
 function kyivToday(): string {
@@ -20,14 +18,14 @@ function kyivToday(): string {
  */
 async function buildQueueSchedule(queue: string, date: string) {
   if (!queue.trim()) throw new AppError(400, 'VALIDATION_ERROR', 'Параметр queue обовʼязковий');
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw new AppError(400, 'VALIDATION_ERROR', 'date має бути YYYY-MM-DD');
-  const meta = await getQueueScheduleMeta(queue, date);
-  const demoSchedule = env.SCHEDULE_DEMO ? demoScheduleForQueue(queue) : null;
-  if (meta.count === 0 && demoSchedule) {
-    return { data: { queue, date, intervals: normalizeScheduleResponse(demoSchedule, date), demo: true, source: 'demo', lastImportedAt: null } };
+  if (!queueCodeSchema.safeParse(queue).success) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'queue має вигляд «3» або «2/2»');
   }
-  const intervals = await getQueueSchedule(queue, date);
-  return { data: { queue, date, intervals, demo: false, source: meta.source, lastImportedAt: meta.lastImportedAt } };
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw new AppError(400, 'VALIDATION_ERROR', 'date має бути YYYY-MM-DD');
+  // Ніяких підстановок «демо-графіка»: коли слотів немає — віддаємо порожні интервалы и source=null.
+  // Вигаданий графік про реальне електрику читається як справжній (hard stop, skills/svitlo-onboarding #14).
+  const [meta, intervals] = await Promise.all([getQueueScheduleMeta(queue, date), getQueueSchedule(queue, date)]);
+  return { data: { queue, date, intervals, source: meta.source, lastImportedAt: meta.lastImportedAt } };
 }
 
 export default async function scheduleRoutes(fastify: FastifyInstance) {

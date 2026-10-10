@@ -34,7 +34,6 @@ const envSchema = z.object({
   CHERNIHIV_REQUEST_DELAY_MS: z.coerce.number().default(1000),
   // Прогрів сесії: спершу GET /power_outages (cookies), потім POST /api/list_acc — як у браузера.
   CHERNIHIV_SESSION_WARMUP: z.string().default('true').transform((value) => value.toLowerCase() === 'true'),
-  SCHEDULE_DEMO: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   USE_MOCK_ADAPTER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   ENABLE_SCHEDULER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   // Довірені проксі (діапазони proxy-addr через кому), напр. "loopback,uniquelocal".

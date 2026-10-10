@@ -90,7 +90,7 @@ export const ScheduleImportPage: React.FC = () => {
                 required
                 spellCheck={false}
                 placeholder='{"status":"ok","aData":[...],"aState":{...}}'
-                className="tabular w-full rounded-xl border border-input bg-background p-3 font-mono text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="tabular w-full rounded-xl border border-input bg-background p-3 font-mono text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
               />
             </div>
 

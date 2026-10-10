@@ -108,8 +108,14 @@ export const operatorScheduleResponseSchema = z.object({
 
 const QUEUE_REGEX = /^\d+(?:\/\d+)?$/;
 
+/**
+ * Единый формат кода очереди: «3» или «2/2». Один источник правды для импорта графика,
+ * списка моих очередей и маршрута GET /schedules (раньше regex дублировался по файлам).
+ */
+export const queueCodeSchema = z.string().regex(QUEUE_REGEX, 'Queue должно быть вида "1/2" или "3"');
+
 export const scheduleImportRequestSchema = z.object({
-  queue: z.string().regex(QUEUE_REGEX, 'Queue должно быть вида "1/2" или "3"'),
+  queue: queueCodeSchema,
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date должно быть YYYY-MM-DD'),
   payload: z.object({
     status: z.string().optional(),
@@ -129,8 +135,7 @@ export interface QueueScheduleData {
   queue: string;
   date: string;
   intervals: ScheduleIntervalUtc[];
-  demo: boolean;
-  /** 'manual' — импорт из браузера (userscript), 'demo' — синтетика, null — данных нет. */
+  /** 'manual' — импорт графика оператора, null — по этой очереди/дате данных нет. Синтетики нет. */
   source: string | null;
   /** Время последнего ручного импорта по этой очереди/дате (ISO) либо null. */
   lastImportedAt: string | null;

@@ -58,7 +58,7 @@ export async function getStreetSchedule(street: string, date: string): Promise<S
   const pair = normalized ? await findStreetQueue(street) : null;
   const queue = pair?.queue ?? null;
   if (!queue) {
-    return { street, streetNormalized: normalized, queue: null, date, intervals: [], demo: false, source: null, lastImportedAt: null };
+    return { street, streetNormalized: normalized, queue: null, date, intervals: [], source: null, lastImportedAt: null };
   }
   const [meta, intervals] = await Promise.all([getQueueScheduleMeta(queue, date), getQueueSchedule(queue, date)]);
   return {
@@ -67,7 +67,6 @@ export async function getStreetSchedule(street: string, date: string): Promise<S
     queue,
     date,
     intervals,
-    demo: false,
     source: meta.source,
     lastImportedAt: meta.lastImportedAt,
   };

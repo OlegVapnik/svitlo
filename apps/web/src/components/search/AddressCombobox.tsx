@@ -68,7 +68,7 @@ export function AddressCombobox({ value, onChange, onSelect, placeholder, id }: 
         else if (event.key === 'Enter' && open && active >= 0 && items[active]) { event.preventDefault(); choose(items[active]!); }
         else if (event.key === 'Escape') setOpen(false);
       }}
-      className="h-11 w-full rounded-lg border-border bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+      className="h-11 w-full rounded-lg border-border bg-background px-3 text-sm text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary"
     />
     {/* Список — непрозрачная popover-поверхность из токенов. Никаких inline-цветов:
         bg-popover/border-border объявлены и в tailwind.config.ts, и в globals.css,

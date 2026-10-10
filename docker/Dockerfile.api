@@ -19,6 +19,9 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/
 COPY --from=builder /app/packages/shared/src ./packages/shared/src
 COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+# @svitlo/shared is consumed as source, so its own runtime deps (zod) must be present here too:
+# without this the container crashed with ERR_MODULE_NOT_FOUND 'zod' (imported from packages/shared/src).
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 

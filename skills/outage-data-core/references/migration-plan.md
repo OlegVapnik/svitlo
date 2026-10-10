@@ -4,7 +4,7 @@ Read `SKILL.md` first. This file is the detailed plan, rollback and acceptance t
 
 ## 0. Preconditions
 
-- Backup: `docker compose exec -T db pg_dump -U energymon -d energymon -Fc > backup_before_events.dump`
+- Backup: `docker compose exec -T db pg_dump -U svitlo -d svitlo -Fc > backup_before_events.dump`
   and verify it is non-empty (`ls -l`). Without git this is your only undo.
 - Branch (`git checkout -b ai/outage-events`) or a file backup of everything you will touch.
 - Run `bash skills/svitlo-onboarding/scripts/verify.sh` — record the baseline.

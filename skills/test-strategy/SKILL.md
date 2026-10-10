@@ -88,12 +88,12 @@ jobs:
     services:
       postgres:
         image: postgres:16-alpine
-        env: { POSTGRES_USER: energymon, POSTGRES_PASSWORD: ci, POSTGRES_DB: energymon }
+        env: { POSTGRES_USER: svitlo, POSTGRES_PASSWORD: ci, POSTGRES_DB: svitlo }
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U energymon" --health-interval 5s --health-timeout 5s --health-retries 10
+          --health-cmd "pg_isready -U svitlo" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgres://energymon:ci@localhost:5432/energymon
+      DATABASE_URL: postgres://energymon:ci@localhost:5432/svitlo
       ADMIN_TOKEN: ci-token-not-secret
     steps:
       - uses: actions/checkout@v4

@@ -16,7 +16,7 @@ description: "Keep secrets and personal data out of the Svitlo repo, logs, DB, s
 ## Hard rules
 
 1. Never print, echo, log, paste into chat, or commit: `ADMIN_TOKEN`, DB passwords, cookies, `Authorization` headers, raw operator JSON/HTML, account numbers, phone numbers or names of private people.
-2. When you must show a config, mask values: `ADMIN_TOKEN=***`, `postgres://user:***@db:5432/energymon`.
+2. When you must show a config, mask values: `ADMIN_TOKEN=***`, `postgres://user:***@db:5432/svitlo`.
 3. Do not read `.env` out loud. If you need to know whether a variable is set: `grep -c '^ADMIN_TOKEN=.' .env` (prints a count, not the value).
 4. Real operator payloads never go into tests. Fixtures are **scrubbed copies** (below).
 5. New code must not store account numbers anywhere (DB, logs, snapshots, `localStorage`). Drop them at the adapter boundary.

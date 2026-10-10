@@ -102,7 +102,7 @@ export const OutageHeatmap: React.FC<OutageHeatmapProps> = ({ data }) => {
   }, [data, isDark, days, hours]);
 
   return (
-    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-sm">
+    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-xs">
       <h3 className="font-semibold text-sm mb-2 text-foreground">
         {t('charts.heatmap', 'Теплова карта: коли найчастіше вимикають')}
       </h3>

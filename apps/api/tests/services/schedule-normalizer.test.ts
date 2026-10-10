@@ -99,11 +99,21 @@ describe('schedule normalization to UTC', () => {
     expect(outage.stateColor).toBe('#E33535');
   });
 
-  test('demo queues expose 6-digit HEX colours in Ukrainian', async () => {
-    const { DEMO_SCHEDULES } = await import('../../src/services/schedule-mock.service.js');
-    for (const payload of Object.values(DEMO_SCHEDULES)) {
-      for (const state of Object.values(payload.aState)) expect(state.color).toMatch(/^#[0-9A-Fa-f]{6}$/u);
-      expect(payload.aState['2']?.name).toContain('Розмін черги/підчерги');
-    }
+  test('aState colours from the operator stay 6-digit HEX (не подменяются палитрой)', () => {
+    // Фикстура оператора: цвета слотов приходят из aState и НЕ перекрашиваются палитрой приложения —
+    // подмена цветов означала бы подделку данных источника (skills/outage-data-core).
+    const operatorPayload = {
+      status: 'ok',
+      aData: [{ time_from: '00:00', time_to: '06:00', queue: 3 }],
+      aState: {
+        '1': { name: 'Світло є', color: '#63AA18' },
+        '2': { name: 'Розмін черги/підчерги', color: '#AFAFAF' },
+        '3': { name: 'Відключення', color: '#E33535' },
+      },
+    };
+    const intervals = normalizeScheduleResponse(operatorPayload, '2026-01-15');
+    for (const interval of intervals) expect(interval.stateColor).toMatch(/^#[0-9A-Fa-f]{6}$/u);
+    expect(intervals[0]!.stateName).toBe('Відключення');
+    expect(intervals[0]!.stateColor).toBe('#E33535');
   });
 });

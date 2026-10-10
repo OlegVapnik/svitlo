@@ -3,9 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#1e40af" />
-    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#f3efe6" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Svitlo — Чернігів</title>
+    <script>
+      /* Тема применяется до первой отрисовки. Иначе на холодной загрузке мигает светлая тема,
+         а на телефоне цвет строки состояния остаётся от прошлой темы. Значения должны совпадать
+         с палитрой светлой/тёмной темы в src/styles/globals.css. */
+      (function () {
+        try {
+          var dark = localStorage.getItem('theme') === 'dark';
+          document.documentElement.classList.toggle('dark', dark);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', dark ? '#101411' : '#f3efe6');
+        } catch (error) {
+          /* приватный режим: localStorage недоступен — остаётся светлая тема по умолчанию */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

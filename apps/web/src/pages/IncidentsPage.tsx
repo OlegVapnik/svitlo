@@ -91,7 +91,7 @@ export const IncidentsPage: React.FC = () => {
           onChange={(event) => setQuery(event.target.value)}
           aria-label={t('outages.search')}
           placeholder={t('incidents.searchPlaceholder')}
-          className="h-11 w-full rounded-xl border border-input bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-11 w-full rounded-xl border border-input bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         />
       </div>
 

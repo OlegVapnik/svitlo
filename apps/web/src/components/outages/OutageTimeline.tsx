@@ -151,7 +151,7 @@ export const OutageTimeline: React.FC<OutageTimelineProps> = ({ outages }) => {
   }
 
   return (
-    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-sm overflow-hidden">
+    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-xs overflow-hidden">
       <h3 className="font-semibold text-sm mb-2 text-foreground flex items-center justify-between">
         <span>Графік відключень та ремонтів · до 40 записів</span>
         <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">

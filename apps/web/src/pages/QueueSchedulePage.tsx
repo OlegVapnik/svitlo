@@ -12,7 +12,7 @@ import { useMyQueues } from '../hooks/useMyQueues.js';
 import { api } from '../api/client.js';
 
 const QUEUE_OPTIONS = ['2/2'];
-type ScheduleResponse = { data: { queue: string; date: string; intervals: ScheduleIntervalUtc[]; demo?: boolean } };
+type ScheduleResponse = { data: { queue: string; date: string; intervals: ScheduleIntervalUtc[] } };
 
 function kyivDate(offsetDays = 0): string {
   const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -33,14 +33,14 @@ export const QueueSchedulePage: React.FC = () => {
   const [newQueue, setNewQueue] = useState(QUEUE_OPTIONS[0]!);
   const [day, setDay] = useState<0 | 1>(0);
   const date = useMemo(() => kyivDate(day), [day]);
-  const [scheduleByQueue, setScheduleByQueue] = useState<Record<string, { intervals: ScheduleIntervalUtc[]; error: boolean; demo?: boolean }>>({});
+  const [scheduleByQueue, setScheduleByQueue] = useState<Record<string, { intervals: ScheduleIntervalUtc[]; error: boolean }>>({});
   const [busyQueue, setBusyQueue] = useState('');
 
   const loadSchedule = async (queue: string) => {
     setBusyQueue(queue);
     try {
       const result = (await api.fetchQueueSchedule(queue, date)) as ScheduleResponse;
-      setScheduleByQueue((old) => ({ ...old, [queue]: { intervals: result.data.intervals, error: false, demo: result.data.demo } }));
+      setScheduleByQueue((old) => ({ ...old, [queue]: { intervals: result.data.intervals, error: false } }));
     } catch {
       setScheduleByQueue((old) => ({ ...old, [queue]: { intervals: [], error: true } }));
     } finally {
@@ -121,9 +121,6 @@ export const QueueSchedulePage: React.FC = () => {
                     </div>
                   </div>
                   <p className="tabular text-xs text-muted-foreground">{date}</p>
-                  {state?.demo && (
-                    <p className="rounded-xl border border-warning/40 bg-warning/5 px-3 py-2 text-xs font-medium text-warning">{t('queues.demo')}</p>
-                  )}
                   <QueueScheduleBar intervals={state?.intervals ?? []} date={date} emptyLabel={t('queues.noSchedule')} />
                   {state?.error && <p role="alert" className="text-xs text-destructive">{t('queues.error')}</p>}
                 </CardContent>

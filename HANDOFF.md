@@ -116,12 +116,12 @@ python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .   # есл�
 
 ```bash
 # --- интеграционные тесты (нужна ОТДЕЛЬНАЯ *_test БД; рабочая намеренно отвергается) ---
-docker compose exec -T db createdb -U energymon energymon_test        # один раз
+docker compose exec -T db createdb -U svitlo svitlo_test        # один раз
 cd apps/api
-TEST_DATABASE_URL=postgresql://energymon:<password>@localhost:5432/energymon_test \
+TEST_DATABASE_URL=postgresql://svitlo:<password>@localhost:5432/svitlo_test \
   pnpm test:integration
 # только приёмочный (сейчас красный) файл:
-TEST_DATABASE_URL=postgresql://energymon:<password>@localhost:5432/energymon_test \
+TEST_DATABASE_URL=postgresql://svitlo:<password>@localhost:5432/svitlo_test \
   pnpm exec vitest run tests/integration/outage-numbers.test.ts
 # схему тестовой БД накатывает ensureTestSchema() сам; проверка «имя _test» — в tests/helpers/test-db.ts
 ```
@@ -136,14 +136,14 @@ pnpm db:backfill-events   # идемпотентный backfill outage_events и
 ```bash
 # --- бэкап и его проверка (на хосте нет pg_restore — проверяем через контейнер) ---
 STAMP=$(date +%F_%H%M)
-docker compose exec -T db pg_dump -U energymon -d energymon -Fc > ../svitlo-backups/energymon_$STAMP.dump
-docker compose cp ../svitlo-backups/energymon_$STAMP.dump db:/tmp/verify.dump
+docker compose exec -T db pg_dump -U svitlo -d svitlo -Fc > ../svitlo-backups/svitlo_$STAMP.dump
+docker compose cp ../svitlo-backups/svitlo_$STAMP.dump db:/tmp/verify.dump
 docker compose exec -T db pg_restore -l /tmp/verify.dump | grep -c 'TABLE DATA'
-docker compose exec -T db createdb -U energymon energymon_restore_test
-docker compose exec -T db pg_restore -U energymon -d energymon_restore_test --no-owner /tmp/verify.dump
-docker compose exec -T db psql -U energymon -d energymon_restore_test -c \
+docker compose exec -T db createdb -U svitlo svitlo_restore_test
+docker compose exec -T db pg_restore -U svitlo -d svitlo_restore_test --no-owner /tmp/verify.dump
+docker compose exec -T db psql -U svitlo -d svitlo_restore_test -c \
   "select (select count(*) from outages) outages, (select count(*) from outage_events) events, (select count(*) from outage_event_addresses) addresses;"
-docker compose exec -T db dropdb -U energymon energymon_restore_test
+docker compose exec -T db dropdb -U svitlo svitlo_restore_test
 docker compose exec -T db rm -f /tmp/verify.dump
 ```
 
@@ -245,7 +245,7 @@ curl -s localhost:3001/api/v1/status | head -c 300
 
 Свежий дамп проверен **реальным восстановлением**, а не только размером: `magic = PGDMP`,
 `pg_restore -l` → 14 записей `TABLE DATA` (в т.ч. `outages`, `outage_events`, `outage_event_addresses`,
-`sources`, функция `energy_normalize_address`), затем restore в scratch-БД `energymon_restore_test`
+`sources`, функция `energy_normalize_address`), затем restore в scratch-БД `svitlo_restore_test`
 внутри контейнера → `32 / 6 / 32`, что совпадает с рабочей БД. Scratch-БД и временный файл внутри
 контейнера удалены. Этот дамп — точка возврата перед шагом 5. На хосте `pg_restore` не установлен,
 поэтому проверять через контейнер (команды в §4).
@@ -377,7 +377,7 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
 
 - `pnpm --filter @svitlo/api lint` — чисто; фокусные тесты **34/34** (`chernihiv-web.adapter`
   22, `source-breaker` 8, `config` 4).
-- `tests/integration` против `energymon_test` — **24/24**, включая новый `status-breaker.test.ts`
+- `tests/integration` против `svitlo_test` — **24/24**, включая новый `status-breaker.test.ts`
   (пауза/истечение паузы/`nextAttemptAt` в `/status`) и применение миграции 0009.
 - `verify.sh` — **4/4 PASS** (api tests 95 passed / 24 skipped, web 2 passed).
 - `scan_secrets.py` — те же 3 находки, что были до изменений (`.env`, `.env.example` — локальные
@@ -586,7 +586,7 @@ VS Code спросит пароль один раз и положит его в 
 файла поля `password` нет (`git show HEAD:.vscode/settings.json` пусто по этому полю) — строка жила
 только в рабочей копии после прошлой сессии, поэтому **ротация не требуется**. Но следующий
 `git add .vscode/settings.json` его бы закоммитил — именно от этого теперь страхует сканер (§14.2).
-Ротация при необходимости: `ALTER USER energymon WITH PASSWORD '<new>'` внутри контейнера `db` +
+Ротация при необходимости: `ALTER ROLE svitlo WITH PASSWORD '<new>'` внутри контейнера `db` +
 `POSTGRES_PASSWORD` в `.env` (смена только `.env` на существующем томе пароль не меняет — см.
 комментарий в `docker-compose.yml`).
 
@@ -644,7 +644,7 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 
 ```json
 "postgres": { "command": "/usr/bin/npx", "args": ["-y", "@modelcontextprotocol/server-postgres",
-  "postgresql://energymon:<POSTGRES_PASSWORD из .env>@127.0.0.1:5432/energymon"],
+  "postgresql://svitlo:<POSTGRES_PASSWORD из .env>@127.0.0.1:5432/svitlo"],
   "disabled": false, "autoApprove": ["query"] }
 ```
 
@@ -717,23 +717,31 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
 (`tsc` дал `TS2307 Cannot find module 'zod'` в api и web). Добавлено `dependencies: { zod: ^3.24.1 }`,
 lockfile обновлён (нужно для `--frozen-lockfile` в Docker).
 
-**Сознательно НЕ переименовано:** роль/БД Postgres `energymon` (`.env`, `docker-compose.yml`,
-`TEST_DATABASE_URL`, `.vscode/settings.json`); compose-проект и тома `energy-monitor_pg_data`,
-`energy-monitor_api_snapshots`; сам каталог `/home/oleg/Projects/energy-monitor` — всё это затрагивает
-живой том с данными.
+**Роль/БД, каталог и тома** переименованы отдельным шагом — см. §15.4 (там же причина, по которой роль
+нельзя было переименовать «из своей сессии»).
 
-### 15.4 Отложенные операции (нужен явный go-ahead)
+### 15.4 БД, каталог и тома — переименованы (выполнено)
 
-1. **БД.** Свежий дамп в `../svitlo-backups/`, затем внутри `db`:
-   `ALTER ROLE energymon RENAME TO svitlo; ALTER DATABASE energymon RENAME TO svitlo;`
-   (требует отсутствия других сессий на базе), после — правки `DATABASE_URL`/`TEST_DATABASE_URL`
-   в `.env`, `.env.example`, `docker-compose.yml`, тестах, `.vscode/settings.json`.
-2. **Каталог + тома.**
-   `docker compose down` → `mv ~/Projects/energy-monitor ~/Projects/svitlo` →
-   `docker volume create svitlo_pg_data` + `docker run --rm -v energy-monitor_pg_data:/from -v svitlo_pg_data:/to alpine sh -c 'cp -a /from/. /to/'`
-   (то же для `api_snapshots`) → `docker compose up -d --build`.
-   Без копирования compose создаст пустые тома → БД «потеряется» (старые останутся сиротами).
-   Учесть вне репозитория: путь в MCP-конфиге Cline, рабочая папка VS Code.
+**Дамп до операции:** `../svitlo-backups/energymon_before_db_rename_20261010_0334.dump` (48 545 B).
+
+**БД.** `ALTER DATABASE energymon RENAME TO svitlo` прошло сразу, а `ALTER ROLE energymon RENAME TO svitlo`
+из сессии этой же роли падает: `ERROR: session user cannot be renamed`. Решение — временная
+суперпользовательская роль (локальный сокет в контейнере = trust):
+`CREATE ROLE svitlo_rename_login SUPERUSER LOGIN` → `ALTER ROLE energymon RENAME TO svitlo` →
+`DROP ROLE svitlo_rename_login` (drop тоже нельзя сделать из своей сессии — уже от `-U svitlo`).
+Также `ALTER DATABASE energymon_test RENAME TO svitlo_test`. Пароль роли не менялся (остался `energymon`).
+Идентификаторы (`DATABASE_URL`, `TEST_DATABASE_URL`, `POSTGRES_USER/DB`, `pg_isready -U`, примеры
+`psql -U/-d`, `username`/`database` в `.vscode/settings.json`) переписаны в 14 файлах, включая `.env`.
+
+**Каталог + тома.** `docker compose down` (тома остаются) → `mv ~/Projects/energy-monitor ~/Projects/svitlo`
+→ `docker volume create svitlo_pg_data` + `docker run --rm -v energy-monitor_pg_data:/from -v svitlo_pg_data:/to postgres:16-alpine sh -c 'cp -a /from/. /to/'`
+(то же для `api_snapshots`) → `docker compose up -d --build` уже из нового каталога.
+Старые тома `energy-monitor_pg_data` / `energy-monitor_api_snapshots` **не удалялись** — это путь отката;
+удаление томов требует отдельного явного разрешения (hard stop).
+
+**Вне репозитория:** путь в `cline_mcp_settings.json` обновлён (бэкап `*.bak-before-svitlo`);
+рабочую папку VS Code нужно переоткрыть по новому пути — иначе shell-интеграция теряет cwd
+(это и случилось в конце сессии: команды перестали запускаться, пока каталог переезжал).
 
 ### 15.5 Проверено
 
@@ -742,6 +750,17 @@ api tests PASS (94 passed / 24 skipped) · web tests PASS (7)`, `VERIFY-EXIT=0` 
 `docker compose config -q` → OK · `python3 tools/build_all_in_one.py` → все 12 SKILL-секций найдены
 (файл удалён после проверки) · `python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .` → 3 finding
 (базовый уровень: `.env` ×2, `.env.example`) · остаток `energymon` в репо = только БД и дампы.
+
+**После переименования БД/каталога/томов (docker):** `svitlo-api-1` / `svitlo-db-1` / `svitlo-web-1` —
+healthy · `curl localhost:3001/api/v1/health` → `{"status":"ok"}` · `web HTTP 200` ·
+`psql -U svitlo -d svitlo` → `svitlo / svitlo`, `outages=36`, `contacts=7`, 10 записей в `__energy_migrations`
+· `/api/v1/outages?limit=1` возвращает данные.
+
+**Найденный и исправленный по ходу баг образа:** после объявления `zod` у `packages/shared` контейнер
+падал на старте — `ERR_MODULE_NOT_FOUND: Cannot find package 'zod' imported from /app/packages/shared/src/index.ts`:
+`docker/Dockerfile.api` копировал `packages/shared/src` и `package.json`, но не её `node_modules`.
+Добавлено `COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules`.
+(Dockerfile.web не затронут — Vite встраивает zod в бандл на этапе сборки.)
 
 ### 15.6 Замечено, но не менялось
 
@@ -758,8 +777,159 @@ api tests PASS (94 passed / 24 skipped) · web tests PASS (7)`, `VERIFY-EXIT=0` 
 
 ### 15.7 Дальше
 
-1. `docker compose up -d --build` — контейнеры ещё работают на старом образе `energy-monitor-api:latest`
-   (данные не затрагиваются).
-2. Решить по §15.4 — это последнее, что держит старое имя.
-3. Затем — дехардкод по списку §15.6.
+1. **Переоткрыть VS Code по `/home/oleg/Projects/svitlo`** — иначе shell не оживёт (cwd переехал).
+2. **Зафиксировать незакоммиченное** (правка `docker/Dockerfile.api` + доки §15.3–15.5, PROJECT_MAP/AUDIT):
+   `git -C ~/Projects/svitlo status --short` → `git add -A && git commit -m 'fix(docker): copy packages/shared/node_modules; docs: DB/dir rename to svitlo'`.
+3. Прогнать `bash skills/svitlo-onboarding/scripts/verify.sh` на новом месте (ожидание: 4/4 PASS).
+4. Старые тома `energy-monitor_*` — держать как откат; удалить только с подтверждением.
+5. Дехардкод по списку §15.6 — это и есть «подготовка площади от нахардкоженого».
+
+
+---
+
+## 16. Апгрейд стека `apps/web` (React 19 / Tailwind v4 / Vite 8 / TS 7 / Vitest 5) — ветка `ai/grok-port`
+
+Первая фаза перед портом дизайна из `grok-workspace` (`GROK-WORKSPACE-PORT-PLAN.md`): только версии и
+синтаксис CSS, логика и внешний вид компонентов не менялись (правки классов — лишь переименования v4).
+
+### 16.1 Что сделано
+
+- `apps/web/package.json`: React **19.3**, Vite **8.3.4**, TypeScript **7.0.2**, Vitest **5.0.3**,
+  Tailwind **4.3.3**, react-leaflet **5**, react-router-dom 7.18, echarts 6.1, i18next 26.4,
+  lucide-react 1.55, tailwind-merge 3.7; добавлен `@tailwindcss/vite`; удалены `autoprefixer` и `postcss`.
+  `zod` осознанно оставлен `^3.24.1` (v4 = отдельная задача: `packages/shared` + API тоже на zod).
+- `tailwind.config.ts` и `postcss.config.js` **удалены**; Tailwind v4 подключён плагином в `vite.config.ts`
+  (`__dirname` → `import.meta.dirname`, иначе Vite 8 ругается на native config loader).
+- `src/styles/globals.css` переписан под v4 (CSS-first): `@import "tailwindcss"`, `@custom-variant dark`,
+  `@theme` (шрифты, радиусы, тени, `--color-status-*`, анимации + keyframes), `@theme inline` (25 семантических
+  `--color-*`), `@layer base` c `border-color: hsl(var(--border))` (в v4 default — `currentColor`);
+  `container` и `z-60` — через `@utility` (в v4 у них нет theme-namespace).
+- Переименования v4 в разметке: `shadow-sm`→`shadow-xs`, `outline-none`→`outline-hidden` (13 и 5 мест).
+- `skills/frontend-ui-change/scripts/check_tailwind_tokens.py` переписан под v4: парсит `@theme`/`@theme inline`
+  и `:root`/`.dark` из `globals.css`, конфиг больше не нужен.
+- Приведены в соответствие доки/скиллы: `skills/svitlo-onboarding/SKILL.md` (правило 8 + таблица «Where to look»),
+  `skills/frontend-ui-change/SKILL.md` (Styling + description), `PROJECT_MAP.md` (§8.5, §12.1, приложение A),
+  `GROK-WORKSPACE-PORT-PLAN.md` (§1 стек, P1-палитра, шаг 1 плана).
+
+### 16.2 Проверено (evidence)
+
+- `bash skills/svitlo-onboarding/scripts/verify.sh` → **4/4 PASS**: api typecheck, web typecheck,
+  api tests (94 passed / 24 skipped), web tests (7 passed). API апгрейдом не задет.
+- `vite build` → OK: 3536 модулей, `dist/assets/index-*.css` 45.2 kB (gzip 8.4), PWA `sw.js` + `workbox-*.js`.
+- В собранном CSS реально есть: `.bg-card`, `.text-muted-foreground`, `.border-border`, `.focus\:z-60:focus`,
+  `.container` (встроенные max-width + паддинги 1rem/1.25rem/2rem), `@keyframes rise`, `:where(.dark,.dark *)`,
+  `border-color:hsl(var(--border))`, `.rounded-xl{border-radius:var(--radius-xl)}`.
+- Сверка удалённого v3-конфига (`git show HEAD:apps/web/tailwind.config.ts`) с v4-`@theme` — 1:1:
+  container padding, `zIndex 60`, `status.{stable,warning,emergency}` (`#10b981/#f59e0b/#ef4444`),
+  keyframes/animation `fade-in|rise|pulse-soft`, radii `xl/2xl/3xl`, shadows `card/pop`, системные шрифты.
+- Неиспользуемые `@theme`-записи v4 вырезает из бандла (`@keyframes pulse-soft`, `--color-status-*` в CSS
+  отсутствуют) — цена нулевая, API токенов сохранён.
+- `python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .` → `OK: all semantic tokens are defined and mapped`.
+- Аудита «тихих» переименований v4 не осталось: `rounded-*` = 2xl/3xl/xl/lg/md (0.125↔0.25 сдвига нет),
+  `rounded-sm`/bare `ring`/`blur`/`bg-opacity-*`/`flex-shrink-*` не используются.
+
+### 16.3 Осталось / риски
+
+- `pnpm-workspace.yaml` → `minimumReleaseAgeExclude: [i18next@26.4.3, lucide-react@1.55.0]`: pnpm 11 блокирует
+  «слишком свежие» релизы, для двух пакетов исключение снято вручную. Снять, когда «отлежатся» (supply-chain).
+- Крупнейший чанк `esm-*.js` ≈ 1.13 MB (gzip 377 kB) и предупреждение Vite про >500 kB — предсуществующее
+  (echarts), не регрессия апгрейда; кандидат на code-splitting отдельной задачей.
+- Не проверено визуально (нет браузера в этой сессии): светлая/тёмная тема после v4 — прогнать глазами
+  при первой правке UI (`frontend-ui-change` требует тест обеих тем и 360 px).
+- Дальше — порт дизайна: `GROK-WORKSPACE-PORT-PLAN.md` §5 (P1 палитра → P1 «є світло/немає» →
+  P2 реальные очереди → P3 единый стор настроек/мультиадрес).
+
+### 16.4 Незакоммиченное (важно: две разные порции правок)
+
+В рабочем дереве смешаны (а) хвост §15 — переименование в svitlo (`.env.example`, `.vscode/settings.json`,
+`docker-compose.yml`, `docker/Dockerfile.api`, `HANDOFF.md`, `PROJECT_AUDIT.md`) и (б) эта фаза.
+`PROJECT_MAP.md`, `skills/*`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` содержат правки **обеих** порций —
+коммитить их осознанно, апгрейд отдельным коммитом (файлы апгрейда: `apps/web/{package.json,vite.config.ts}`,
+`apps/web/src/styles/globals.css`, удалённые `tailwind.config.ts`/`postcss.config.js`, TSX-переименования,
+`skills/frontend-ui-change/*`, `GROK-WORKSPACE-PORT-PLAN.md`, `pnpm-lock.yaml`).
+
+## 17. Порт дизайна grok: палитра, герой, тема без вспышки, просмотр с телефона
+
+Дата: 2026-10-10. Ветка: `ai/grok-port`. Порядок работ — `GROK-WORKSPACE-PORT-PLAN.md` §5 (шаги 1, 2, 4).
+
+### 17.1 Сделано
+
+- **Палитра grok → токены svitlo** (`apps/web/src/styles/globals.css`): HEX из `grok-workspace/src/styles.css`
+  переведены в HSL-триплеты скриптом (`background`←`bg`, `card`←`surface`, `border`←`line`,
+  `primary` — глубокий зелёный `#0d6b4f` / `#3dbe8c`, `muted`←`surface-2`). Тёмная тема — не «синий графит»,
+  а `#101411` с тёплым текстом `#f4f0e7`. Тени карточек стали плоскими: панель grok = 1px тёплая рамка
+  + поверхность (настоящая высота осталась только у попапов).
+- **Статусы сети** больше не «сырые» `#10b981/#f59e0b/#ef4444`: `--color-status-*` идут из
+  `--success/--warning/--destructive` и меняются вместе с темой. Новые токены: `--level-high`
+  (шаг «майже зі світлом» между `success` и `warning`) и `--info-soft`.
+- **Псевдонимы сырых оттенков** (`--color-emerald-*/lime-*/amber-*/red-*/blue-*` → значения из палитры):
+  один блок в `@theme inline` перекрашивает 8 компонентов статусов без правки их разметки.
+- **Герой главной** `apps/web/src/components/status/MyQueueHero.tsx`: крупная надпись «Світло є / Світла немає»
+  по моей очереди, отсчёт («Зараз відключення — до HH:MM · має повернутися через N» / «Наступне через N»),
+  полоса суток и кнопки «Моя адреса» + горячая линия. Заменил карточку «Мій графік»: та показывалась только
+  тем, у кого очередь уже выбрана, и ничего не говорила остальным. Расчёт окна вынесен в
+  `apps/web/src/lib/scheduleWindow.ts` — его же использует `QueueScheduleBar`, поэтому цифры в двух блоках
+  не могут разойтись (раньше математика дублировалась).
+- **Полоса суток** получила форму grok: `rounded-full` на мягкой подложке + разметка 00/06/12/18/24.
+  Цвета слотов оставлены от оператора (`interval.stateColor`): подменить их палитрой = подделать данные
+  источника (комментарий в коде это фиксирует).
+- **Тема**: инлайн-скрипт в `index.html` ставит `.dark` и `meta theme-color` **до** первой отрисовки
+  (раньше на холодной загрузке мигало светлым), `useTheme` синхронизирует все свои вызовы событием
+  `svitlo:theme` (шапка и графики больше не разъезжаются по теме), цвета манифеста — тёплые.
+- **Просмотр с телефона**: dev-сервер запускается с `--host 0.0.0.0`, поэтому в той же Wi-Fi сети
+  открывается `http://<IP-хоста>:5173` (здесь — `http://10.99.164.188:5173`). Установка как PWA требует
+  HTTPS/secure context: по HTTP просмотр работает, «Додати на початковий екран» браузер не предложит.
+- **Цвета манифеста**: статический `apps/web/public/manifest.json` (именно его отдаёт `index.html`) нёс
+  прежние синие `theme_color/background_color` — теперь тёплые `#f3efe6` (светлая палитра). Плагин генерирует
+  ещё и `manifest.webmanifest` (из `vite.config.ts`): два файла дублируют друг друга — долг, см. §17.3.
+
+### 17.1.1 Что нашла визуальная проверка и что из-за этого исправлено
+
+Скриншоты снимались headless-браузером (см. §17.2), поэтому дефекты видны не «по коду», а на экране:
+
+- Герой без данных показывал **«Світло є»** зелёным, хотя графика нет: это утверждение об отключении,
+  которого никто не проверял. Введено третье состояние `unknown` — нейтральная надпись «Даних графіка немає»
+  (`text-muted-foreground`) и кнопка «Імпорт графіка».
+- Легенда полосы повторяла одно состояние столько раз, сколько интервалов в сутках: на 5 интервалах
+  выходило 5 чипов («Світло є» трижды). Теперь легенда строится по уникальным `stateName + stateColor`.
+- В герое строка «Зараз відключення — до 20:00» дублировала отсчёт из надписи. У `QueueScheduleBar`
+  появился проп `showSummary` (герой передаёт `false` и показывает свою строку «Без світла за день»).
+
+### 17.2 Проверено (evidence)
+
+- Контраст палитры посчитан скриптом (`/tmp/mktheme.py`): обе темы **0 FAIL** по WCAG AA; минимум 4.85:1
+  (`muted-foreground` на фоне), `success/warning/destructive` на карточке 5.8–8.9:1.
+- `pnpm --filter @svitlo/web lint` → чисто; `test` → 2 файла / 7 тестов (было) **+** новый
+  `src/lib/scheduleWindow.test.ts` (9 кейсов: лето/зима +3/+2, внутри окна, до, после, чужие сутки, подписи).
+- `vite build` → OK (`precache 15 entries`, `sw.js`, `workbox-*.js`).
+- В собранном CSS: `.bg-emerald-500\/10{background-color:hsl(var(--success))}` вместе с `@supports color-mix`
+  (прозрачность сохранилась), `.text-red-600{color:hsl(var(--destructive))}`,
+  `.bg-blue-100{background-color:hsl(var(--info-soft))}`.
+- `check_tailwind_tokens.py .` → `OK: all semantic tokens are defined and mapped` (exit 0).
+- Ключи `home.hero*` есть в **обоих** словарях (сравнение наборов ключей uk/ru скриптом).
+- Dev-сервер: `localhost:5173` → 200 и `http://10.99.164.188:5173` → 200 (LAN доступен).
+- **Визуально проверено скриншотами** (headless Chromium из кэша playwright + CDP, инструмент теперь в
+  репозитории: `skills/frontend-ui-change/scripts/screenshot.mjs`). Проба DOM с экрана: светлая тема —
+  фон карточки `rgb(255,254,250)`, рамка `rgb(221,212,198)`, герой `rgb(159,29,29)` = grok `#9f1d1d`,
+  кегль 36 px; тёмная — карточка `rgb(26,31,28)`, рамка `rgb(52,60,55)`, герой `rgb(240,111,102)` = grok
+  `#f07066`, `meta theme-color` = `#f3efe6` / `#101411`. Снимки: `mobile-light|dark`, `desktop-light`,
+  «с данными» (`--mock-schedule`) — `data-light|dark`, «без данных» — `hero-light|dark`.
+- График в скриншоте «с данными» подставлялся перехватом ответа `/schedules` в браузере (Fetch domain):
+  локальная БД пустая (реальных слотов нет), `SCHEDULE_DEMO` не включался — hard stop соблюдён.
+
+### 17.3 Осталось / риски
+
+- Палитра **проверена скриншотами** (светлая/тёмная, 360 px, состояния «є світло / немає / немає даних»),
+  но **вкус не проверен человеком**: посмотреть `:3000` (старый v3-образ, оставлен как эталон для сравнения)
+  против `:5173`. Не понравится тёплый цвет — вернуть прежние значения в `:root`/`.dark` (`globals.css`),
+  это одна правка.
+- `manifest.json` (статический) и `manifest.webmanifest` (генерация плагина) дублируют друг друга; `index.html`
+  ссылается на первый. Свести к одному источнику — отдельной правкой (риск для уже установленных PWA).
+- Строки в `QueueScheduleBar` («Зараз відключення…», «Без світла за день…») остались захардкоженными
+  по-украински — это было и раньше; при следующей правке полосы перевести на `t()`.
+- Шаги 3, 5, 6 плана не сделаны: реальный список очередей вместо зашитой `'2/2'`, единый persist-стор
+  настроек вместо трёх хуков, мультиадрес.
+- Псевдонимы сырых оттенков — временный долг: заменить классы в 8 компонентах на семантические и удалить блок.
+- PWA на телефоне ставится только по HTTPS: если нужно — nginx с self-signed сертификатом для локальной
+  сети, сертификаты в репозиторий не кладём.
 

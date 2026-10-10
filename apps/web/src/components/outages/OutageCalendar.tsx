@@ -78,7 +78,7 @@ export const OutageCalendar: React.FC<OutageCalendarProps> = ({
         }}
         className={`h-10 sm:h-12 border rounded-lg p-1 text-left flex flex-col justify-between transition-all cursor-pointer relative ${
           isSelected
-            ? 'border-primary bg-primary/10 shadow-sm'
+            ? 'border-primary bg-primary/10 shadow-xs'
             : isToday
             ? 'border-primary/50 bg-card'
             : 'border-border/40 bg-card hover:border-border'
@@ -97,7 +97,7 @@ export const OutageCalendar: React.FC<OutageCalendarProps> = ({
   }
 
   return (
-    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-sm">
+    <div className="w-full bg-card p-4 rounded-xl border border-border shadow-xs">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-sm text-foreground">
           {monthNames[month]} {year}

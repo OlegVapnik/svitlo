@@ -7,13 +7,13 @@ import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
 import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
 import { ReliabilityCard } from '../components/status/ReliabilityCard.js';
+import { MyQueueHero } from '../components/status/MyQueueHero.js';
 import { IncidentBanner } from '../components/incidents/IncidentBanner.js';
 import { OutageCard } from '../components/outages/OutageCard.js';
-import { Card, CardContent } from '../components/ui/Card.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { StatCard } from '../components/ui/StatCard.js';
-import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
 import { useIncidents, useOutages, useQueueSchedule, useReliability, useStatus } from '../api/queries.js';
+import { useMyAddress } from '../hooks/useMyAddress.js';
 import { useMyQueues } from '../hooks/useMyQueues.js';
 import type { Outage } from '@svitlo/shared';
 
@@ -41,6 +41,7 @@ export const HomePage: React.FC = () => {
   const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5 });
   const { data: incidentsData } = useIncidents();
   const { queues } = useMyQueues();
+  const { address } = useMyAddress();
   const selectedQueue = queues[0];
   const { data: scheduleData, isLoading: scheduleLoading, isError: scheduleError } = useQueueSchedule(selectedQueue, today);
 
@@ -62,6 +63,18 @@ export const HomePage: React.FC = () => {
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-8">
       {activeIncidents.length > 0 && <IncidentBanner incident={activeIncidents[0]!} />}
+
+      {/* Герой стоит выше сетевых цифр: он отвечает на главный вопрос («є світло чи ні») именно
+          про мою очередь. Заменил прежнюю карточку «Мій графік» — она показывалась только тем,
+          у кого очередь уже выбрана, и ничего не говорила остальным. */}
+      <MyQueueHero
+        queue={selectedQueue}
+        address={address}
+        date={today}
+        schedule={schedule}
+        isLoading={scheduleLoading}
+        isError={scheduleError}
+      />
 
       <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-card sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -94,33 +107,6 @@ export const HomePage: React.FC = () => {
           <QuickLink to="/contacts" icon={PhoneCall} label={t('home.hotline')} hint={t('home.hotlineNumber')} />
         </div>
       </section>
-
-      {selectedQueue ? (
-        <Card>
-          <CardContent className="space-y-3 p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-foreground">
-                {t('home.mySchedule')} · {selectedQueue}
-              </h2>
-              <Link to="/queues" className="text-xs font-semibold text-primary hover:underline">
-                {t('nav.queues')}
-              </Link>
-            </div>
-
-            {schedule?.demo && <p className="text-xs font-semibold text-warning">{t('home.demoSchedule')}</p>}
-
-            {scheduleLoading ? (
-              <Skeleton className="h-24 w-full" />
-            ) : scheduleError ? (
-              <p className="text-sm text-muted-foreground">{t('home.myScheduleError')}</p>
-            ) : schedule && schedule.intervals.length > 0 ? (
-              <QueueScheduleBar intervals={schedule.intervals} date={today} />
-            ) : (
-              <p className="text-sm text-muted-foreground">{t('home.myScheduleEmpty')}</p>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
 
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-2">
