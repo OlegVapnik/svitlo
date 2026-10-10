@@ -37,6 +37,19 @@ x-api-env: &api-env
   MIRROR_SCHEDULE_IMPORT_REGIONS: ${MIRROR_SCHEDULE_IMPORT_REGIONS:-}
   MIRROR_SCHEDULE_TTL_SEC: ${MIRROR_SCHEDULE_TTL_SEC:-600}
   MIRROR_SCHEDULE_TIMEOUT_MS: ${MIRROR_SCHEDULE_TIMEOUT_MS:-15000}
+  # --- Провайдери графіків по областях (apps/api/src/providers/**) ---
+  # YASNO / DTEK / e-svitlo / Чернігівобленерго: кожен провайдер пише schedule_slots зі своїм
+  # `source`, тому чужі рядки не затираються. Типово синхронізація ВИМКНЕНА: реліз не має
+  # почати писати нові дані непомітно — вмикаємо свідомо після перевірки на живій БД.
+  PROVIDER_SYNC_ENABLED: ${PROVIDER_SYNC_ENABLED:-false}
+  PROVIDER_SYNC_INTERVAL_MINUTES: ${PROVIDER_SYNC_INTERVAL_MINUTES:-30}
+  PROVIDER_SYNC_TIMEOUT_MS: ${PROVIDER_SYNC_TIMEOUT_MS:-15000}
+  # YASNO стоїть за Incapsula WAF (503 з datacenter-IP) — адреса в env, щоб можна було вказати проксі.
+  YASNO_API_BASE_URL: ${YASNO_API_BASE_URL:-https://api.yasno.com.ua}
+  DTEK_API_BASE_URL: ${DTEK_API_BASE_URL:-https://www.dtek-kem.com.ua}
+  DTEK_DNEM_BASE_URL: ${DTEK_DNEM_BASE_URL:-https://www.dtek-dnem.com.ua}
+  ESVITLO_BASE_URL: ${ESVITLO_BASE_URL:-https://cn.e-svitlo.com.ua}
+  CHERNIHIVOBLENERGO_BASE_URL: ${CHERNIHIVOBLENERGO_BASE_URL:-https://chernihivoblenergo.com.ua}
   NODE_ENV: production
   LOG_LEVEL: info
   TZ: Europe/Kyiv

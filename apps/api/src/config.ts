@@ -61,6 +61,22 @@ const envSchema = z.object({
   // але сторінка не смикала дзеркало на кожен запит.
   MIRROR_SCHEDULE_TTL_SEC: z.coerce.number().int().min(0).default(600),
   MIRROR_SCHEDULE_TIMEOUT_MS: z.coerce.number().default(15000),
+  // --- Провайдери графіків по областях (apps/api/src/providers/**) ---
+  // Синхронізація провайдерів у cron: кожен провайдер пише `schedule_slots` зі своїм `source`,
+  // тому ручні/дзеркальні/telegram-рядки не затираються (ідемпотентно до рядка джерела).
+  PROVIDER_SYNC_ENABLED: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
+  PROVIDER_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(5).default(30),
+  PROVIDER_SYNC_TIMEOUT_MS: z.coerce.number().default(15000),
+  // YASNO (`api.yasno.com.ua`) стоїть за Incapsula WAF: з datacenter-IP віддає 503 на будь-які
+  // заголовки (перевірено 11.10.2026 із контейнера), тому базова адреса винесена в env —
+  // за потреби вказуємо власний проксі (як `dtek-api.svitlo-proxy.workers.dev` для дзеркала).
+  YASNO_API_BASE_URL: z.string().url().default('https://api.yasno.com.ua'),
+  // DTEK: сайти ДСО (dtek-kem — Київ, dtek-dnem — Дніпро). Прямий API пробуємо на межі адаптера.
+  DTEK_API_BASE_URL: z.string().url().default('https://www.dtek-kem.com.ua'),
+  DTEK_DNEM_BASE_URL: z.string().url().default('https://www.dtek-dnem.com.ua'),
+  // e-svitlo — особистий кабінет АТ «Чернігівобленерго» (web2py), публічні графіки/списки населених пунктів.
+  ESVITLO_BASE_URL: z.string().url().default('https://cn.e-svitlo.com.ua'),
+  CHERNIHIVOBLENERGO_BASE_URL: z.string().url().default('https://chernihivoblenergo.com.ua'),
   USE_MOCK_ADAPTER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   ENABLE_SCHEDULER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   // Довірені проксі (діапазони proxy-addr через кому), напр. "loopback,uniquelocal".
