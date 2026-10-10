@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import type { RegionListResponse } from '@svitlo/shared';
-import { listRegions } from '../services/regions.service.js';
+import type { RegionCoverageResponse, RegionListResponse } from '@svitlo/shared';
+import { getRegionsCoverage, listRegions } from '../services/regions.service.js';
 
 /**
  * Каталог областей ГПВ (multi-region Ukraine).
@@ -10,8 +10,14 @@ import { listRegions } from '../services/regions.service.js';
  * а якщо й там порожньо — чесний порожній список (вигаданих областей не буває).
  */
 export default async function regionRoutes(fastify: FastifyInstance) {
+  fastify.get<{ Reply: RegionCoverageResponse }>('/api/v1/regions/coverage', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=300');
+    return await getRegionsCoverage();
+  });
+
   fastify.get<{ Reply: RegionListResponse }>('/api/v1/regions', async (_request, reply) => {
     reply.header('Cache-Control', 'public, max-age=300');
     return { data: await listRegions() };
   });
 }
+
