@@ -160,14 +160,19 @@ export const scheduleSlots = pgTable('schedule_slots', {
 }));
 
 export const streetQueues = pgTable('street_queues', {
-  /** Нормализованное имя улицы (см. energy_normalize_address) — естественный ключ. */
-  streetNormalized: text('street_normalized').primaryKey(),
+  region: text('region').notNull().default('chernihivska-oblast'),
+  /** Нормализованное имя улицы (см. energy_normalize_address). */
+  streetNormalized: text('street_normalized').notNull(),
   /** Отображаемое название улицы (как ввёл пользователь / из seed). */
   streetName: text('street_name').notNull(),
   /** Привязанная очередь, например "3" или "2/2". */
   queue: text('queue').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.region, table.streetNormalized] }),
+  regionQueueIdx: index('street_queues_region_queue_idx').on(table.region, table.queue),
+  regionStreetNameIdx: index('street_queues_region_street_name_idx').on(table.region, table.streetName),
+}));
 
 /**
  * Довідник «особовий рахунок → вулиця + черга» (міграція 0011). Наповнюється з даних оператора
