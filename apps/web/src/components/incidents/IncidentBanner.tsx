@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, TriangleAlert, X } from 'lucide-react';
-import type { Incident } from '@energy-monitor/shared';
+import type { Incident } from '@svitlo/shared';
 
 interface IncidentBannerProps {
   incident: Incident;

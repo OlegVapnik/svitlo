@@ -6,7 +6,7 @@ import { Skeleton } from '../ui/Skeleton.js';
 import { Card, CardContent } from '../ui/Card.js';
 import { EmptyState } from '../common/EmptyState.js';
 import { ErrorState } from '../common/ErrorState.js';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 interface OutageListProps {
   outages: Outage[];

@@ -1,6 +1,6 @@
 ---
 name: frontend-ui-change
-description: "Conventions and checklist for changing the EnergyMonitor React/Vite/Tailwind PWA (apps/web): Tailwind semantic tokens (bg-card, text-muted-foreground) and the globals.css ↔ tailwind.config.ts mapping, api/client.ts as the single HTTP path, TanStack Query hooks, i18n uk/ru, navigation lists, charts (ECharts), map (Leaflet), PWA/service-worker behaviour, localStorage hooks, accessibility and bundle size. Use for any page/component/style change, 'element has no background/text invisible', empty Contacts page, timeline/graph bugs, language strings. Триггеры: компонент, страница, стили, tailwind, тема, прозрачный фон, перевод, i18n, график, таймлайн, PWA, кэш, Контакти."
+description: "Conventions and checklist for changing the Svitlo React/Vite/Tailwind PWA (apps/web): Tailwind semantic tokens (bg-card, text-muted-foreground) and the globals.css ↔ tailwind.config.ts mapping, api/client.ts as the single HTTP path, TanStack Query hooks, i18n uk/ru, navigation lists, charts (ECharts), map (Leaflet), PWA/service-worker behaviour, localStorage hooks, accessibility and bundle size. Use for any page/component/style change, 'element has no background/text invisible', empty Contacts page, timeline/graph bugs, language strings. Триггеры: компонент, страница, стили, tailwind, тема, прозрачный фон, перевод, i18n, график, таймлайн, PWA, кэш, Контакти."
 ---
 
 # Frontend change (apps/web)
@@ -50,10 +50,10 @@ description: "Conventions and checklist for changing the EnergyMonitor React/Vit
 ## Verify
 
 ```bash
-pnpm --filter @energy-monitor/web lint
-pnpm --filter @energy-monitor/web test
+pnpm --filter @svitlo/web lint
+pnpm --filter @svitlo/web test
 python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .
-pnpm --filter @energy-monitor/web build      # check bundle size in the output
+pnpm --filter @svitlo/web build      # check bundle size in the output
 ```
 Then open the page after a hard reload (Ctrl+Shift+R) in light and dark mode at phone width and describe what you actually saw.
 

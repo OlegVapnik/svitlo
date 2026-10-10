@@ -6,17 +6,10 @@ settings:
 
 importers:
 
-  .:
-    dependencies:
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
+  .: {}
 
   apps/api:
     dependencies:
-      '@energy-monitor/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@fastify/cors':
         specifier: ^10.0.0
         version: 10.1.0
@@ -32,6 +25,9 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.0
         version: 5.2.6
+      '@svitlo/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       cheerio:
         specifier: ^1.0.0
         version: 1.2.0
@@ -84,7 +80,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@energy-monitor/shared':
+      '@svitlo/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@tanstack/react-query':
@@ -176,7 +172,7 @@ importers:
   packages/shared:
     dependencies:
       zod:
-        specifier: ^3.25.76
+        specifier: ^3.24.1
         version: 3.25.76
 
 packages:

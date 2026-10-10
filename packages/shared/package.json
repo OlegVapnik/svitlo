@@ -1,5 +1,5 @@
 {
-  "name": "@energy-monitor/shared",
+  "name": "@svitlo/shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,10 +8,7 @@
   "exports": {
     ".": "./src/index.ts"
   },
-  "scripts": {
-    "build": "echo \"@energy-monitor/shared: no build step (TypeScript source is consumed directly)\""
-  },
   "dependencies": {
-    "zod": "^3.25.76"
+    "zod": "^3.24.1"
   }
 }

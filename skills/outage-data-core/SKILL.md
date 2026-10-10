@@ -1,6 +1,6 @@
 ---
 name: outage-data-core
-description: "Rework of the EnergyMonitor data core: one canonical outage EVENT model, deduplication and categorisation at ingest (not at read time), one source for /outages, /incidents, /status, /reliability and /outages/stats, computed status, real pagination. Use whenever numbers in the UI or API disagree (30 vs 6), when touching mergeDuplicateOutages, outage-classification, outageCategory, outages/incidents tables, stats or reliability, or when asked to 'fix the data model / dedupe / categories'. Триггеры: дедупликация, не совпадают цифры, статистика, категория аварии, события, outage_events, склеивание, пагинация."
+description: "Rework of the Svitlo data core: one canonical outage EVENT model, deduplication and categorisation at ingest (not at read time), one source for /outages, /incidents, /status, /reliability and /outages/stats, computed status, real pagination. Use whenever numbers in the UI or API disagree (30 vs 6), when touching mergeDuplicateOutages, outage-classification, outageCategory, outages/incidents tables, stats or reliability, or when asked to 'fix the data model / dedupe / categories'. Триггеры: дедупликация, не совпадают цифры, статистика, категория аварии, события, outage_events, склеивание, пагинация."
 ---
 
 # Outage data core

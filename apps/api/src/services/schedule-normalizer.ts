@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { OperatorInterval, OperatorScheduleResponse, ScheduleIntervalUtc, OperatorStateCode } from '@energy-monitor/shared';
-import { getOperatorState, scheduleImportRequestSchema } from '@energy-monitor/shared';
+import type { OperatorInterval, OperatorScheduleResponse, ScheduleIntervalUtc, OperatorStateCode } from '@svitlo/shared';
+import { getOperatorState, scheduleImportRequestSchema } from '@svitlo/shared';
 /**
  * Нормализация ответа оператора в UTC-интервалы.
  * Зона источника — Europe/Kyiv; time_to "00:00" трактуется как 24:00 того же дня.

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 interface OutageCalendarProps {
   outages: Outage[];

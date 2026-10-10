@@ -8,7 +8,7 @@ import { EmptyState } from '../components/common/EmptyState.js';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs.js';
 import { formatDateTime } from '../lib/date.js';
 import { useIncidents } from '../api/queries.js';
-import type { Incident } from '@energy-monitor/shared';
+import type { Incident } from '@svitlo/shared';
 
 type FilterKey = 'all' | 'active' | 'scheduled' | 'resolved';
 

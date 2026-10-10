@@ -1,1 +1,0 @@
-export const IncidentList = () => <div>Incidents</div>;

@@ -12,7 +12,7 @@ Why this exists: the costly failures of coding agents are not "wrong algorithm",
 ## The loop (follow in order, do not skip)
 
 1. **Restate** the task in one sentence and write the *observable* success criterion
-   ("`pnpm --filter @energy-monitor/api test` passes and `GET /outages` returns `meta.total == 6`").
+   ("`pnpm --filter @svitlo/api test` passes and `GET /outages` returns `meta.total == 6`").
    If you cannot state a criterion, ask exactly one clarifying question, then continue.
 2. **Orient** before touching anything:
    - list the directory, read every file you will change, read its direct importers/callers;

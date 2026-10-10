@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Filter, RotateCcw } from 'lucide-react';
 import { Select } from '../ui/Select.js';
 import { Button } from '../ui/Button.js';
-import type { OutageStatus } from '@energy-monitor/shared';
+import type { OutageStatus } from '@svitlo/shared';
 
 interface FilterState {
   status?: OutageStatus;

@@ -8,7 +8,7 @@ import { OutageList } from '../components/outages/OutageList.js';
 import { useMyAddress } from '../hooks/useMyAddress.js';
 import { useOutages } from '../api/queries.js';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 /**
  * «Моя адреса»: адрес живёт в localStorage (useMyAddress), отключения тянем запросом query=адрес.

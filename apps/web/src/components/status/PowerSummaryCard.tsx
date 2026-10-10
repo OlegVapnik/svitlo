@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldCheck } from 'lucide-react';
-import type { PowerSummary, PowerWindowSummary } from '@energy-monitor/shared';
+import type { PowerSummary, PowerWindowSummary } from '@svitlo/shared';
 import { Skeleton } from '../ui/Skeleton.js';
 
 /** «1 год 20 хв» з хвилин (0 хв → «0 хв»). */

@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../hooks/useTheme.js';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 interface OutageTimelineProps {
   outages: Outage[];

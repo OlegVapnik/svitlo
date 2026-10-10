@@ -1,4 +1,4 @@
-import type { PowerWindowSummary } from '@energy-monitor/shared';
+import type { PowerWindowSummary } from '@svitlo/shared';
 
 export interface Interval {
   /** Початок у мілісекундах (UTC). */

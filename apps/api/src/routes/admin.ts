@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { scheduleImportRequestSchema } from '@energy-monitor/shared';
+import { scheduleImportRequestSchema } from '@svitlo/shared';
 import { importOperatorSchedule } from '../services/schedule-import.service.js';
-import type { OperatorStateCode } from '@energy-monitor/shared';
+import type { OperatorStateCode } from '@svitlo/shared';
 import { db } from '../db/connection.js';
 import { sources } from '../db/schema.js';
 import { eq } from 'drizzle-orm';

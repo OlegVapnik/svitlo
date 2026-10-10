@@ -6,7 +6,7 @@ import { Badge } from '../ui/Badge.js';
 import { cn } from '../../lib/cn.js';
 import { formatDateTime, formatTimeRange, isActive } from '../../lib/date.js';
 import { outageCategory } from '../../lib/outage-location.js';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 interface OutageCardProps {
   outage: Outage;

@@ -5,7 +5,7 @@ import L from 'leaflet';
 import { useTranslation } from 'react-i18next';
 import { formatTimeRange } from '../../lib/date.js';
 import { resolveOutageMapPoint, outageCategory } from '../../lib/outage-location.js';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 // Fix leaflet default marker icon in bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;

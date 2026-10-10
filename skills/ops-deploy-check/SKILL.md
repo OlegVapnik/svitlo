@@ -1,6 +1,6 @@
 ---
 name: ops-deploy-check
-description: "Deployment and operations checklist for EnergyMonitor (Docker Compose: db, migrate, api, web/nginx): why containers exited (137, Exit 1), HTTPS for the PWA, nginx upstream resolution, restart policies, healthchecks, closing the DB port, trustProxy and the rate limit, env override trap (x-api-env vs .env), scheduler/demo flags, backups, monitoring of stale data. Use for any docker-compose/nginx/Dockerfile/.env change, 'site is down', 'containers stopped', going to production, or setting up a server. Триггеры: docker, compose, nginx, деплой, сервер, контейнер упал, Exited, HTTPS, сертификат, бэкап, прод, порт 5432, restart."
+description: "Deployment and operations checklist for Svitlo (Docker Compose: db, migrate, api, web/nginx): why containers exited (137, Exit 1), HTTPS for the PWA, nginx upstream resolution, restart policies, healthchecks, closing the DB port, trustProxy and the rate limit, env override trap (x-api-env vs .env), scheduler/demo flags, backups, monitoring of stale data. Use for any docker-compose/nginx/Dockerfile/.env change, 'site is down', 'containers stopped', going to production, or setting up a server. Триггеры: docker, compose, nginx, деплой, сервер, контейнер упал, Exited, HTTPS, сертификат, бэкап, прод, порт 5432, restart."
 ---
 
 # Ops and deploy check
@@ -33,7 +33,7 @@ Restart: `docker compose up -d` (images exist) or `docker compose up -d --build`
 - `x-api-env` in `docker-compose.yml` **overrides `.env`**. Changing `ENABLE_SCHEDULER` in `.env` does nothing until you edit the compose file. Prefer `${ENABLE_SCHEDULER:-true}` style references so `.env` is the single source.
 - Current prod flags are wrong for a live product: `ENABLE_SCHEDULER=false` (data never refreshes), `SCHEDULE_DEMO=true` (fake schedule shown to residents). Target prod: scheduler **on**, demo **off**.
 - `VITE_API_BASE_URL` is baked at build time. Use the relative `/api/v1` and let nginx proxy; a `http://localhost:3001/...` value breaks every non-local deployment.
-- `migrate` uses `image: energy-monitor-api:latest` — make sure it is the image built in this `up --build`, not a stale tag.
+- `migrate` uses `image: svitlo-api:latest` — make sure it is the image built in this `up --build`, not a stale tag.
 - Toolchain mismatch: host node 26 / pnpm 11 vs image node 22 / pnpm 9.15. Test in the container.
 - `docker/init.sql` runs only on an empty volume.
 

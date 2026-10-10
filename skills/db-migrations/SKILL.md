@@ -1,9 +1,9 @@
 ---
 name: db-migrations
-description: "How to change the PostgreSQL schema in EnergyMonitor safely: SQL migrations in apps/api/src/db/migrations, the custom runner db/migrate.ts, Drizzle schema.ts sync, the energy_normalize_address function, seeds vs migrations, backups and rollback. Use for any new/changed table, column, index, extension, SQL function, or data fix. Триггеры: миграция, новая таблица, колонка, индекс, схема БД, schema.ts, drizzle, seed, unaccent, pg_trgm."
+description: "How to change the PostgreSQL schema in Svitlo safely: SQL migrations in apps/api/src/db/migrations, the custom runner db/migrate.ts, Drizzle schema.ts sync, the energy_normalize_address function, seeds vs migrations, backups and rollback. Use for any new/changed table, column, index, extension, SQL function, or data fix. Триггеры: миграция, новая таблица, колонка, индекс, схема БД, schema.ts, drizzle, seed, unaccent, pg_trgm."
 ---
 
-# Database migrations (EnergyMonitor)
+# Database migrations (Svitlo)
 
 ## How it works here
 
@@ -22,18 +22,18 @@ description: "How to change the PostgreSQL schema in EnergyMonitor safely: SQL m
 4. Update `schema.ts` to match, and the shared zod/types in `packages/shared/src/index.ts` if the API shape changes.
 5. Test on a throwaway database, twice (idempotency):
    ```bash
-   pnpm --filter @energy-monitor/api db:migrate
-   pnpm --filter @energy-monitor/api db:migrate   # must be a no-op
+   pnpm --filter @svitlo/api db:migrate
+   pnpm --filter @svitlo/api db:migrate   # must be a no-op
    docker compose exec -T db psql -U energymon -d energymon -c '\d <table>'
    ```
-6. Typecheck + tests: `bash skills/energymon-onboarding/scripts/verify.sh`.
+6. Typecheck + tests: `bash skills/svitlo-onboarding/scripts/verify.sh`.
 7. Write the rollback statement as a comment at the top of the file (even if it is "none, data migration").
 
 ## Rules
 
 - **Additive first.** Add new tables/columns, switch code, and drop old things in a *later* migration after a release cycle.
 - **Destructive statements** (`DROP`, `TRUNCATE`, `DELETE` without a narrow WHERE, `ALTER ... TYPE`) need explicit human approval and a fresh backup.
-- **Seeds are not migrations.** Reference data (streets, contacts, sources) belongs in `db/seed.ts` or an admin API. History: `0004` seeded streets and `0005` had to remove personal data that leaked in via seed — do not repeat that. Never put names, phones or account numbers of private people into SQL.
+- **Seeds are not migrations.** Reference data (streets, contacts, sources) belongs in an idempotent SQL data migration or an admin API — **there is no `db/seed.ts`** (removed 2026-10-10: it inserted invented data). History: `0004` seeded streets and `0005` had to remove personal data that leaked in via seed — do not repeat that. Never put names, phones or account numbers of private people into SQL.
 - **Extensions** (`uuid-ossp`, `pg_trgm`, `unaccent`) are created in a migration, not only in `docker/init.sql` (init.sql runs only on an empty volume). Prefer `gen_random_uuid()` (built in since PG13) for new tables.
 - **`energy_normalize_address(text)`** is `IMMUTABLE` and is used for stored `name_normalized` and for search.
   Changing it requires: a new migration with `CREATE OR REPLACE FUNCTION`, then recomputation of every column and expression index that depends on it
@@ -54,7 +54,7 @@ description: "How to change the PostgreSQL schema in EnergyMonitor safely: SQL m
 
 ```bash
 # tables/columns in DB vs schema.ts: compare names manually or with drizzle-kit
-pnpm --filter @energy-monitor/api exec drizzle-kit introspect   # if configured; otherwise: psql '\d+ <table>' and diff by eye
+pnpm --filter @svitlo/api exec drizzle-kit introspect   # if configured; otherwise: psql '\d+ <table>' and diff by eye
 ```
 List any difference under "Assumptions / not verified" in your report.
 

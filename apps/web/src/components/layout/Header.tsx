@@ -21,7 +21,7 @@ export const Header = () => {
             <Zap className="h-5 w-5" aria-hidden />
           </span>
           <span className="min-w-0 leading-tight">
-            <span className="block truncate text-sm font-bold tracking-tight">EnergyMonitor</span>
+            <span className="block truncate text-sm font-bold tracking-tight">Svitlo</span>
             <span className="hidden truncate text-[11px] text-muted-foreground sm:block">{t('home.subtitle')}</span>
           </span>
         </Link>

@@ -3,7 +3,7 @@ import {
   operatorScheduleResponseSchema,
   scheduleImportRequestSchema,
   type OperatorScheduleResponse,
-} from '@energy-monitor/shared';
+} from '@svitlo/shared';
 import { normalizeScheduleResponse } from '../../src/services/schedule-normalizer.js';
 
 const sample: OperatorScheduleResponse = {

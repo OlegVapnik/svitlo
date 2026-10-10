@@ -26,8 +26,10 @@ PLACEHOLDER = re.compile(r"(change[-_ ]?me|changeme|example|placeholder|your[-_ 
                          r"test|dummy|secret$|password$|token$|todo)", re.I)
 
 RULES = [
+    # Optional quotes around the key: catches JSON/JSONC/YAML-style entries as well as .env lines,
+    # e.g. `"password": "<redacted>"` in .vscode/settings.json (previously invisible to the scanner).
     ("assigned-secret",
-     re.compile(r"(?i)\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY)[A-Z0-9_]*)\s*[:=]\s*['\"]?([^\s'\"#]{8,})")),
+     re.compile(r"(?i)\b['\"]?([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|PRIVATE[_-]?KEY)[A-Z0-9_]*)['\"]?\s*[:=]\s*['\"]?([^\s'\"#]{8,})")),
     ("bearer-header",
      re.compile(r"(?i)\bBearer\s+([A-Za-z0-9._~+/=-]{16,})")),
     ("private-key",
@@ -92,6 +94,10 @@ def scan_file(path: Path, root: Path, findings: list, allow: list = ()) -> None:
             for m in rx.finditer(line):
                 val = m.group(m.lastindex) if m.lastindex else m.group(0)
                 if name in ("assigned-secret", "bearer-header", "db-url-password") and (is_placeholder(val) or looks_like_code(val)):
+                    continue
+                # UI labels in i18n files have secret-ish key names ("adminToken": "Адмін-токен");
+                # machine-generated secrets are ASCII, human translations are not.
+                if name == "assigned-secret" and not val.isascii():
                     continue
                 if name == "account-number" and trivial_number(val):
                     continue

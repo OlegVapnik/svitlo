@@ -1,4 +1,4 @@
-import type { ReliabilityBucket, ReliabilityReport } from '@energy-monitor/shared';
+import type { ReliabilityBucket, ReliabilityReport } from '@svitlo/shared';
 import { computeWindowSummary, kyivDayStart, type OutageRow } from './power-summary.js';
 
 const KYIV_TZ = 'Europe/Kyiv';

@@ -2,9 +2,9 @@ import { normalizeAddressQuery } from '../parsers/address-matcher.js';
 import { db } from '../db/connection.js';
 import { streetQueues } from '../db/schema.js';
 import { asc, eq, sql } from 'drizzle-orm';
-import type { StreetQueuePair } from '@energy-monitor/shared';
+import type { StreetQueuePair } from '@svitlo/shared';
 import { getQueueSchedule, getQueueScheduleMeta } from './schedule-import.service.js';
-import type { StreetScheduleData } from '@energy-monitor/shared';
+import type { StreetScheduleData } from '@svitlo/shared';
 
 function toPair(row: { streetNormalized: string; streetName: string; queue: string; updatedAt: Date | string }): StreetQueuePair {
   return {

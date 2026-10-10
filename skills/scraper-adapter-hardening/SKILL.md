@@ -1,6 +1,6 @@
 ---
 name: scraper-adapter-hardening
-description: "Rules and checklist for the EnergyMonitor source adapters (operator chernihivoblenergo web API, Telegram channel/bot, mock): contract tests with scrubbed fixtures, strict validation of external responses, loud failure on format change, rate limiting, backoff and circuit breaker, handling of WAF/IP blocks (without evasion), PII removal before storage. Use for any change in apps/api/src/parsers, parse.service.ts, scheduler, snapshots, or when the source returns errors or empty data. Триггеры: парсер, адаптер, оператор заблокировал, 403, 429, WAF, бан IP, telegram, снапшот, парсинг, list_acc."
+description: "Rules and checklist for the Svitlo source adapters (operator chernihivoblenergo web API, Telegram channel/bot, mock): contract tests with scrubbed fixtures, strict validation of external responses, loud failure on format change, rate limiting, backoff and circuit breaker, handling of WAF/IP blocks (without evasion), PII removal before storage. Use for any change in apps/api/src/parsers, parse.service.ts, scheduler, snapshots, or when the source returns errors or empty data. Триггеры: парсер, адаптер, оператор заблокировал, 403, 429, WAF, бан IP, telegram, снапшот, парсинг, list_acc."
 ---
 
 # Source adapters: hardening

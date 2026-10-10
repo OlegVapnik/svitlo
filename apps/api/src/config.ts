@@ -16,9 +16,9 @@ const envSchema = z.object({
   // Каталог сырых ответов оператора (PII-риск: адреса/ПИБ могут встречаться).
   // Держим ВНЕ src/dist, путь без "snapshots/" (иначе .gitignore-правило `snapshots/`
   // совпадёт с любой вложенной папкой и каталог никогда не создастся). В контейнере
-  // переопределяется на /var/lib/energy-monitor/snapshots (docker-compose.yml).
+  // переопределяется на /var/lib/svitlo/snapshots (docker-compose.yml).
   SNAPSHOT_DIR: z.string().default('../../operator-samples/raw-snapshots'),
-  PARSER_USER_AGENT: z.string().default('EnergyMonitor/1.0'),
+  PARSER_USER_AGENT: z.string().default('Svitlo/1.0'),
   SOURCE_URL: z.string().url().default('http://manual-import.invalid/disabled'),
   // Публічний веб-API оператора (сторінка /power_outages). Увімкнює автоматичне
   // отримання зареєстрованих перерв без персональних даних — без капчі.

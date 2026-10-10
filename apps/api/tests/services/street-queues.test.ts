@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { streetQueueInputSchema, type OperatorScheduleResponse } from '@energy-monitor/shared';
+import { streetQueueInputSchema, type OperatorScheduleResponse } from '@svitlo/shared';
 import { normalizeAddressQuery } from '../../src/parsers/address-matcher.js';
 import { normalizeScheduleResponse } from '../../src/services/schedule-normalizer.js';
 

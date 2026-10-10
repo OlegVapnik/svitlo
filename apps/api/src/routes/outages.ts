@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { outageFiltersSchema } from '@energy-monitor/shared';
+import { outageFiltersSchema } from '@svitlo/shared';
 import { getOutages, getOutageStats, getOutageById } from '../services/outage.service.js';
 
 export default async function outagesRoutes(fastify: FastifyInstance) {

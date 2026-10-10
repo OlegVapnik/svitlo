@@ -1,17 +1,14 @@
 {
-  "name": "energy-monitor",
+  "name": "svitlo",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "npm run build --workspace @energy-monitor/web && npm run build --workspace @energy-monitor/api"
+    "build": "npm run build --workspace @svitlo/web && npm run build --workspace @svitlo/api"
   },
   "workspaces": [
     "apps/web",
     "apps/api",
     "packages/shared"
-  ],
-  "dependencies": {
-    "zod": "^3.25.76"
-  }
+  ]
 }

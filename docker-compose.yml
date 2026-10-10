@@ -8,7 +8,7 @@ x-api-env: &api-env
   DATABASE_URL: postgresql://energymon:${POSTGRES_PASSWORD:-energymon}@db:5432/energymon
   API_PORT: "3001"
   API_HOST: "0.0.0.0"
-  SNAPSHOT_DIR: /var/lib/energy-monitor/snapshots
+  SNAPSHOT_DIR: /var/lib/svitlo/snapshots
   ADMIN_TOKEN: ${ADMIN_TOKEN:?Set a long random ADMIN_TOKEN in .env}
   SOURCE_URL: http://manual-import.invalid/disabled
   USE_MOCK_ADAPTER: "false"
@@ -66,7 +66,7 @@ services:
   # api стартует только после его успешного завершения (service_completed_successfully),
   # поэтому на чистом томе база гарантированно мигрирована до старта API.
   migrate:
-    image: energy-monitor-api:latest
+    image: svitlo-api:latest
     build: *api-build
     restart: "no"
     environment: *api-env
@@ -78,7 +78,7 @@ services:
         condition: service_healthy
 
   api:
-    image: energy-monitor-api:latest
+    image: svitlo-api:latest
     build: *api-build
     restart: unless-stopped
     # tini as PID 1: correct signal forwarding and zombie reaping (graceful shutdown handler lives in server.ts)
@@ -96,7 +96,7 @@ services:
       start_period: 20s
     volumes:
       - ./docker/operator-oblenergo-ca.pem:/app/apps/api/operator-ca.pem:ro
-      - api_snapshots:/var/lib/energy-monitor/snapshots
+      - api_snapshots:/var/lib/svitlo/snapshots
     depends_on:
       db:
         condition: service_healthy

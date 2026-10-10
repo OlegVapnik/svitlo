@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
-import type { ReliabilityBucket, ReliabilityReport } from '@energy-monitor/shared';
+import type { ReliabilityBucket, ReliabilityReport } from '@svitlo/shared';
 import { Skeleton } from '../ui/Skeleton.js';
 import { formatMinutes } from './PowerSummaryCard.js';
 

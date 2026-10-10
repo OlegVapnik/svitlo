@@ -11,7 +11,7 @@ import type {
   StatusResponse,
   StreetQueuePair,
   StreetScheduleData,
-} from '@energy-monitor/shared';
+} from '@svitlo/shared';
 import { api } from './client';
 
 type OutageFilters = {

@@ -1,6 +1,6 @@
 ---
 name: kyiv-time
-description: "Correct handling of Europe/Kyiv time in EnergyMonitor: UTC in DB/API, Kyiv-day boundaries, 23h/25h days on DST change, the non-existent and repeated hour, operator HH:MM wall-clock conversion, 'today' in schedules and reliability windows, SQL at time zone. Use for any code or bug involving dates, 'today/tomorrow', day/week/month windows, queue schedule intervals, DST, time zones, or off-by-one-hour/off-by-one-day symptoms. Триггеры: время, часовой пояс, сегодня, завтра, переход на летнее время, сутки, интервал, kyivDayStart, Europe/Kyiv, UTC."
+description: "Correct handling of Europe/Kyiv time in Svitlo: UTC in DB/API, Kyiv-day boundaries, 23h/25h days on DST change, the non-existent and repeated hour, operator HH:MM wall-clock conversion, 'today' in schedules and reliability windows, SQL at time zone. Use for any code or bug involving dates, 'today/tomorrow', day/week/month windows, queue schedule intervals, DST, time zones, or off-by-one-hour/off-by-one-day symptoms. Триггеры: время, часовой пояс, сегодня, завтра, переход на летнее время, сутки, интервал, kyivDayStart, Europe/Kyiv, UTC."
 ---
 
 # Kyiv time

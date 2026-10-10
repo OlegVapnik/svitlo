@@ -1,10 +1,10 @@
-# HANDOFF — EnergyMonitor: миграция на канонический `outage_events`
+# HANDOFF — Svitlo: миграция на канонический `outage_events`
 
 Снимок состояния на **2026-10-09, вечер**. Задача: перевести модель отключений с сырой таблицы `outages`
 (строка = адрес) на канонические `outage_events` + `outage_event_addresses` без простоя и без расхождения
 цифр между эндпоинтами. План и критерии приёмки: `skills/outage-data-core/references/migration-plan.md`
 (шаги 0–8). Правила домена: `skills/outage-data-core/SKILL.md`, `skills/db-migrations/SKILL.md`,
-`skills/energymon-onboarding/SKILL.md` (15 золотых правил).
+`skills/svitlo-onboarding/SKILL.md` (15 золотых правил).
 
 ## 1. Где мы находимся
 
@@ -19,12 +19,12 @@
 | Осталось | шаг 5: `/outages` (список) и `/reliability`/`power-summary` (там мешает фильтр `queue`, см. §9.4); шаги **6, 7**, **8** — отдельный релиз |
 | Приёмочный тест | `tests/integration/outage-numbers.test.ts` — **ЗЕЛЁНЫЙ: 6/6** (был красный 3 из 6) на 2026-10-10 |
 | Рабочая БД (dev) | 36 строк `outages` → 9 событий / 38 адресов в `outage_events*`, 0 отменённых; **живой парсинг включён** (`ENABLE_SCHEDULER=true`) |
-| Свежий бэкап | `../energy-monitor-backups/energymon_before_live_parse_20261010_0146.dump` (44 333 B; снят перед живым парсингом) |
+| Свежий бэкап | `../svitlo-backups/energymon_before_live_parse_20261010_0146.dump` (44 333 B; снят перед живым парсингом) |
 
 ## 2. Что сделано (шаги 0–4 + инфраструктура)
 
 ### Шаг 0 — предусловия
-Бэкапы сняты в `../energy-monitor-backups/` (§7), ветки нарезаны, `verify.sh` прогнан как baseline.
+Бэкапы сняты в `../svitlo-backups/` (§7), ветки нарезаны, `verify.sh` прогнан как baseline.
 
 ### Шаг 1 — приёмочный тест (написан ПЕРВЫМ, до кода)
 - `apps/api/tests/integration/outage-numbers.test.ts` + фикстура `tests/fixtures/outage-events.fixture.ts`:
@@ -108,8 +108,8 @@
 
 ```bash
 # --- код и тесты (из корня репозитория) ---
-bash skills/energymon-onboarding/scripts/verify.sh            # typecheck api+web + unit-тесты
-bash skills/energymon-onboarding/scripts/verify.sh --build    # то же + сборка
+bash skills/svitlo-onboarding/scripts/verify.sh            # typecheck api+web + unit-тесты
+bash skills/svitlo-onboarding/scripts/verify.sh --build    # то же + сборка
 python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .  # секреты/PII
 python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .   # если менялись web-стили
 ```
@@ -136,8 +136,8 @@ pnpm db:backfill-events   # идемпотентный backfill outage_events и
 ```bash
 # --- бэкап и его проверка (на хосте нет pg_restore — проверяем через контейнер) ---
 STAMP=$(date +%F_%H%M)
-docker compose exec -T db pg_dump -U energymon -d energymon -Fc > ../energy-monitor-backups/energymon_$STAMP.dump
-docker compose cp ../energy-monitor-backups/energymon_$STAMP.dump db:/tmp/verify.dump
+docker compose exec -T db pg_dump -U energymon -d energymon -Fc > ../svitlo-backups/energymon_$STAMP.dump
+docker compose cp ../svitlo-backups/energymon_$STAMP.dump db:/tmp/verify.dump
 docker compose exec -T db pg_restore -l /tmp/verify.dump | grep -c 'TABLE DATA'
 docker compose exec -T db createdb -U energymon energymon_restore_test
 docker compose exec -T db pg_restore -U energymon -d energymon_restore_test --no-owner /tmp/verify.dump
@@ -234,14 +234,14 @@ curl -s localhost:3001/api/v1/status | head -c 300
 8. **Порт БД** опубликован только на loopback (`127.0.0.1:5432`) — наружу не открывать; остальной
    прод-чеклист — в `skills/ops-deploy-check/SKILL.md`.
 
-## 7. Бэкапы (`../energy-monitor-backups/`)
+## 7. Бэкапы (`../svitlo-backups/`)
 
 | Файл | Размер | Когда | Комментарий |
 |---|---|---|---|
 | `energymon_after_dual_write_2026-10-09_1832.dump` | 44 545 B | сегодня 18:32 | **свежий**: состояние после шага 4 (32 / 6 / 32) |
 | `energymon_before_ingest_2026-10-09_1437.dump` | 39 976 B | сегодня 14:37 | перед первым ingest-прогоном |
 | `energymon_before_outage_events_2026-10-09_1256.dump` | 33 945 B | сегодня 12:56 | перед миграцией 0008 / backfill |
-| `energy-monitor-20261009-121027.tar.gz` | 929 336 B | сегодня 12:10 | полный архив проекта до правок |
+| `svitlo-20261009-121027.tar.gz` | 929 336 B | сегодня 12:10 | полный архив проекта до правок |
 
 Свежий дамп проверен **реальным восстановлением**, а не только размером: `magic = PGDMP`,
 `pg_restore -l` → 14 записей `TABLE DATA` (в т.ч. `outages`, `outage_events`, `outage_event_addresses`,
@@ -252,7 +252,7 @@ curl -s localhost:3001/api/v1/status | head -c 300
 
 ## 8. Чек-лист «готово» для следующих шагов
 
-- [ ] `bash skills/energymon-onboarding/scripts/verify.sh` → `rc=0` (typecheck api+web + unit-тесты);
+- [ ] `bash skills/svitlo-onboarding/scripts/verify.sh` → `rc=0` (typecheck api+web + unit-тесты);
 - [ ] интеграционный прогон: на шаге 5 число падений строго уменьшается (3 → 1 → 0), на шаге 6 — 0;
 - [ ] `python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .` → только 3 известные находки (§6.4);
 - [ ] `git status --short` пуст; нет `apps/api/tmp-*`, `apps/api/src/snapshots/`, реплей-скриптов;
@@ -375,7 +375,7 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
 
 ### 10.2 Проверено (без сети к оператору и без реального парсинга)
 
-- `pnpm --filter @energy-monitor/api lint` — чисто; фокусные тесты **34/34** (`chernihiv-web.adapter`
+- `pnpm --filter @svitlo/api lint` — чисто; фокусные тесты **34/34** (`chernihiv-web.adapter`
   22, `source-breaker` 8, `config` 4).
 - `tests/integration` против `energymon_test` — **24/24**, включая новый `status-breaker.test.ts`
   (пауза/истечение паузы/`nextAttemptAt` в `/status`) и применение миграции 0009.
@@ -427,7 +427,7 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
 
 ### 11.2 Проверено
 
-- `pnpm --filter @energy-monitor/web lint` → 0; `web test` → **7/7** (включая новые тесты `source-health`).
+- `pnpm --filter @svitlo/web lint` → 0; `web test` → **7/7** (включая новые тесты `source-health`).
 - `check_tailwind_tokens.py` → «OK: all semantic tokens are defined and mapped»; единственное замечание —
   inline color/zIndex в `AddressCombobox.tsx` (legacy-обход, снять вместе с этой страницей).
 - `vite build` → OK: `index.css` 48.2 kB (13.2 kB gzip), `index.js` 1735 kB (561 kB gzip).
@@ -480,7 +480,7 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
 
 ### 12.2 Проверено (2026-10-10, этой сессией)
 
-- `bash skills/energymon-onboarding/scripts/verify.sh` → **4/4 PASS**: api typecheck PASS, web typecheck
+- `bash skills/svitlo-onboarding/scripts/verify.sh` → **4/4 PASS**: api typecheck PASS, web typecheck
   PASS, api tests **95 passed** / 24 skipped, web tests **7 passed**.
 - `python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .` → **OK** (inline-цветов нет).
 - i18n-скан `/tmp/check_i18n_keys.py`: все **174** литеральных `t('…')` ключа есть и в `uk.json`, и в `ru.json`
@@ -488,7 +488,7 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
 - `vite build` → OK. Стартовый чанк **517.4 kB (157 kB gzip)**; ленивые: `OutageMap` 156 kB (46 kB gzip),
   чарты 1054 kB (350 kB gzip — грузятся только при открытии вкладки «Графік»), CSS 31.5 kB (6.8 kB gzip).
   Было (§11.2): один чанк 1735 kB (**561 kB gzip**) на первый экран.
-- Docker: `docker compose build web && docker compose up -d web` → образ `energy-monitor-web:latest`
+- Docker: `docker compose build web && docker compose up -d web` → образ `svitlo-web:latest`
   пересобран, контейнер пересоздан; `http://localhost:3000/` → **200**, `index.html` ссылается на новый
   `assets/index-DOnICMhf.js` (старые хеши ушли), внутри контейнера новые чанки; api healthy.
 - API-смоук (`/tmp/smoke.py`, только коды и количества): `/street-queues` 200 (0 пар),
@@ -508,5 +508,162 @@ Play Store или APK вручную. От этого зависит TWA vs Capa
    состояние; заполняется админ-блоком на «Вулиці» или сидами.
 5. `AGENTS.md` (правка владельца про «Экономный режим») **намеренно не закоммичен** — рабочее дерево
    по нему остаётся грязным.
+
+## 13. Сессия 3 (10.10.2026): ошибки в редакторе, фейк-данные, пустые contacts/street_queues
+
+### 13.1 Что сделано
+
+1. **75 «ошибок» со скриншота VS Code** — это диагностика черновых файлов `/tmp/imp_a.tsx`,
+   `/tmp/imp_b.tsx`, `/tmp/new_MyAddressPage.tsx`: они вне проекта, поэтому TS не находил
+   `react/jsx-runtime`, `CardContent`, `Input` и т. п. Содержимое совпадало байт-в-байт с уже
+   закоммиченными `ScheduleImportPage.tsx` (= `cat imp_a imp_b`) и `MyAddressPage.tsx`.
+   Черновики убраны в `/tmp/scratch-backup-20261010/` → Problems чистый.
+   **В самом проекте ошибок нет: `pnpm -r lint` → exit 0.**
+2. **Фейк-данные**: удалён `apps/api/src/db/seed.ts` — он вставлял выдуманные contacts/outages/incidents,
+   которые миграция `0005_remove_seed_personal_data.sql` тут же удаляет (ловушка `pnpm db:seed`);
+   скрипт `db:seed` убран из `apps/api/package.json`. Бэкап: `/tmp/scratch-backup-20261010/seed.ts.bak`
+   (файл был в git → восстанавливается `git checkout -- apps/api/src/db/seed.ts`).
+   Из `ContactsPage.tsx` убран хардкод `FALLBACK_CONTACTS` — второй источник правды для тех же данных.
+3. **`contacts` было пусто → миграция `0010_operator_contacts.sql`**: 7 публичных каналов
+   АТ «Чернігівобленерго» (2 телефона, telegram-канал и бот, viber, сайт, онлайн-звернення),
+   идемпотентно по ключу `(type, value)`. Применена: `contacts=7`, `GET /api/v1/contacts` → 200 с данными.
+   `ContactsPage` теперь: loading → skeleton, `isError` → `ErrorState` с retry, пусто → `EmptyState`
+   (ключи `contacts.emptyTitle/emptyDesc` в uk/ru).
+4. **Голый `fetch('/api/v1/admin/schedules/import')`** на «Імпорт графіка» заменён на
+   `api.importSchedule()` из `api/client.ts` (golden rule #9). В `client.ts` добавлен `ApiError`,
+   который разбирает конверт `{ error: { code, message, details } }` — страница по-прежнему показывает
+   детали валидации, а не `statusText`.
+
+### 13.2 Проверено (все команды выполнены)
+
+`pnpm -r lint` 0 · api tests 16 файлов / 95 passed (24 skipped) · web tests 2 файла / 7 passed ·
+`check_tailwind_tokens.py` 0 · `docker compose build api web` 0 · `docker compose up -d` 0 (api healthy) ·
+`contacts=7`, в `__energy_migrations` 10 записей, `0010_operator_contacts.sql` применена ·
+web 200, бандл `assets/index-DKVqlLNH.js`, старого фолбэк-номера `0462772901` в бандле нет.
+
+### 13.3 `street_queues` пусто: источника в репозитории нет — нужно решение владельца
+
+Факты: `addresses` = 21 (1 населённый пункт + 20 курированных улиц Деснянське, миграция `0004`),
+`street_queues` = 0, `outages` = 36, но `outages.queue` не заполнен ни у одной записи: адаптер
+`chernihiv-web.adapter.ts` ставит `queue: null`, в ответе `/api/list_acc` поля черги нет
+(`[НП, вулиця, будинки, старт, кінець, створено, причина, …]`). Выдумывать номера черг нельзя.
+
+Найденные открытые источники (проверены фетчем 10.10.2026):
+
+| Источник | Что даёт | Доступность |
+|---|---|---|
+| `chernihivoblenergo.com.ua/files/other/GPV.pdf` | «ГРАФІК (ПЕРЕЛІК АДРЕС) МОЖЛИВОГО ВИМКНЕННЯ ЕЛЕКТРОЕНЕРГІЇ» | **403** и с хоста, и изнутри контейнера `api` (тот же WAF; штатный путь — браузерная сессия, как в адаптере) |
+| `chernihivoblenergo.com.ua/files/other/Grafik_obmezhen.pdf` | Таблица «Черга/Підчерга · Дільниця · Населений пункт · Адреси» — **авторитетный источник** для `street_queues` | **403** (см. выше) |
+| `chernihivoblenergo.com.ua/blackouts` | Проверка черги за ЕІС-кодом / особовим рахунком («Черги у графіках» — нова функція) | WAF |
+| `https://bezsvitla.com.ua/chernihivska-oblast` | Графік по **підчергах 1.1 … 6.2** с интервалами; страницы `…/chernihivska-oblast/cherha-3-2` перечисляют города/громады/РЕМи черги; есть `sitemap-queues.xml`, `sitemap-streets-<city>.xml` | **200**, чтение без авторизации. **Но** `robots.txt` запрещает `ClaudeBot` → автоматический сбор в продукт не закладывать без одобрения владельца |
+| `cn.e-svitlo.com.ua` | Личный кабинет потребителя (тарифы, оплата, онлайн-заявки) | нужен логин; данных по чергам не даёт |
+| `chernigiv.energy-ua.info` | Сторонний «Графік відключення світла у Чернігівській області» | **403** |
+| `data.gov.ua`, GitHub | По запросам `гпв` и `chernihivoblenergo` наборов данных/проектов нет | — |
+
+**Модель черг у оператора шире, чем в БД:** реальные группы — **підчерги** `1.1, 1.2, …, 6.2`,
+а в `QUEUE_OPTIONS` и `streetQueueInputSchema` (regex `^\d+(/\d+)?$`) сейчас только `«3»` и `«2/2»`.
+Прежде чем импортировать перечни, нужно зафиксировать соответствие (`1/1` ↔ підчерга 1.1).
+
+**Предлагаемый путь (без обхода WAF):** admin-страница «Імпорт переліку адрес» — владелец вручную
+скачивает `Grafik_obmezhen.pdf` (или выгрузку из раздела «Відключення») и загружает файл; API парсит
+таблицу «Черга/Підчерга — НП — Адреси» и делает `upsertStreetQueue()` по улицам Деснянське.
+Быстрый вариант: владелец присылает готовый список «улиця → черга», и мы засеваем его миграцией `0011`.
+
+## 14. Сессия 4 — инструменты разработки: SQLTools, расширения, MCP
+
+Дата: 2026-10-10. Задача: «поработать с SQLTools и поставить плагины». Кода продукта не касались.
+
+### 14.1 Найдена и закрыта утечка: пароль БД лежал в git
+
+`.vscode/settings.json` — файл **под git** — содержал `"password"` со значением, равным дефолту
+`${POSTGRES_PASSWORD:-energymon}` из `docker-compose.yml`. Убрано: теперь `"askForPassword": true`,
+VS Code спросит пароль один раз и положит его в системное хранилище секретов (SQLTools 0.28.6 +
+драйвер 0.5.8; в чейнджлоге драйвера 0.5.1 — «store connection passwords securely»).
+Подстановки `${env:VAR}` в SQLTools 0.28.6 **нет** (проверено grep по установленному `dist/`),
+поэтому именно `askForPassword`, а не ссылка на переменную.
+
+Пароль остался только в `.env` (он в `.gitignore`). **В историю git он не попал:** в `HEAD`-версии
+файла поля `password` нет (`git show HEAD:.vscode/settings.json` пусто по этому полю) — строка жила
+только в рабочей копии после прошлой сессии, поэтому **ротация не требуется**. Но следующий
+`git add .vscode/settings.json` его бы закоммитил — именно от этого теперь страхует сканер (§14.2).
+Ротация при необходимости: `ALTER USER energymon WITH PASSWORD '<new>'` внутри контейнера `db` +
+`POSTGRES_PASSWORD` в `.env` (смена только `.env` на существующем томе пароль не меняет — см.
+комментарий в `docker-compose.yml`).
+
+### 14.2 Сканер секретов не видел ключи в кавычках (исправлено)
+
+Правило `assigned-secret` в `scan_secrets.py` требовало `KEY:` без кавычек, поэтому JSON-запись
+`"password": "…"` проходила мимо — дыру дал именно JSON. Теперь кавычки вокруг ключа разрешены.
+Доказательство: до правки файла настроек сканер находил **4** записи (добавилась
+`.vscode/settings.json:16`), после правки — снова **3** (базовый уровень `.env:2`, `.env:13`,
+`.env.example:2`, они закрыты `.gitignore`).
+
+Единственный побочный эффект — подписи i18n `"adminToken": "Адмін-токен"` читались как секрет.
+Добавлен явный фильтр: не-ASCII значение для `assigned-secret` = перевод, а не секрет (машинные
+секреты ASCII). 4 ложных срабатывания в `apps/web/src/i18n/{uk,ru}.json` устранены.
+
+### 14.3 Расширения VS Code
+
+CLI доступен (`/usr/bin/code`), расширения лежат в `~/.vscode/extensions`. Доустановлены:
+`redhat.vscode-yaml` 1.25.0 (валидация `docker-compose.yml`, `pnpm-workspace.yaml`),
+`mikestead.dotenv` 1.0.1 (подсветка `.env`). Уже стояли и нужны проекту: `mtxr.sqltools` 0.28.6,
+`mtxr.sqltools-driver-pg` 0.5.8, `vitest.explorer`, `bradlc.vscode-tailwindcss`,
+`esbenp.prettier-vscode`, `ms-azuretools.vscode-containers`. `.vscode/extensions.json` (в git **не**
+добавлен) пополнен этими id, чтобы рекомендации совпадали с реальным набором.
+
+Осознанно **не** ставили: драйверы SQLTools для SQLite/MySQL/MSSQL (в проекте только PostgreSQL),
+ESLint (в репозитории нет конфига, `pnpm -r lint` = `tsc --noEmit`), shellcheck/ruff (по 1–2 файла).
+
+### 14.4 MCP-серверы — это и есть «больше возможностей» агенту
+
+Расширения VS Code работают в редакторе и возможностей агента не меняют; инструменты агенту дают
+именно MCP-серверы. Путь конфига Cline 4.1.23 подтверждён по коду расширения:
+`path.join(globalStorageUri.fsPath, "settings", "cline_mcp_settings.json")` →
+`~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`.
+Создан с официальными reference-серверами (Anthropic PBC, запуск через `/usr/bin/uvx`):
+
+| Сервер | Команда | Смоук-тест |
+|---|---|---|
+| `fetch` | `uvx mcp-server-fetch` | `initialize` → `mcp-fetch 1.30.0`, tools ✔ |
+| `git` | `uvx mcp-server-git --repository <repo>` | `initialize` → `mcp-git 1.30.0`, tools ✔ |
+
+`autoApprove` ограничен: `fetch` (чтение веба) и read-only git (`git_status`/`git_diff*`/`git_log`);
+пишущие инструменты (`commit`, `add`, `reset`, `checkout`) — только с подтверждением.
+
+**PostgreSQL-MCP не ставили:** `@modelcontextprotocol/server-postgres` помечен в npm как deprecated
+(последний релиз 0.6.2 от 2024-12-04), в реестре MCP достойной поддерживаемой замены нет, а строку
+подключения с паролем пришлось бы держать в глобальном конфиге. Безопасные пути уже есть — SQLTools
+в UI и чтение БД из терминала:
+
+```bash
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*) from street_queues"'
+```
+
+Если DB-MCP всё же нужен, добавить в `mcpServers` (пароль уйдёт в глобальный файл, не в git; сервер
+выполняет запросы в транзакции READ ONLY):
+
+```json
+"postgres": { "command": "/usr/bin/npx", "args": ["-y", "@modelcontextprotocol/server-postgres",
+  "postgresql://energymon:<POSTGRES_PASSWORD из .env>@127.0.0.1:5432/energymon"],
+  "disabled": false, "autoApprove": ["query"] }
+```
+
+### 14.5 Проверено
+
+`python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .` → 3 finding (базовый уровень) ·
+`git show HEAD:.vscode/settings.json` → поля `password` нет (в историю не попадало) ·
+`settings.json` — валидный JSONC, поля `password` нет, `askForPassword: true` ·
+`code --list-extensions` содержит `redhat.vscode-yaml`, `mikestead.dotenv` ·
+`cline_mcp_settings.json` — валидный JSON, серверы `['fetch','git']` · оба MCP-сервера отвечают на
+`initialize`.
+
+Правило на будущее: пароли и токены — только в `.env` (в `.gitignore`) или в системном хранилище
+секретов, но не в файлах под контролем версий, включая `.vscode/*.json`.
+
+
+- `/api/v1/admin/schedules/import` возвращает голый результат, а не конверт `{ data }` (golden rule #10).
+  Не менял, чтобы не ломать контракт: единственный потребитель — «Імпорт графіка», и он уже обновлён.
+- `/tmp` содержит черновики прошлых сессий — их стоит держать вне рабочей папки, иначе VS Code
+  снова покажет «ошибки» (см. 13.1).
 
 

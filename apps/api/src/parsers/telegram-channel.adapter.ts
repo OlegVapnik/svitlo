@@ -25,7 +25,7 @@ export class TelegramChannelAdapter implements ISourceAdapter {
 
   async fetchPosts(): Promise<{ posts: TelegramPost[]; rawSnapshot: string }> {
     const response = await this.fetchImpl(this.sourceUrl, {
-      headers: { 'user-agent': 'Mozilla/5.0 EnergyMonitor/1.0', accept: 'text/html' },
+      headers: { 'user-agent': 'Mozilla/5.0 Svitlo/1.0', accept: 'text/html' },
       signal: AbortSignal.timeout(Number(process.env['PARSE_TIMEOUT_MS'] ?? 30000)),
     });
     if (!response.ok) throw new Error(`Telegram channel returned HTTP ${response.status}`);

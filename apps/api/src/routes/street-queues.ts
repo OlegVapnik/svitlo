@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { streetQueueInputSchema } from '@energy-monitor/shared';
+import { streetQueueInputSchema } from '@svitlo/shared';
 import { listStreetQueues, upsertStreetQueue, removeStreetQueue, getStreetSchedule } from '../services/street-queues.service.js';
 import { AppError } from '../utils/errors.js';
 

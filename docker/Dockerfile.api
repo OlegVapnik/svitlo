@@ -12,7 +12,7 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY . .
-RUN pnpm --filter @energy-monitor/shared build && pnpm --filter @energy-monitor/api build
+RUN pnpm --filter @svitlo/shared build && pnpm --filter @svitlo/api build
 
 FROM base AS runner
 COPY --from=builder /app/apps/api/dist ./apps/api/dist

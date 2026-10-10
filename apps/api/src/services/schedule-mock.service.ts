@@ -1,4 +1,4 @@
-import type { OperatorScheduleResponse } from '@energy-monitor/shared';
+import type { OperatorScheduleResponse } from '@svitlo/shared';
 
 /** Демо-схема для очередей 1/1–6/2. Значения синтетические, источник всегда маркируется demo. */
 const DEMO_STATES = {

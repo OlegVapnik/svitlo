@@ -1,6 +1,6 @@
 ---
 name: api-endpoint-change
-description: "Checklist and conventions for adding or changing an HTTP endpoint in the EnergyMonitor Fastify API and wiring it through to the React app: shared zod types, route, service, error envelope, auth, pagination, caching, tests, web client and TanStack hook. Use for any new route, changed response shape, new query parameter, admin endpoint, or when fixing endpoint contracts (fake pagination, ignored params, %2F queue ids). Триггеры: эндпоинт, ручка, роут, /api/v1, параметр запроса, пагинация, ответ API, admin route."
+description: "Checklist and conventions for adding or changing an HTTP endpoint in the Svitlo Fastify API and wiring it through to the React app: shared zod types, route, service, error envelope, auth, pagination, caching, tests, web client and TanStack hook. Use for any new route, changed response shape, new query parameter, admin endpoint, or when fixing endpoint contracts (fake pagination, ignored params, %2F queue ids). Триггеры: эндпоинт, ручка, роут, /api/v1, параметр запроса, пагинация, ответ API, admin route."
 ---
 
 # API endpoint change
@@ -32,13 +32,13 @@ Mirror an existing route file (e.g. `routes/contacts.ts` for a simple GET, `rout
 10. **Tests** (`apps/api/tests/routes/<name>.test.ts`): happy path, validation error 400, 404, auth 401/403 for admin, pagination edges. Use `fastify.inject`.
 11. **Web client**: add a method in `apps/web/src/api/client.ts` (the only place that calls `fetch`), then a hook in `api/queries.ts` with a stable `queryKey` and a sensible `staleTime` (30–60 s for outage data).
 12. **Docs**: update the endpoint table in `PROJECT_MAP.md` §5 in the same change.
-13. **Verify**: `bash skills/energymon-onboarding/scripts/verify.sh`, then `curl` the endpoint and paste the output.
+13. **Verify**: `bash skills/svitlo-onboarding/scripts/verify.sh`, then `curl` the endpoint and paste the output.
 
 ## Skeleton (shape only — copy the real style from a neighbouring route)
 
 ```ts
 import type { FastifyInstance } from 'fastify';
-import { itemQuerySchema } from '@energy-monitor/shared';
+import { itemQuerySchema } from '@svitlo/shared';
 import { AppError } from '../utils/errors.js';
 import { listItems } from '../services/item.service.js';
 

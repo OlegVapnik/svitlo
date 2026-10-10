@@ -1,6 +1,6 @@
 ---
 name: secrets-pii-hygiene
-description: "Keep secrets and personal data out of the EnergyMonitor repo, logs, DB, snapshots, fixtures and chat: ADMIN_TOKEN, DB passwords, operator raw responses, session cookies, personal account numbers (лицевой/особовий рахунок), phones, names. Includes a scanner script, .gitignore baseline, scrubbing rules for fixtures and snapshots, and an incident procedure. Use before any commit/zip/share, when creating fixtures from real operator responses, when touching snapshots/raw_snapshot_ref/telegram_posts, localStorage of user data, or when a secret may have leaked. Триггеры: токен, пароль, секрет, .env, лицевой счёт, персональные данные, снапшот, утечка, коммит, фикстура."
+description: "Keep secrets and personal data out of the Svitlo repo, logs, DB, snapshots, fixtures and chat: ADMIN_TOKEN, DB passwords, operator raw responses, session cookies, personal account numbers (лицевой/особовий рахунок), phones, names. Includes a scanner script, .gitignore baseline, scrubbing rules for fixtures and snapshots, and an incident procedure. Use before any commit/zip/share, when creating fixtures from real operator responses, when touching snapshots/raw_snapshot_ref/telegram_posts, localStorage of user data, or when a secret may have leaked. Триггеры: токен, пароль, секрет, .env, лицевой счёт, персональные данные, снапшот, утечка, коммит, фикстура."
 ---
 
 # Secrets and personal data
@@ -29,7 +29,7 @@ python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .          # report, 
 python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py . --also /tmp   # also scan temp dirs for leftovers
 ```
 It checks: token/password assignments, bearer headers, private keys, JWTs, DB URLs with passwords, account-number-like numbers near `рахунок/счет/account`, tracked `.env`, and a `.gitignore` baseline. Findings are printed as `file:line  rule  masked-snippet` — the secret itself is never printed.
-Reviewed false positive? Add `scan:allow` in a comment on that line, or list `path` / `path:line` in `.scan-allowlist` (one per line). Code-like values (`z.string().default(`, `authHeader.split(`), phrases like `must-be-dropped` and placeholder numbers (`000000000`) are ignored automatically. Never allowlist a value you have not looked at.
+Reviewed false positive? Add `scan:allow` in a comment on that line, or list `path` / `path:line` in `.scan-allowlist` (one per line). Code-like values (`z.string().default(`, `authHeader.split(`), phrases like `must-be-dropped` and placeholder numbers (`000000000`) are ignored automatically. Quoted keys (`"password": "…"` in `.vscode/settings.json`, i18n JSON, YAML) are matched the same way as `.env` lines; values that are not ASCII (`"adminToken": "Адмін-токен"`) are treated as translations, not secrets. Never allowlist a value you have not looked at.
 
 ## `.gitignore` baseline (must contain)
 

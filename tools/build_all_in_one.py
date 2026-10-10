@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-order = ["agent-discipline", "energymon-onboarding", "outage-data-core", "db-migrations",
+order = ["agent-discipline", "svitlo-onboarding", "outage-data-core", "db-migrations",
          "api-endpoint-change", "scraper-adapter-hardening", "frontend-ui-change", "kyiv-time",
          "secrets-pii-hygiene", "ops-deploy-check", "test-strategy", "code-audit"]
 
@@ -22,11 +22,11 @@ if "--only" in sys.argv:
     only = set(sys.argv[sys.argv.index("--only") + 1].split(","))
     unknown = only - set(order)
     assert not unknown, f"unknown skills: {unknown}"
-    only |= {"agent-discipline", "energymon-onboarding"}
+    only |= {"agent-discipline", "svitlo-onboarding"}
     order = [n for n in order if n in only]
-out_name = "ALL_IN_ONE.md" if only is None else "BUNDLE_" + "_".join(n for n in order if n not in ("agent-discipline", "energymon-onboarding")) + ".md"
+out_name = "ALL_IN_ONE.md" if only is None else "BUNDLE_" + "_".join(n for n in order if n not in ("agent-discipline", "svitlo-onboarding")) + ".md"
 
-parts = ["# EnergyMonitor — all instructions in one file\n",
+parts = ["# Svitlo — all instructions in one file\n",
          "How to use: the section 'AGENTS' is always active. For each task, apply the matching 'SKILL' section(s). "
          "References to `skills/<name>/SKILL.md` mean the section with that name below.\n",
          "\n---\n\n# AGENTS\n\n", (root / "AGENTS.md").read_text(encoding="utf-8")]

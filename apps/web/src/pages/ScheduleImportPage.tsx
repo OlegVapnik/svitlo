@@ -4,9 +4,11 @@ import { Upload, CheckCircle2, AlertCircle, ShieldAlert } from 'lucide-react';
 import { Button } from '../components/ui/Button.js';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Input } from '../components/ui/Input.js';
+import { api, ApiError } from '../api/client.js';
 
 type ImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };
-type ApiError = { error: { code: string; message: string; details?: Array<{ path: string; message: string }> } };
+/** Локальная форма ошибки для рендера: код, сообщение и (если есть) детали валидации. */
+type ImportError = { code: string; message: string; details?: Array<{ path: string; message: string }> };
 
 /**
  * Ручной импорт графика оператора: сайт оператора отдаёт JSON только в авторизованной браузерной
@@ -20,7 +22,7 @@ export const ScheduleImportPage: React.FC = () => {
   const [json, setJson] = useState('');
   const [token, setToken] = useState('');
   const [result, setResult] = useState<ImportResult | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<ImportError | null>(null);
   const [busy, setBusy] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
@@ -31,23 +33,20 @@ export const ScheduleImportPage: React.FC = () => {
     try {
       payload = JSON.parse(json);
     } catch {
-      setError({ error: { code: 'JSON_PARSE', message: t('scheduleImport.badJson') } });
+      setError({ code: 'JSON_PARSE', message: t('scheduleImport.badJson') });
       return;
     }
     setBusy(true);
     try {
-      const response = await fetch('/api/v1/admin/schedules/import', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ queue, date, payload }),
-      });
-      if (response.ok) {
-        setResult((await response.json()) as ImportResult);
+      // Единственный путь в сеть — api/client.ts (golden rule #9). Конверт ошибки
+      // `{ error: { code, message, details } }` разбирает ApiError, отдельный fetch не нужен.
+      setResult((await api.importSchedule(queue, date, payload, token)) as ImportResult);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setError({ code: error.code, message: error.message, details: error.details });
       } else {
-        setError((await response.json()) as ApiError);
+        setError({ code: 'NETWORK', message: t('scheduleImport.network') });
       }
-    } catch {
-      setError({ error: { code: 'NETWORK', message: t('scheduleImport.network') } });
     } finally {
       setBusy(false);
     }
@@ -122,10 +121,10 @@ export const ScheduleImportPage: React.FC = () => {
             <div role="alert" className="mt-4 flex items-start gap-2 rounded-2xl border border-destructive/40 bg-destructive/5 p-3">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden />
               <div>
-                <p className="text-sm font-semibold text-foreground">{error.error.message}</p>
-                {error.error.details && (
+                <p className="text-sm font-semibold text-foreground">{error.message}</p>
+                {error.details && (
                   <ul className="mt-1 list-inside list-disc text-xs text-muted-foreground">
-                    {error.error.details.map((detail, index) => (
+                    {error.details.map((detail, index) => (
                       <li key={index}><code>{detail.path}</code> — {detail.message}</li>
                     ))}
                   </ul>

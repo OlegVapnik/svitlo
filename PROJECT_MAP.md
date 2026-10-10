@@ -1,4 +1,4 @@
-# EnergyMonitor — карта проекта (project map)
+# Svitlo — карта проекта (project map)
 
 > Назначение файла: за 5 минут ввести в курс нового разработчика или ИИ-агента.
 > Всё, что описано ниже, проверено по коду на коммит-состоянии от 2026-10-09 (репозиторий **без `.git`** — истории нет, аккуратно с необратимыми правками).
@@ -7,7 +7,7 @@
 
 ## 0. TL;DR
 
-PWA-сервис «EnergyMonitor — Чернігів»: собирает и показывает **отключения электроэнергии** (плановые/аварийные/ремонтные), **график ГПВ по очередям**, **аварийные сообщения**, **статистику надёжности электроснабжения** и **справочник контактов** для жителей Черниговской обл. (в первую очередь — с. Деснянське, Новгород-Северский р-н).
+PWA-сервис «Svitlo — Чернігів»: собирает и показывает **отключения электроэнергии** (плановые/аварийные/ремонтные), **график ГПВ по очередям**, **аварийные сообщения**, **статистику надёжности электроснабжения** и **справочник контактов** для жителей Черниговской обл. (в первую очередь — с. Деснянське, Новгород-Северский р-н).
 
 | Слой | Технология | Где |
 |---|---|---|
@@ -43,9 +43,9 @@ open http://localhost:3001/docs           # Swagger UI
 
 ```bash
 pnpm install
-pnpm --filter @energy-monitor/api dev      # tsx watch src/server.ts  (нужна доступная БД по DATABASE_URL)
-pnpm --filter @energy-monitor/api db:migrate
-pnpm --filter @energy-monitor/web dev      # vite, proxy /api → http://localhost:3001
+pnpm --filter @svitlo/api dev      # tsx watch src/server.ts  (нужна доступная БД по DATABASE_URL)
+pnpm --filter @svitlo/api db:migrate
+pnpm --filter @svitlo/web dev      # vite, proxy /api → http://localhost:3001
 ```
 
 | Порт | Сервис |
@@ -61,7 +61,7 @@ pnpm --filter @energy-monitor/web dev      # vite, proxy /api → http://localho
 ## 2. Структура репозитория
 
 ```
-energy-monitor/
+svitlo/
 ├─ docker-compose.yml          # db + migrate + api + web, единый x-api-env для api/migrate
 ├─ docker/
 │  ├─ Dockerfile.api           # node:22-alpine, multi-stage (deps→builder→runner), CMD node dist/server.js
@@ -202,7 +202,7 @@ Drizzle-схема: `apps/api/src/db/schema.ts`. Миграции — «сыры
 | `grid_status` | id, source_id, level(`stable\|warning\|emergency`), message, updated_at | parse.service | `/status` |
 | `contacts` | id, type, label, value, region | сид | `/contacts` |
 | `parse_runs` | id, source_id, started_at, finished_at, status, records_found, error_message, raw_snapshot_ref | parse.service | диагностика |
-| `geocode_cache` | id, address_query (UNIQUE), lat, lon, cached_at | geocode.service | geocode.service |
+| `geocode_cache` | id, address_query (UNIQUE), lat, lon, cached_at | **никто** — таблица осталась от удалённого `geocode.service.ts` (мёртвый фейк, удалён 2026-10-10) | — |
 | `__energy_migrations` | name (PK), applied_at | migrate.ts | migrate.ts |
 
 Ключевые индексы: `outages(starts_at,ends_at)`, `outages_status_idx`, `outages_area_idx`, GiST-trgm по `addresses_normalized`, UNIQUE `(content_hash,source_id)`, частичный UNIQUE `(source,external_id)`; GIN-trgm по `addresses.name_uk` / `name_normalized`.
@@ -224,7 +224,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 **Конфиг** — `src/config.ts`: единая zod-схема `env` (defaults для всего: `CHERNIHIV_*`, `TELEGRAM_*`, `SCHEDULE_DEMO`, `USE_MOCK_ADAPTER`, `ENABLE_SCHEDULER`, `NOMINATIM_*`, `TZ`). Новую настройку добавлять: `config.ts` → `.env.example` → `x-api-env` в `docker-compose.yml`.
 
-**Роутеры** (`src/routes/`, все `export default async function …Routes(fastify)`): `health`, `outages`, `incidents`, `status`, `contacts`, `addresses`, `schedules`, `street-queues`, `reliability`, `admin`. Валидация входа — zod-схемы из `@energy-monitor/shared` (`outageFiltersSchema`, `scheduleImportRequestSchema`, `streetQueueInputSchema`).
+**Роутеры** (`src/routes/`, все `export default async function …Routes(fastify)`): `health`, `outages`, `incidents`, `status`, `contacts`, `addresses`, `schedules`, `street-queues`, `reliability`, `admin`. Валидация входа — zod-схемы из `@svitlo/shared` (`outageFiltersSchema`, `scheduleImportRequestSchema`, `streetQueueInputSchema`).
 
 **Сервисы** (`src/services/`):
 
@@ -241,7 +241,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 | `power-summary.service.ts` | `summarizeWindow` / `getPowerSummary` (сегодня + скользящие 24 ч) → `powerSummary` в `/status` |
 | `reliability.ts` | `kyivMonthStart`, `mondayKeyOf`, `buildReliabilityReport` (days/weeks/months) |
 | `addresses.service.ts` | `suggestAddresses(query, limit)` — подсказки улиц (trgm) |
-| `geocode.service.ts` | Nominatim + кэш `geocode_cache`, пауза `NOMINATIM_RATE_LIMIT_MS` |
+| ~~`geocode.service.ts`~~ | **удалён 2026-10-10**: был мёртвый фейк — Nominatim не вызывался, возвращались фиксированные координаты, файл никто не импортировал |
 | `schedule-import.service.ts` | `importOperatorSchedule`, `mergeRawScheduleSlots`, `getQueueSchedule`, `getQueueScheduleMeta` |
 | `schedule-normalizer.ts` | `normalizeScheduleResponse` — операторский HH:MM (Киев) → UTC-интервалы |
 | `schedule-mock.service.ts` | `DEMO_SCHEDULES`, `demoScheduleForQueue` — синтетика для UI, всегда с флагом `demo:true` |
@@ -265,7 +265,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 |---|---|---|---|
 | `/` | `HomePage` | `useStatus`, `useReliability`, `useOutages({limit:5})`, `useIncidents`, `useMyQueues` + прямой `fetch('/api/v1/schedules?queue=&date=')` | StatusIndicator, PowerSummaryCard, ReliabilityCard, LastUpdated, IncidentBanner, «Мій графік» (QueueScheduleBar, флаг `demo`) |
 | `/outages` | `OutagesPage` | `useOutages(filters)`, `useOutageStats()` | собственный переключатель вкладок (не `ui/Tabs`): `list \| calendar \| chart \| map`; во вкладке `chart` — **«Графік відключень та ремонтів»** (`OutageTimeline`) + `OutageHeatmap` + `OutageBarChart`; плюс SearchBar + FilterPanel |
-| `/incidents` | `IncidentsPage` | `useIncidents()` | IncidentBanner + IncidentList, локальная фильтрация по `query` |
+| `/incidents` | `IncidentsPage` | `useIncidents()` | IncidentBanner, локальная фильтрация по `query` |
 | `/contacts` | `ContactsPage` | `useContacts()` | Card-список телефонов/ссылок |
 | `/my-address` | `MyAddressPage` | `useMyAddress()`, `useOutages({query:address})` | AddressCombobox, отключения по адресу, EmptyState/ErrorState |
 | `/queues` | `QueueSchedulePage` («Мої черги») | `useMyQueues()`, `api.fetchQueueSchedule(queue,date)` | AddressCombobox (улица → очередь), QueueScheduleBar на дату |
@@ -278,7 +278,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 - `api/client.ts` — обёртка `fetcher()` над `fetch`, `API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'`; методы `fetchOutages/Outage/OutageStats/Incidents/Reliability/Status/Contacts/Health`, `suggestAddresses`, `fetchQueueSchedule`, `fetchStreetQueues/Schedule`, `upsertStreetQueue`, `deleteStreetQueue`.
 - `api/queries.ts` — TanStack Query хуки: `useOutages`, `useOutage`, `useOutageStats`, `useIncidents`, `useReliability`, `useStatus`, `useContacts`, `useStreetQueues`, `useStreetSchedule`. Ключи кэша: `['outages', filters]`, `['outagesStats', params]`, `['incidents']`, …
-- Локальное состояние — только `localStorage`-хуки: `useMyAddress` (`myAddress`, при очистке также удаляет `myAccountNumber`), `useMyQueues` (`myQueues`; **сейчас поддерживается только очередь `'2/2'`**), `useTheme` (`theme`), `useMediaQuery`.
+- Локальное состояние — только `localStorage`-хуки: `useMyAddress` (`myAddress`, при очистке также удаляет `myAccountNumber`), `useMyQueues` (`myQueues`; **сейчас поддерживается только очередь `'2/2'`**), `useTheme` (`theme`).
 
 ### 8.3 lib и утилиты
 
@@ -288,14 +288,14 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 | `lib/date.ts` | `KYIV_TZ='Europe/Kyiv'`, `formatDateTime`, `formatTimeRange`, `formatRelative`, `isActive`, `isToday`, `isTomorrow` (date-fns + date-fns-tz, локаль `uk`) |
 | `lib/outage-dates.ts` | `kyivDateKey`, `kyivDayStart` (корректный DST-расчёт), `outageOverlapsKyivDay` |
 | `lib/outage-location.ts` | `resolveOutageMapPoint(areaName, addresses)` — таблица координат городов области + дефолт; `outageCategory(reason)` → `'incident' \| 'planned'` по регулярке «виконання ремонтних робіт / технічне обслуговування» (+ тест `outage-location.test.ts`) |
-| `lib/demo-schedule.ts` | `DEMO_OPERATOR_SCHEDULE` + `DEMO_QUEUES` (1/1…6/2) — синтетический график на стороне web |
+| ~~`lib/demo-schedule.ts`~~ | **удалён 2026-10-10**: мёртвый демо-дубль фронта (никто не импортировал). Синтетику отдаёт только `schedule-mock.service` и всегда с флагом `demo:true` |
 
 ### 8.4 Компоненты (`src/components/`)
 
-- `ui/` — `Button`, `Input`, `Card(Header/Title/Content/Footer)`, `Badge`, `Dialog`, `Select`, `Skeleton`, `Tabs`, `ThemeToggle`, `LanguageToggle` (часть файлов — однострочные «минифицированные», это норма).
+- `ui/` — `Button`, `Input`, `Card(Header/Title/Content/Footer)`, `Badge`, `Select`, `Skeleton`, `Tabs`, `ThemeToggle`, `LanguageToggle` (часть файлов — однострочные «минифицированные», это норма).
 - `layout/` — `AppShell`, `Header`, `Sidebar`, `BottomNav`.
 - `outages/` — `OutageList`, `OutageCard`, `OutageCalendar`, **`OutageTimeline`** (график-таймлайн: строки `дд.мм · причина`, интервалы), `OutageHeatmap`, `OutageBarChart`, `OutageMap` (Leaflet).
-- `incidents/` — `IncidentBanner`, `IncidentList`.
+- `incidents/` — `IncidentBanner`.
 - `status/` — `StatusIndicator`, `PowerSummaryCard` (+ `formatMinutes`, `reliabilityLevel`), `ReliabilityCard`, `LastUpdated`.
 - `search/` — `SearchBar`, `FilterPanel`, `AddressCombobox` (автодополнение улиц; выпадающий список — мобильный overlay).
 - `schedule/` — `QueueScheduleBar` (полоса 24 ч по интервалам очереди; подпись «наступне відключення через N хв»).
@@ -316,7 +316,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 | Сервис | Образ/сборка | Особенности |
 |---|---|---|
 | `db` | postgres:16-alpine | volume `pg_data`, `docker/init.sql` (uuid-ossp, pg_trgm), healthcheck `pg_isready`, порт 5432 |
-| `migrate` | `energy-monitor-api:latest` | one-shot `node dist/db/migrate.js`; `depends_on: db(service_healthy)` |
+| `migrate` | `svitlo-api:latest` | one-shot `node dist/db/migrate.js`; `depends_on: db(service_healthy)` |
 | `api` | `docker/Dockerfile.api` | порт 3001, `depends_on: db(healthy) + migrate(completed)`; монтируется CA оператора |
 | `web` | `docker/Dockerfile.web` (nginx) | порт 3000→80, build-arg `VITE_API_BASE_URL` (baked!), `depends_on: api` |
 
@@ -338,20 +338,20 @@ nginx (`docker/nginx.conf`): SPA-fallback `try_files $uri $uri/ /index.html`, `l
 
 ```bash
 # --- сборка / проверка типов (ESLint в проекте нет; «линт» = tsc --noEmit) ---
-pnpm --filter @energy-monitor/api  lint        # tsc --noEmit
-pnpm --filter @energy-monitor/web  lint        # tsc --noEmit
-pnpm --filter @energy-monitor/api  build       # tsc → dist/
-pnpm --filter @energy-monitor/web  build       # vite build → dist/
-pnpm --filter @energy-monitor/shared build     # заглушка: исходники потребляются напрямую
+pnpm --filter @svitlo/api  lint        # tsc --noEmit
+pnpm --filter @svitlo/web  lint        # tsc --noEmit
+pnpm --filter @svitlo/api  build       # tsc → dist/
+pnpm --filter @svitlo/web  build       # vite build → dist/
+pnpm --filter @svitlo/shared build     # заглушка: исходники потребляются напрямую
 
 # --- тесты ---
-pnpm --filter @energy-monitor/api test         # vitest run (tests/**/*.test.ts)
-pnpm --filter @energy-monitor/web test         # vitest (outage-location.test.ts)
+pnpm --filter @svitlo/api test         # vitest run (tests/**/*.test.ts)
+pnpm --filter @svitlo/web test         # vitest (outage-location.test.ts)
 
 # --- БД ---
-pnpm --filter @energy-monitor/api db:migrate   # tsx src/db/migrate.ts
-pnpm --filter @energy-monitor/api db:seed      # tsx src/db/seed.ts
-pnpm --filter @energy-monitor/api db:generate  # drizzle-kit generate (руками почти не нужен)
+pnpm --filter @svitlo/api db:migrate   # tsx src/db/migrate.ts
+# db:seed убран 2026-10-10: он вставлял выдуманные contacts/outages/incidents (см. HANDOFF §13.3)
+pnpm --filter @svitlo/api db:generate  # drizzle-kit generate (руками почти не нужен)
 docker compose exec -T db psql -U energymon -d energymon -c 'select count(*) from outages'
 
 # --- данные ---
@@ -388,12 +388,12 @@ docker compose up -d --force-recreate web   # если nginx отдаёт ста
 1. **Tailwind-токены.** Семантические классы (`bg-card`, `border-border`, `text-muted-foreground`, `bg-primary`, `bg-popover`, `text-foreground`, …) работают только потому, что в `apps/web/tailwind.config.ts` есть маппинг на CSS-переменные из `globals.css`. Пока маппинга не было, классы просто не генерировались → у выпадающего списка адресов был прозрачный фон. Добавляя новый токен — правьте **и** `globals.css`, **и** `tailwind.config.ts`.
 2. **PWA/SW кэш + nginx `immutable`.** После пересборки web пользователю может отдаваться старый бандл из service worker. Признак: в index.html новый хеш (`assets/index-*.js`), в браузере — старый. Лечение: hard reload (Ctrl+Shift+R) либо `docker compose up -d --force-recreate web`. Не «фиксите» это в коде, это ожидаемое поведение PWA.
 3. **`/outages/stats` vs `/status`.** Stats считает SQL-агрегатами **без** `mergeDuplicateOutages`, остальные ручки — с ним. Поэтому «За районами» и число событий в статистике не совпадают со списком. Если менять — помнить про 4 места (`outages`, `incidents`, `status`, `reliability`).
-4. **Планировщик выключен** (`ENABLE_SCHEDULER=false` в compose). Данные появляются только: (а) вручную `POST /admin/parse`, (б) импортом ГПВ, (в) на чистом томе — из `db/seed.ts`. «Пусто на графике» ≠ баг фронта: сначала `parse_runs` и `select count(*) from outages`.
-5. **Всегда `SCHEDULE_DEMO=true` в compose.** Если `schedule_slots` пуст, `/schedules` вернёт **синтетический** график с `demo:true`. UI помечает его, но при отладке «странного» графика проверяйте поле `demo`/`source`.
-6. **`useMyQueues` поддерживает только `'2/2'`** (хардкод в `addQueue`). Остальные очереди из `DEMO_QUEUES` в localStorage не добавить без правки хука.
+4. **Планировщик выключен** (`ENABLE_SCHEDULER=false` в compose). Данные появляются только: (а) вручную `POST /admin/parse`, (б) импортом ГПВ, (в) на чистом томе — справочники из миграций (`0004` улицы, `0007` источник); выдуманных отключений больше не создаёт ни один сид (`db/seed.ts` удалён 2026-10-10). «Пусто на графике» ≠ баг фронта: сначала `parse_runs` и `select count(*) from outages`.
+5. **`SCHEDULE_DEMO` по умолчанию `false`** (`docker-compose.yml`, `apps/api/src/config.ts`); включается только в `.env` — для локальной демонстрации. Если `schedule_slots` пуст, `/schedules` вернёт **синтетический** график с `demo:true` только при включённом флаге. UI помечает его, но при отладке «странного» графика проверяйте поле `demo`/`source`.
+6. **`useMyQueues` поддерживает только `'2/2'`** (хардкод в `addQueue`). Остальные очереди из списка 1/1…6/2 в localStorage не добавить без правки хука.
 7. **Поиск адресов** (`addresses.service.ts`): pg_trgm `similarity()*70` + `%`-оператор, плюс LIKE-подстрока и fallback по `outages.addresses_raw`; использует SQL-функцию **`energy_normalize_address()`** (unaccent + `ыэёїи→иееіі` + удаление префиксов «вул/ул/вулиця/село/с…»). Из-за substring-логики запрос «шел» **не** находит «Шевченка» (нет подстроки, similarity ниже порога) — это не регрессия, а свойство реализации. Справочник улиц наполняется курируемым сидом (миграция 0004 — с. Деснянське, ~20 улиц).
 8. **Секреты.** `.gitignore` исключает `/operator-samples/`, `/sample-responses/`, `snapshots/*.json|html`, `/1/` — ответы оператора могут содержать номера счетов/сессии. Не коммитить и не пересылать их. `ADMIN_TOKEN` — только в `.env`.
-9. **Репозиторий без `.git`.** Нет истории и нет возможности откатиться — перед крупными правками делайте ручной бэкап (`cp -r` или архив).
+9. **История git есть** (работаем на ветках `ai/...`), поэтому откат возможен. Но рабочее дерево может содержать незакоммиченные правки, а ignored-файлы (`.env`, `snapshots/`, `ALL_IN_ONE.md`) git не вернёт: перед крупной чисткой или переименованием проверяйте `git status` и делайте ручной бэкап того, что не в git.
 10. **`generate-frontend.js`** — легаси-генератор файлов фронтенда с Windows-путём (`C:\Users\oleg\.gemini\…`). Не запускать: перезапишет `apps/web` шаблонными файлами. Также в репе лежат артефакты `apps/api/nohup.out`, `.turbo/` (при отсутствии `turbo.json`) — мусор, не часть сборки.
 11. **Версии тулчейна.** Хост: node 26 / pnpm 11; контейнеры: node 22 / pnpm 9.15 (`corepack prepare pnpm@9.15.0`). Локальная сборка и докер-сборка могут отличаться по поведению — проверять в контейнере.
 12. **Rate limit 100 req/min на IP** + `helmet` могут помешать при нагрузочных прогонах; CORS `origin:'*'` — открыто всем, авторизация только на `/admin/*`.
@@ -437,10 +437,10 @@ docker compose up -d --force-recreate web   # если nginx отдаёт ста
 **Перед коммитом/сдачей:**
 
 ```bash
-pnpm --filter @energy-monitor/api lint     # 0 ошибок
-pnpm --filter @energy-monitor/web lint     # 0 ошибок (ошибки в node_modules — игнорировать)
-pnpm --filter @energy-monitor/api test     # тесты зелёные
-pnpm --filter @energy-monitor/web test
+pnpm --filter @svitlo/api lint     # 0 ошибок
+pnpm --filter @svitlo/web lint     # 0 ошибок (ошибки в node_modules — игнорировать)
+pnpm --filter @svitlo/api test     # тесты зелёные
+pnpm --filter @svitlo/web test
 docker compose up -d --build && docker compose ps
 curl -s localhost:3001/api/v1/status | head -c 300
 curl -s localhost:3000/ | grep -o 'assets/index-[^"]*\.js'   # убедиться, что хеш бандла новый

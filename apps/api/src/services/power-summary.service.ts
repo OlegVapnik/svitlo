@@ -1,5 +1,5 @@
 import { and, gte, lte } from 'drizzle-orm';
-import type { PowerSummary, PowerWindowSummary } from '@energy-monitor/shared';
+import type { PowerSummary, PowerWindowSummary } from '@svitlo/shared';
 import { db } from '../db/connection.js';
 import { outages } from '../db/schema.js';
 import { computeWindowSummary, kyivDayStart } from './power-summary.js';

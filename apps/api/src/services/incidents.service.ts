@@ -1,4 +1,4 @@
-import type { Incident } from '@energy-monitor/shared';
+import type { Incident } from '@svitlo/shared';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
 import { incidents, outageEventAddresses, outageEvents } from '../db/schema.js';

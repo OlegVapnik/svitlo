@@ -36,7 +36,7 @@ const TabFallback = () => (
   </div>
 );
 import { useOutages, useOutageStats } from '../api/queries.js';
-import type { Outage, OutageStatus } from '@energy-monitor/shared';
+import type { Outage, OutageStatus } from '@svitlo/shared';
 import { outageCategory, resolveOutageMapPoint } from '../lib/outage-location.js';
 import { kyivDayStart, outageOverlapsKyivDay } from '../lib/outage-dates.js';
 

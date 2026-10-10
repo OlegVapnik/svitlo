@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CalendarDays, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
-import type { ScheduleIntervalUtc } from '@energy-monitor/shared';
+import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Button } from '../components/ui/Button.js';
 import { Badge } from '../components/ui/Badge.js';

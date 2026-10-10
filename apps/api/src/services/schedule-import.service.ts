@@ -1,4 +1,4 @@
-import type { OperatorScheduleResponse, ScheduleIntervalUtc } from '@energy-monitor/shared';
+import type { OperatorScheduleResponse, ScheduleIntervalUtc } from '@svitlo/shared';
 import { kyivOffsetMinutes } from './schedule-normalizer.js';
 
 export type ScheduleImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };

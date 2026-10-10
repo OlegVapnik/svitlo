@@ -9,8 +9,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'EnergyMonitor — Чернігів',
-        short_name: 'EnergyMonitor',
+        name: 'Svitlo — Чернігів',
+        short_name: 'Svitlo',
         lang: 'uk',
         start_url: '/',
         display: 'standalone',

@@ -1,6 +1,8 @@
 {
   "version": "0.2.0",
   "configurations": [
+
+
     {
       "name": "web: Firefox (dev server 5173)",
       "type": "firefox",
@@ -8,7 +10,6 @@
       "reAttach": true,
       "url": "http://localhost:5173/",
       "webRoot": "${workspaceFolder}/apps/web/src",
-      "sourceMaps": "client",
       "pathMappings": [
         {
           "url": "http://localhost:5173/src",

@@ -1,6 +1,6 @@
 ---
 name: test-strategy
-description: "How to write meaningful tests for EnergyMonitor (vitest): the 'numbers must match' integration test across /outages, /outages/stats, /status, /reliability; Postgres-backed service tests; contract tests with scrubbed fixtures; DST/time tests with an injected clock; route tests with fastify.inject; frontend component tests; a minimal CI pipeline. Use when adding features, fixing bugs (write the failing test first), when coverage of services/routes is requested, or when setting up CI. Триггеры: тест, vitest, покрытие, CI, интеграционный тест, фикстура, GitHub Actions, регрессия, проверить цифры."
+description: "How to write meaningful tests for Svitlo (vitest): the 'numbers must match' integration test across /outages, /outages/stats, /status, /reliability; Postgres-backed service tests; contract tests with scrubbed fixtures; DST/time tests with an injected clock; route tests with fastify.inject; frontend component tests; a minimal CI pipeline. Use when adding features, fixing bugs (write the failing test first), when coverage of services/routes is requested, or when setting up CI. Триггеры: тест, vitest, покрытие, CI, интеграционный тест, фикстура, GitHub Actions, регрессия, проверить цифры."
 ---
 
 # Test strategy
@@ -102,12 +102,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @energy-monitor/api lint
-      - run: pnpm --filter @energy-monitor/web lint
-      - run: pnpm --filter @energy-monitor/api db:migrate
-      - run: pnpm --filter @energy-monitor/api test
-      - run: pnpm --filter @energy-monitor/web test
-      - run: pnpm --filter @energy-monitor/web build
+      - run: pnpm --filter @svitlo/api lint
+      - run: pnpm --filter @svitlo/web lint
+      - run: pnpm --filter @svitlo/api db:migrate
+      - run: pnpm --filter @svitlo/api test
+      - run: pnpm --filter @svitlo/web test
+      - run: pnpm --filter @svitlo/web build
       - run: python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .
 ```
 Adjust env names to `config.ts`. Pin action versions you have verified exist when you add this.

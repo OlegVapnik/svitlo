@@ -1,4 +1,4 @@
-import type { StatusResponse } from '@energy-monitor/shared';
+import type { StatusResponse } from '@svitlo/shared';
 
 /**
  * Источник данных глазами пользователя. Три состояния, потому что и действий три:

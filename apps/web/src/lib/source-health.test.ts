@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { sourceSeverity } from './source-health.js';
-import type { StatusResponse } from '@energy-monitor/shared';
+import type { StatusResponse } from '@svitlo/shared';
 
 const base: StatusResponse = {
   grid: { level: 'stable', message: '' },

@@ -4,23 +4,19 @@ import { Phone, Mail, Globe, Send, MessageCircle, ExternalLink } from 'lucide-re
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Badge } from '../components/ui/Badge.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
+import { EmptyState } from '../components/common/EmptyState.js';
+import { ErrorState } from '../components/common/ErrorState.js';
 import { useContacts } from '../api/queries.js';
-import type { Contact } from '@energy-monitor/shared';
+import type { Contact } from '@svitlo/shared';
 
 /**
- * Фолбэк-контакты, если API ничего не вернул. Номера из открытых источников оператора.
+ * Джерело даних одне — GET /api/v1/contacts (таблиця contacts, наповнюється міграцією
+ * 0010_operator_contacts.sql). Раніше тут лежав FALLBACK_CONTACTS — друга копія тих самих
+ * даних у коді, яка розходилася з БД і маскувала порожню таблицю (skills/outage-data-core).
+ *
  * Цвета иконок — токены (success/info/primary): жёсткие blue-500/emerald-500 в тёмной теме
  * давали слабый контраст (skills/frontend-ui-change).
  */
-const FALLBACK_CONTACTS: Contact[] = [
-  { id: '1', type: 'phone', label: 'Кол-центр (безкоштовно по Україні)', value: '0800210310', region: 'Чернігівська область' },
-  { id: '2', type: 'phone', label: 'Міський телефон Чернігів', value: '0462772901', region: 'Чернігів' },
-  { id: '3', type: 'telegram', label: 'Telegram-канал з новинами', value: 'https://t.me/chernigivoblenergo', region: null },
-  { id: '4', type: 'telegram', label: 'Telegram-бот для перевірки черги', value: 'https://t.me/ChernigivOEbot', region: null },
-  { id: '5', type: 'viber', label: 'Viber-бот АТ «Чернігівобленерго»', value: 'https://chernihivoblenergo.com.ua/in_viber', region: null },
-  { id: '6', type: 'link', label: 'Офіційний сайт', value: 'https://chernihivoblenergo.com.ua', region: null },
-  { id: '7', type: 'link', label: 'Онлайн-звернення споживачів', value: 'https://chernihivoblenergo.com.ua/feedback_new', region: null },
-] as Contact[];
 
 function contactIcon(type: string) {
   if (type === 'phone') return <Phone className="h-5 w-5" aria-hidden />;
@@ -44,8 +40,8 @@ function formatPhone(phone: string) {
 
 export const ContactsPage: React.FC = () => {
   const { t } = useTranslation();
-  const { data: contactsResponse, isLoading } = useContacts();
-  const contacts: Contact[] = contactsResponse?.data?.length ? contactsResponse.data : FALLBACK_CONTACTS;
+  const { data: contactsResponse, isLoading, isError, refetch } = useContacts();
+  const contacts: Contact[] = contactsResponse?.data ?? [];
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 pb-16 md:pb-6">
@@ -58,6 +54,10 @@ export const ContactsPage: React.FC = () => {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[1, 2, 3, 4].map((index) => <Skeleton key={index} className="h-20 w-full rounded-2xl" />)}
         </div>
+      ) : isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : contacts.length === 0 ? (
+        <EmptyState icon={Phone} title={t('contacts.emptyTitle')} description={t('contacts.emptyDesc')} />
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {contacts.map((contact) => {

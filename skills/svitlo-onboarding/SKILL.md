@@ -1,16 +1,16 @@
 ---
-name: energymon-onboarding
-description: "Project context and golden rules for the EnergyMonitor repo (PWA for power outages in Chernihiv oblast, Desnianske village): Fastify 5 + Drizzle + PostgreSQL API, React 18 + Vite + Tailwind web, pnpm monorepo, Docker Compose. Read this FIRST for any task inside this repository, even a small one, because it lists forbidden actions, invariants and where each thing lives. Триггеры: EnergyMonitor, відключення, отключения, график, черга, ГПВ, outages, incidents, schedule, /api/v1, apps/api, apps/web, packages/shared."
+name: svitlo-onboarding
+description: "Project context and golden rules for the Svitlo repo (PWA for power outages in Chernihiv oblast, Desnianske village): Fastify 5 + Drizzle + PostgreSQL API, React 18 + Vite + Tailwind web, pnpm monorepo, Docker Compose. Read this FIRST for any task inside this repository, even a small one, because it lists forbidden actions, invariants and where each thing lives. Триггеры: Svitlo, відключення, отключения, график, черга, ГПВ, outages, incidents, schedule, /api/v1, apps/api, apps/web, packages/shared."
 ---
 
-# EnergyMonitor — onboarding for an AI agent
+# Svitlo — onboarding for an AI agent
 
 Read `PROJECT_MAP.md` in the repo root for the full map and `PROJECT_AUDIT.md` for the known problems.
 This file is the short version: facts, golden rules, where to look.
 
 ## What it is
 
-PWA "EnergyMonitor — Чернігів": shows power outages (planned / emergency / repair), hourly queue schedules
+PWA "Svitlo — Чернігів": shows power outages (planned / emergency / repair), hourly queue schedules
 (ГПВ), incident messages, reliability stats and contacts. Real coverage today: village Desnianske
 (`CHERNIHIV_CITY_IDS=7422288601`), ~20 curated streets.
 
@@ -63,15 +63,15 @@ PWA "EnergyMonitor — Чернігів": shows power outages (planned / emergen
 ## Commands
 
 ```bash
-pnpm --filter @energy-monitor/api  lint    # = tsc --noEmit (there is no ESLint yet)
-pnpm --filter @energy-monitor/web  lint
-pnpm --filter @energy-monitor/api  test    # vitest
-pnpm --filter @energy-monitor/web  test
-pnpm --filter @energy-monitor/api  db:migrate
+pnpm --filter @svitlo/api  lint    # = tsc --noEmit (there is no ESLint yet)
+pnpm --filter @svitlo/web  lint
+pnpm --filter @svitlo/api  test    # vitest
+pnpm --filter @svitlo/web  test
+pnpm --filter @svitlo/api  db:migrate
 docker compose up -d --build && docker compose ps
 docker compose logs --tail=200 api web
 docker compose exec -T db psql -U energymon -d energymon -c 'select count(*) from outages'
-bash skills/energymon-onboarding/scripts/verify.sh      # runs the standard checks and prints a summary
+bash skills/svitlo-onboarding/scripts/verify.sh      # runs the standard checks and prints a summary
 ```
 
 ## Which skill next

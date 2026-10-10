@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "mtxr.sqltools",
+    "mtxr.sqltools-driver-pg",
+    "bradlc.vscode-tailwindcss",
+    "esbenp.prettier-vscode",
+    "vitest.explorer",
+    "ms-azuretools.vscode-containers",
+    "redhat.vscode-yaml",
+    "mikestead.dotenv"
+  ]
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs the standard EnergyMonitor checks and prints a one-screen summary.
-# Usage (from repo root): bash skills/energymon-onboarding/scripts/verify.sh [--build] [--docker]
+# Runs the standard Svitlo checks and prints a one-screen summary.
+# Usage (from repo root): bash skills/svitlo-onboarding/scripts/verify.sh [--build] [--docker]
 # It never stops at the first failure: you get the full picture.
 set -u
 BUILD=0; DOCKER=0
@@ -23,13 +23,13 @@ run() {
   rm -f "$log"
 }
 
-run "api typecheck" pnpm --filter @energy-monitor/api lint
-run "web typecheck" pnpm --filter @energy-monitor/web lint
-run "api tests"     pnpm --filter @energy-monitor/api test
-run "web tests"     pnpm --filter @energy-monitor/web test
+run "api typecheck" pnpm --filter @svitlo/api lint
+run "web typecheck" pnpm --filter @svitlo/web lint
+run "api tests"     pnpm --filter @svitlo/api test
+run "web tests"     pnpm --filter @svitlo/web test
 if [ "$BUILD" = 1 ]; then
-  run "api build" pnpm --filter @energy-monitor/api build
-  run "web build" pnpm --filter @energy-monitor/web build
+  run "api build" pnpm --filter @svitlo/api build
+  run "web build" pnpm --filter @svitlo/web build
 fi
 if [ "$DOCKER" = 1 ]; then
   run "compose config" docker compose config -q

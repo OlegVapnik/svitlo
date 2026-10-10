@@ -13,7 +13,7 @@
  * щоб `pnpm test` лишався зеленим без БД. «Червоний» прогін — явно, через `test:integration`:
  *   docker compose exec -T db createdb -U energymon energymon_test
  *   TEST_DATABASE_URL=postgresql://energymon:energymon@localhost:5432/energymon_test \   (scan:allow: local dev default, not a secret)
- *     pnpm --filter @energy-monitor/api test:integration
+ *     pnpm --filter @svitlo/api test:integration
  */
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sql } from 'drizzle-orm';

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ScheduleIntervalUtc } from '@energy-monitor/shared';
+import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
 type Props = {
   intervals: ScheduleIntervalUtc[];

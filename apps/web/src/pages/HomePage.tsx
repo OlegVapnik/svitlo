@@ -15,7 +15,7 @@ import { StatCard } from '../components/ui/StatCard.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
 import { useIncidents, useOutages, useQueueSchedule, useReliability, useStatus } from '../api/queries.js';
 import { useMyQueues } from '../hooks/useMyQueues.js';
-import type { Outage } from '@energy-monitor/shared';
+import type { Outage } from '@svitlo/shared';
 
 /** Сегодняшняя дата по Киеву в формате YYYY-MM-DD — API расписаний работает в этой зоне. */
 function kyivToday(): string {

@@ -1,7 +1,7 @@
 import { db } from '../db/connection.js';
 import { outages, outageEvents } from '../db/schema.js';
 import { eq, and, gte, lte, sql, desc, or, ilike, isNull, not } from 'drizzle-orm';
-import type { OutageFilters, PaginationQuery, OutageStats } from '@energy-monitor/shared';
+import type { OutageFilters, PaginationQuery, OutageStats } from '@svitlo/shared';
 import { mergeDuplicateOutages } from './outage-grouping.js';
 
 /** Верхня межа рядків, які вичитуємо для згортання дублікатів перед пагінацією. */
