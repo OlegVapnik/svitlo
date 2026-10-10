@@ -46,8 +46,10 @@ export function mergeQueues(slotsRows: QueueSlotRow[], streetRows: QueueStreetRo
 /**
  * Читает очереди из БД. Импорт connection — динамический: сервис остаётся тестируемым без пула.
  *
- * `region` (cpu области) сужает выборку до слотов этой области. Без `region` — поведение v1
- * (все слоты), чтобы старые клиенты не изменились (контракт /tmp/API-CONTRACT-regions.md).
+ * `region` (cpu области) сужает выборку до слотов этой области. Роуты ВСЕГДА передают область:
+ * отсутствующий `?region=` превращается в DEFAULT_REGION внутри `readRegionParam`, поэтому смесь
+ * черг разных областей в одном ответе невозможна. `undefined` оставлен для внутренних вызовов
+ * и юнит-тестов чистой сборки `mergeQueues`.
  */
 export async function listQueues(region?: string): Promise<QueueSummary[]> {
   const { db } = await import('../db/connection.js');

@@ -152,10 +152,13 @@ describeWithDb('Мультирегіональний API: каталог обл�
     const chernihiv = await app.inject({ method: 'GET', url: `/api/v1/queues?region=${CHERNIHIV}` });
     expect(chernihiv.json()).toEqual({ data: [{ queue: '1/1', slots: 1, lastDate: '2026-10-11', streets: 0 }] });
 
-    // Без region — сумісність з v1: усі слоти в одному списку.
-    const all = await app.inject({ method: 'GET', url: '/api/v1/queues' });
-    const queues = (all.json() as { data: Array<{ queue: string }> }).data.map((item) => item.queue);
-    expect(queues).toEqual(['1/1', '2/2']);
+    // Без region — область за замовчуванням (env.MIRROR_SCHEDULE_REGION = chernihivska-oblast),
+    // а НЕ суміш усіх областей: людина з Чернігова не має бачити чужі черги (2/2 зі Львова).
+    const fallback = await app.inject({ method: 'GET', url: '/api/v1/queues' });
+    expect(fallback.statusCode).toBe(200);
+    const queues = (fallback.json() as { data: Array<{ queue: string }> }).data.map((item) => item.queue);
+    expect(queues).toEqual(['1/1']);
+    expect(queues).not.toContain('2/2');
   });
 
   it('GET /api/v1/schedules?region=… не змішує графіки різних областей', async () => {
