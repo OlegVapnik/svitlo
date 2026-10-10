@@ -8,28 +8,17 @@ import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
 import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
 import { ReliabilityCard } from '../components/status/ReliabilityCard.js';
-import { MyQueueHero } from '../components/status/MyQueueHero.js';
+import { HomeHeroSection } from '../components/status/HomeHeroSection.js';
 import { IncidentBanner } from '../components/incidents/IncidentBanner.js';
 import { OutageCard } from '../components/outages/OutageCard.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { Button } from '../components/ui/Button.js';
 import { cn } from '../lib/cn.js';
 import { StatCard } from '../components/ui/StatCard.js';
-import { useIncidents, useOutages, useQueueSchedule, useReliability, useStatus } from '../api/queries.js';
-import { useMyAddress } from '../hooks/useMyAddress.js';
-import { useMyQueues } from '../hooks/useMyQueues.js';
+import { useIncidents, useOutages, useReliability, useStatus } from '../api/queries.js';
 import { useRegion } from '../hooks/useRegion.js';
 import type { Outage } from '@svitlo/shared';
 
-/** Сегодняшняя дата по Киеву в формате YYYY-MM-DD — API расписаний работает в этой зоне. */
-function kyivToday(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Kyiv',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
 
 /**
  * Главная отвечает на вопрос «что с электричеством сейчас». Порядок блоков — по важности:
@@ -40,17 +29,12 @@ export const HomePage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
-  const today = kyivToday();
-  const { currentRegion, currentRegionData } = useRegion();
+  const { currentRegionData } = useRegion();
 
   const { data: statusData, isLoading: statusLoading } = useStatus();
   const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability();
   const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5 });
   const { data: incidentsData } = useIncidents();
-  const { queues } = useMyQueues();
-  const { address } = useMyAddress();
-  const selectedQueue = queues[0];
-  const { data: scheduleData, isLoading: scheduleLoading, isError: scheduleError } = useQueueSchedule(selectedQueue, today, currentRegion);
 
   const status = statusData?.data;
   const activeIncidents = (incidentsData?.data ?? []).filter((incident) => incident.status === 'active');
@@ -64,8 +48,6 @@ export const HomePage: React.FC = () => {
     firstSeenAt: item.startsAt,
     updatedAt: item.startsAt,
   })) as Outage[];
-
-  const schedule = scheduleData?.data;
 
   /**
    * Ручное обновление без перезагрузки страницы: инвалидирует всё, что видно на экране
@@ -85,17 +67,10 @@ export const HomePage: React.FC = () => {
     <div className="mx-auto max-w-4xl space-y-5 pb-8">
       {activeIncidents.length > 0 && <IncidentBanner incident={activeIncidents[0]!} />}
 
-      {/* Герой стоит выше сетевых цифр: он отвечает на главный вопрос («є світло чи ні») именно
-          про мою очередь. Заменил прежнюю карточку «Мій графік» — она показывалась только тем,
-          у кого очередь уже выбрана, и ничего не говорила остальным. */}
-      <MyQueueHero
-        queue={selectedQueue}
-        address={address}
-        date={today}
-        schedule={schedule}
-        isLoading={scheduleLoading}
-        isError={scheduleError}
-      />
+      {/* Оновлений головний блок: першокласний селектор області, вибір черги для області,
+          24-годинний горизонтальний таймлайн із півгодинними комірками та поточним станом */}
+      <HomeHeroSection />
+
 
       <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-card sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-2">
