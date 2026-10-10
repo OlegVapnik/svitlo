@@ -20,7 +20,9 @@ x-api-env: &api-env
   TELEGRAM_BOT_ENABLED: "false"
   CHERNIHIV_WEB_ENABLED: ${CHERNIHIV_WEB_ENABLED:-true}
   CHERNIHIV_BASE_URL: ${CHERNIHIV_BASE_URL:-https://chernihivoblenergo.com.ua}
-  CHERNIHIV_CITY_IDS: ${CHERNIHIV_CITY_IDS:-7422288601}
+  # Перелік населених пунктів оператора (id через кому). Порожньо = перелік не заданий, і адаптер
+  # голосно падає з причиною замість «тихо порожньо» (раніше тут було зашите одне село — с. Деснянське).
+  CHERNIHIV_CITY_IDS: ${CHERNIHIV_CITY_IDS:-}
   CHERNIHIV_OUTAGE_TYPES: ${CHERNIHIV_OUTAGE_TYPES:-1,2,6}
   # Пауза між запитами до оператора + прогрів сесії (GET /power_outages) — щоб не тригерити WAF.
   CHERNIHIV_REQUEST_DELAY_MS: ${CHERNIHIV_REQUEST_DELAY_MS:-1000}

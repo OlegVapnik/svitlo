@@ -1,4 +1,5 @@
 import type { ISourceAdapter, NormalizedIncident, NormalizedOutage, ParseResult } from './adapter.js';
+import { titleCasePlace } from './place-name.js';
 import { SourceBlockedError, SourceRequestError, isTimeoutError, type SourceBlockKind } from './source-errors.js';
 import { mergeDuplicateOutages } from '../services/outage-grouping.js';
 
@@ -21,8 +22,10 @@ import { mergeDuplicateOutages } from '../services/outage-grouping.js';
  *   POST /api/info_schedule  { queue, curr_dt }         → 200 `status: ok`, але ЗАВЖДИ `aData: null` (заглушка, без капчі);
  *   POST /api/info_schedule_part {queue, curr_dt, token} → справжній погодинний ГПВ, але ЗА Cloudflare Turnstile (`400 No captcha`);
  *   GET  /api/info_disable/  ?nq=city|street|house&q&c  → автодоповнення адрес (без капчі).
- * Черга за особовим рахунком доступна через /number_queue, який вимагає captcha-token. Обхід капчі
- * ДОЗВОЛЕНО (дозвіл оператора, 2026-10-10, див. AGENTS.md) — адаптер може його додати.
+ * Черга за особовим рахунком доступна через /number_queue, який вимагає captcha-token.
+ * ДОЗВІЛ НА ОБХІД КАПЧІ НЕ ПІДТВЕРДЖЕНО: у AGENTS.md (перевірено 11.10.2026) такого пункту немає,
+ * тому адаптер НЕ вирішує Turnstile і не намагається його вирішити. Це твердження лишилось від
+ * попередньої версії документа — якщо дозвіл від оператора справді є, його треба оформити в AGENTS.md.
  */
 
 /** Людські назви типів відключень (fallback, якщо оператор не повернув причину). */
@@ -59,8 +62,9 @@ export interface ChernihivWebOptions {
 
 export const DEFAULT_CHERNIHIV_WEB_OPTIONS: ChernihivWebOptions = {
   baseUrl: 'https://chernihivoblenergo.com.ua',
-  // с. Деснянське (Коропський район) — ідентифікатор населеного пункту на сайті оператора.
-  cityIds: ['7422288601'],
+  // Перелік НП порожній за замовчуванням: ідентифікатори мусять приходити з env/довідника оператора
+  // (info_disable?nq=city). Зашите одне село давало хибне враження, що ми бачимо всю область.
+  cityIds: [],
   types: [1, 2, 6],
   timeoutMs: 30_000,
   // Оператор за WAF-політикою віддає дані лише браузероподібним клієнтам.
@@ -144,7 +148,9 @@ export function parseListAccRow(row: ListAccRow, type: number, cityId: string, s
   if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return null;
   if (!street && !placement) return null;
 
-  const areaName = /деснянське/iu.test(placement) ? 'Деснянське' : placement || 'Чернігівська область';
+  // Назву пункту НЕ підтягуємо під одне знайоме село: беремо те, що дав оператор,
+  // лише приводимо регістр («ДЕСНЯНСЬКЕ» → «Деснянське», «НОВГОРОД-СІВЕРСЬКИЙ» → «Новгород-Сіверський»).
+  const areaName = titleCasePlace(placement) || 'Чернігівська область';
   // Не дублюємо населений пункт в адресі — він уже винесений у areaName (окреме поле в UI).
   const placementIsArea = Boolean(placement) && placement.toLocaleLowerCase('uk-UA') === areaName.toLocaleLowerCase('uk-UA');
   const streetAndHouses = street ? `вул. ${street}${houses ? ` ${houses}` : ''}` : houses;
@@ -263,6 +269,13 @@ export class ChernihivWebAdapter implements ISourceAdapter {
   }
 
   async fetch(): Promise<ParseResult> {
+    if (this.options.cityIds.length === 0) {
+      // Чесна помилка замість «тихо порожньо»: без переліку НП ми не бачимо жодного відключення,
+      // і це НЕ означає, що їх немає. runParse запише error з цією причиною — і буде видно в /api/v1/status.
+      throw new Error(
+        'CHERNIHIV_CITY_IDS порожній: перелік населених пунктів оператора не заданий — запит не виконуємо, щоб не видати «порожньо» за «немає відключень»',
+      );
+    }
     const outages: NormalizedOutage[] = [];
     const incidents: NormalizedIncident[] = [];
     const rawParts: Array<{ cityId: string; type: number; payload: unknown }> = [];

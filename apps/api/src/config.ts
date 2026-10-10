@@ -24,8 +24,12 @@ const envSchema = z.object({
   // отримання зареєстрованих перерв без персональних даних — без капчі.
   CHERNIHIV_WEB_ENABLED: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   CHERNIHIV_BASE_URL: z.string().url().default('https://chernihivoblenergo.com.ua'),
-  // Ідентифікатори населених пунктів на сайті оператора (через кому). 7422288601 = с. Деснянське.
-  CHERNIHIV_CITY_IDS: z.string().default('7422288601').transform((value) => value.split(',').map((item) => item.trim()).filter(Boolean)),
+  // Ідентифікатори населених пунктів на сайті оператора (через кому).
+  // ПОРОЖНІЙ список = перелік НП не заданий: адаптер НЕ опитує оператора й голосно повідомляє причину.
+  // Так зроблено свідомо: раніше тут стояло ОДНЕ село (7422288601 = с. Деснянське) як «типове»,
+  // і виглядало, ніби ми бачимо всю Чернігівщину. Перелік наповнюється з публічного довідника
+  // оператора (GET /api/info_disable?nq=city — без капчі; див. skills/scraper-adapter-hardening).
+  CHERNIHIV_CITY_IDS: z.string().default('').transform((value) => value.split(',').map((item) => item.trim()).filter(Boolean)),
   // Типи перерв: 1 — планові, 2 — аварійні, 6 — графіки обмеження (ГПВ).
   CHERNIHIV_OUTAGE_TYPES: z.string().default('1,2,6').transform((value) => value.split(',').map((item) => Number(item.trim())).filter((item) => Number.isInteger(item))),
   // Оператор віддає дані лише браузероподібним клієнтам (WAF).

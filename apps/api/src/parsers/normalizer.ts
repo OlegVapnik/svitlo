@@ -1,3 +1,5 @@
+import { extractSettlementName } from './place-name.js';
+
 export function normalizeAddress(raw: string): string {
   return raw
     .trim()
@@ -21,13 +23,13 @@ export function normalizeAreaName(raw: string): string {
 
 /** Розпізнає поселення в адресу-подібному рядку та не підміняє його назвою району. */
 export function normalizeOutageLocation(areaName: string, addressesRaw: string): string {
-  const place = `${areaName} ${addressesRaw}`;
-  if (/деснянське/iu.test(place)) return 'Деснянське';
-  if (/чернігівська область/iu.test(areaName) && addressesRaw.trim()) {
-    return /деснянське/iu.test(addressesRaw) ? 'Деснянське' : addressesRaw.match(/(?:^|[,;])\s*с\.\s*([^,;]+)/iu)?.[1]?.trim() ?? 'Чернігівська область';
-  }
-  const villageInAddress = addressesRaw.match(/(?:^|[,;])\s*с\.\s*([^,;]+)/iu)?.[1]?.trim();
-  if (villageInAddress) return villageInAddress;
+  // 1) Найточніше джерело — сама адреса: «с. Деснянське, вул. Зарічна, 43».
+  const fromAddress = extractSettlementName(addressesRaw);
+  if (fromAddress) return fromAddress;
+  // 2) Інакше — поле «місце» оператора («ДЕСНЯНСЬКЕ»), але район/область населеним пунктом не вважаємо.
+  const fromArea = extractSettlementName(areaName);
+  if (fromArea) return fromArea;
+  if (/чернігівська область/iu.test(areaName) && addressesRaw.trim()) return 'Чернігівська область';
   return normalizeAreaName(areaName);
 }
 

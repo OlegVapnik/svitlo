@@ -190,6 +190,12 @@ describe('ChernihivWebAdapter', () => {
     expect(result.gridMessage).toContain('1');
   });
 
+  test('без переліку НП голосно падає, а не віддає «порожньо» як «немає відключень»', async () => {
+    const { fetchImpl } = makeStub();
+    const adapter = new ChernihivWebAdapter(fetchImpl, { baseUrl: 'https://example.test', cityIds: [], types: [1], requestDelayMs: 0 });
+    await expect(adapter.fetch()).rejects.toThrow(/CHERNIHIV_CITY_IDS порожній/u);
+  });
+
   test('throws when the operator returns a non-2xx status', async () => {
     const failing = (async () => new Response('nope', { status: 502 })) as typeof fetch;
     const adapter = new ChernihivWebAdapter(failing, { ...base, types: [1], retries: 0, requestDelayMs: 0, sessionWarmup: false });
