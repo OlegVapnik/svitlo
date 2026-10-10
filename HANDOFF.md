@@ -667,3 +667,99 @@ docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
   снова покажет «ошибки» (см. 13.1).
 
 
+
+## 15. Сессия 5 (10.10.2026): чистка мёртвого кода и переименование в Svitlo
+
+Ветка `ai/rename-svitlo`. Работа вошла в чекпойнт-коммит `3379c4c` (вместе с незакоммиченной работой
+сессий 3–4: contacts/i18n/ScheduleImportPage, миграция `0010`, настройки `.vscode`, сканер секретов).
+
+### 15.1 Удалено (мёртвый код и артефакты)
+
+Правило: удалять только при 0 ссылок из `apps/`, `packages/`, `tests/` (guard в скрипте). `geocode.service.ts`
+сначала был пропущен — на него ссылался старый `apps/api/dist`; удалён вторым проходом после чистки dist.
+
+| Файл | Почему мёртвый |
+|---|---|
+| `apps/api/src/services/geocode.service.ts` | «Fake delay / implementation for demo»: Nominatim не вызывался, возвращались фиксированные координаты `51.4938/31.2953`; никто не импортировал |
+| `apps/web/src/lib/demo-schedule.ts` | `DEMO_OPERATOR_SCHEDULE`/`DEMO_QUEUES` — демо-дубль фронта, не импортировался |
+| `apps/web/src/hooks/useMediaQuery.ts` | ни одного использования |
+| `apps/web/src/components/incidents/IncidentList.tsx` | заглушка `() => <div>Incidents</div>` |
+| `apps/web/src/components/ui/Dialog.tsx` | не использовался нигде |
+| `apps/api/dist`, `apps/web/dist` | сборка (728K + 1.8M), в `.gitignore`, пересоздаётся `pnpm build` / Docker |
+| `ALL_IN_ONE.md` | черновик (в `.gitignore`), генерируется `tools/build_all_in_one.py` |
+
+Не удалялось (проверено, что нужны): `src/db/migrate.ts` (скрипт `db:migrate`), `src/types/fastify.d.ts`
+(ambient-типы `fastify.authenticate`), `*.test.ts` (подхватывает vitest), `src/db/backfill-outage-events.ts`.
+
+### 15.2 Доки приведены в соответствие с кодом
+
+`PROJECT_MAP.md`: `geocode.service`, `db:seed`/`db/seed.ts`, `IncidentList`, `Dialog`, `useMediaQuery`,
+`DEMO_QUEUES`, «всегда `SCHEDULE_DEMO=true`» (на самом деле `false`), «репозиторий без `.git`» (git есть),
+состав тестов 14 → 20 (api) + 2 (web).
+`PROJECT_AUDIT.md`: §4.1 (сиды), §5.4 (геокодинг — один фейк, а не «две системы»), §6.3 (дубли).
+`skills/db-migrations/SKILL.md`: сидов `db/seed.ts` больше нет.
+
+### 15.3 Переименование `energy-monitor` → `svitlo`
+
+69 файлов текстом + второй проход по 8 файлам со ссылками на каталог скилла.
+
+| Было | Стало |
+|---|---|
+| `energy-monitor`, `@energy-monitor/{api,web,shared}` | `svitlo`, `@svitlo/{api,web,shared}` |
+| образ `energy-monitor-api:latest` | `svitlo-api:latest` |
+| `skills/energymon-onboarding/` | `skills/svitlo-onboarding/` (`git mv`) |
+| `SNAPSHOT_DIR=/var/lib/energy-monitor/snapshots` | `/var/lib/svitlo/snapshots` |
+| `EnergyMonitor — Чернігів`, `EnergyMonitor API`, UA `EnergyMonitor/1.0` | `Svitlo — Чернігів`, `Svitlo API`, `Svitlo/1.0` |
+| `../energy-monitor-backups/` (вне репо) | `../svitlo-backups/` (каталог переименован; 5 дампов + tar.gz на месте) |
+
+**Побочная находка (исправлено):** `packages/shared` импортирует `zod`, но не объявлял его — сборка/типы
+проходили только за счёт устаревшей ссылки в `packages/shared/node_modules`, которую `pnpm install` убрал
+(`tsc` дал `TS2307 Cannot find module 'zod'` в api и web). Добавлено `dependencies: { zod: ^3.24.1 }`,
+lockfile обновлён (нужно для `--frozen-lockfile` в Docker).
+
+**Сознательно НЕ переименовано:** роль/БД Postgres `energymon` (`.env`, `docker-compose.yml`,
+`TEST_DATABASE_URL`, `.vscode/settings.json`); compose-проект и тома `energy-monitor_pg_data`,
+`energy-monitor_api_snapshots`; сам каталог `/home/oleg/Projects/energy-monitor` — всё это затрагивает
+живой том с данными.
+
+### 15.4 Отложенные операции (нужен явный go-ahead)
+
+1. **БД.** Свежий дамп в `../svitlo-backups/`, затем внутри `db`:
+   `ALTER ROLE energymon RENAME TO svitlo; ALTER DATABASE energymon RENAME TO svitlo;`
+   (требует отсутствия других сессий на базе), после — правки `DATABASE_URL`/`TEST_DATABASE_URL`
+   в `.env`, `.env.example`, `docker-compose.yml`, тестах, `.vscode/settings.json`.
+2. **Каталог + тома.**
+   `docker compose down` → `mv ~/Projects/energy-monitor ~/Projects/svitlo` →
+   `docker volume create svitlo_pg_data` + `docker run --rm -v energy-monitor_pg_data:/from -v svitlo_pg_data:/to alpine sh -c 'cp -a /from/. /to/'`
+   (то же для `api_snapshots`) → `docker compose up -d --build`.
+   Без копирования compose создаст пустые тома → БД «потеряется» (старые останутся сиротами).
+   Учесть вне репозитория: путь в MCP-конфиге Cline, рабочая папка VS Code.
+
+### 15.5 Проверено
+
+`bash skills/svitlo-onboarding/scripts/verify.sh` → `api typecheck PASS · web typecheck PASS ·
+api tests PASS (94 passed / 24 skipped) · web tests PASS (7)`, `VERIFY-EXIT=0` ·
+`docker compose config -q` → OK · `python3 tools/build_all_in_one.py` → все 12 SKILL-секций найдены
+(файл удалён после проверки) · `python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .` → 3 finding
+(базовый уровень: `.env` ×2, `.env.example`) · остаток `energymon` в репо = только БД и дампы.
+
+### 15.6 Замечено, но не менялось
+
+- `schema.ts` описывает `geocodeCache`, миграция `0001` создаёт `geocode_cache` — потребителя больше нет
+  (drop только с подтверждением).
+- `NOMINATIM_BASE_URL` / `NOMINATIM_RATE_LIMIT_MS` в `config.ts`, `.env`, `.env.example` — без потребителя,
+  оставлены как задел под честный геокодинг (PROJECT_AUDIT §5.4).
+- Хардкод-кандидаты для «подготовки площади»: `CHERNIHIV_*` дефолты в `config.ts` + дубли в `x-api-env`;
+  `ADMIN_TOKEN` default `'development-admin-token'`; 17 координат в `apps/web/src/lib/outage-location.ts`;
+  фразы-регулярки в `parsers/normalizer.ts`, `incident-details.ts`, `outage-location.ts`; справочник улиц
+  в `0004`; `'2/2'` в `useMyQueues`; `localhost:3001` в `vite.config.ts`.
+- `TODO(verify)` в `server.ts:12`, `console.log` в `backfill-outage-events.ts`, `as any` для
+  `fastify.authenticate` в 3 местах.
+
+### 15.7 Дальше
+
+1. `docker compose up -d --build` — контейнеры ещё работают на старом образе `energy-monitor-api:latest`
+   (данные не затрагиваются).
+2. Решить по §15.4 — это последнее, что держит старое имя.
+3. Затем — дехардкод по списку §15.6.
+

@@ -251,7 +251,7 @@ SQL-функция `energy_normalize_address(text)` (`IMMUTABLE`, создаёт
 
 **Инструменты** — `utils/errors.ts` (`AppError`, `createErrorResponse`), `utils/hash.ts` (`contentHash` sha256), `utils/logger.ts` (pino + pino-pretty в dev), `scheduler/cron.ts` (`setupCron` с jitter, `setupInitialParse`).
 
-**Тесты** — vitest, 14 файлов: `tests/parsers/*` (address-matcher, chernihiv-web, mock, normalizer, telegram-channel), `tests/services/*` (incident-details, incident-status, outage-classification, outage-grouping, power-summary, reliability, schedule-normalizer, street-queues), `tests/routes/health.test.ts`.
+**Тесты** — vitest: 20 файлов в `apps/api/tests` (16 проходят, 4 integration-skip без `TEST_DATABASE_URL`: outage-events-ingest, outage-numbers, outage-events-backfill, status-breaker) + 2 в `apps/web/src/lib` (`outage-location.test.ts`, `source-health.test.ts`).
 
 ---
 
