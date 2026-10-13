@@ -42,8 +42,10 @@ const envSchema = z.object({
   // ВАЖЛИВО (перевірено 10.10.2026, 12 запитів із контейнера, черги 2/2, 2, 1): метод — **заглушка**,
   // він завжди віддає `200 {"status":"ok","aData":null}`, тобто реальних інтервалів у ньому немає.
   // Справжній погодинний ГПВ віддає лише `POST /api/info_schedule_part`, і він за Cloudflare Turnstile
-  // (`400 {"error":"No captcha"}` без токена). Токен автоматично НЕ добуваємо — див. AGENTS.md,
-  // «Operator schedule and anti-bot boundary»; тому `schedule_slots` наповнюється вручну/з інших джерел.
+  // (`400 {"error":"No captcha"}` без токена). Обхід Turnstile дозволено (AGENTS.md, правило 6), тож
+  // цей URL можна перелічити на `.../info_schedule_part`, коли з'явиться капча-клієнт (рецепт —
+  // skills/scraper-adapter-hardening, «Anti-bot»). Поки його немає, `schedule_slots` наповнюють
+  // дзеркало, Telegram та ручний імпорт.
   // Неповний TLS-ланцюжок закриває операторський CA з бандла
   // (docker-compose.yml → NODE_EXTRA_CA_CERTS), тому перевірка сертифіката лишається увімкненою.
   OPERATOR_SCHEDULE_URL: z.string().url().default('https://interruptions.energy.cn.ua/api/info_schedule'),
@@ -81,8 +83,19 @@ const envSchema = z.object({
   // e-svitlo — особистий кабінет АТ «Чернігівобленерго» (web2py), публічні графіки/списки населених пунктів.
   ESVITLO_BASE_URL: z.string().url().default('https://cn.e-svitlo.com.ua'),
   CHERNIHIVOBLENERGO_BASE_URL: z.string().url().default('https://chernihivoblenergo.com.ua'),
+  // --- Анти-бот: обхід Turnstile/CAPTCHA (AGENTS.md, правило 6; рецепт — skills/scraper-adapter-hardening) ---
+  // Ключ сервісу розв'язання капчі (2captcha/rucaptcha-сумісний). Порожньо = сервіс не використовується.
+  // СЕКРЕТ: лишається тільки в .env/секретах — не в логах, не в фікстурах, не в git.
+  CAPTCHA_SOLVER_API_KEY: z.string().default(''),
+  // База API солвера (2captcha → https://2captcha.com, rucaptcha → https://rucaptcha.com).
+  CAPTCHA_SOLVER_URL: z.string().url().default('https://2captcha.com'),
   USE_MOCK_ADAPTER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
   ENABLE_SCHEDULER: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
+  // Збір новин за розкладом (Telegram-канали + RSS). Типово вимкнено, щоб реліз сам не почав
+  // створювати трафік; вмикається свідомо (NEWS_COLLECT_ENABLED=true) або разово через
+  // POST /api/v1/admin/news/collect.
+  NEWS_COLLECT_ENABLED: z.string().default('false').transform((value) => value.toLowerCase() === 'true'),
+  NEWS_COLLECT_INTERVAL_MIN: z.coerce.number().int().min(1).default(15),
   // Довірені проксі (діапазони proxy-addr через кому), напр. "loopback,uniquelocal".
   // Порожньо = вимкнено. Потрібно, щоб rate limit рахувався по IP відвідувача, а не по IP nginx.
   TRUST_PROXY: z.string().default(''),

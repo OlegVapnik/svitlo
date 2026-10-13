@@ -62,6 +62,16 @@ export const api = {
   /** Каталог областей (GET /api/v1/regions, контракт /tmp/API-CONTRACT-regions.md). */
   fetchRegions: (signal?: AbortSignal) => fetcher('/regions', { signal }),
   /**
+   * Новини (GET /api/v1/news): публічні пости Telegram-каналів операторів/Укренерго та RSS
+   * місцевих ЗМІ. Персональних даних немає — лише текст публікації й посилання на першоджерело.
+   */
+  fetchNews: (params?: Record<string, string>, signal?: AbortSignal) => {
+    const q = params ? '?' + new URLSearchParams(params) : '';
+    return fetcher(`/news${q}`, { signal });
+  },
+  /** Джерела новин і стан збору (GET /api/v1/news/sources) — щоб було видно, кого саме читаємо. */
+  fetchNewsSources: (signal?: AbortSignal) => fetcher('/news/sources', { signal }),
+  /**
    * Перевірка за особовим рахунком: повертає вулицю та чергу з довідника (GET /places/:account).
    * 404 = номера немає в довіднику (див. ApiError.code === 'PLACE_NOT_FOUND').
    */

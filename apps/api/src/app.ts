@@ -20,6 +20,9 @@ import queueRoutes from './routes/queues.js';
 import placeRoutes from './routes/places.js';
 import regionRoutes from './routes/regions.js';
 import reliabilityRoutes from './routes/reliability.js';
+import settlementRoutes from './routes/settlements.js';
+import newsRoutes from './routes/news.js';
+import adminProviderRoutes from './routes/admin-providers.js';
 
 /**
  * Фабрика Fastify-інстансу: плагіни + роути, БЕЗ `listen` і БЕЗ планувальника.
@@ -75,6 +78,9 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(regionRoutes);
   await server.register(placeRoutes);
   await server.register(reliabilityRoutes);
+  await server.register(settlementRoutes);
+  await server.register(newsRoutes);
+  await server.register(adminProviderRoutes);
   await server.register(adminRoutes);
 
   return server;

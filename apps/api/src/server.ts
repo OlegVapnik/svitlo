@@ -16,13 +16,20 @@ async function start(): Promise<void> {
   // The parse scheduler is controlled by ENABLE_SCHEDULER (set it to true in production .env).
   // When it is off, data only arrives via POST /api/v1/admin/parse or the manual schedule import.
   if (env.ENABLE_SCHEDULER && !env.USE_MOCK_ADAPTER) {
-    const { setupCron, setupInitialParse } = await import('./scheduler/cron.js');
+    const { setupCron, setupInitialParse, setupProviderSyncCron } = await import('./scheduler/cron.js');
     setupCron();
     setupInitialParse();
+    // Провайдери графіків (YASNO/ДТЕК/e-svitlo/дзеркало) — окремий розклад зі своїм флагом.
+    setupProviderSyncCron();
     server.log.info('Parse scheduler enabled; initial parse scheduled');
   } else {
     server.log.warn('Parse scheduler is OFF: data will become stale unless imported manually');
   }
+
+  // Новини: власний флаг NEWS_COLLECT_ENABLED, бо джерела — публічні канали/RSS, а не WAF оператора.
+  // Тому збір новин працює й тоді, коли парсинг оператора вимкнено (ENABLE_SCHEDULER=false).
+  const { setupNewsCollectCron } = await import('./scheduler/cron.js');
+  setupNewsCollectCron();
 
   // Graceful shutdown. `docker stop` sends SIGTERM and kills the container with SIGKILL (exit 137)
   // after 10 s. Node as PID 1 ignores SIGTERM unless a handler exists, so without this the process

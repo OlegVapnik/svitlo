@@ -8,6 +8,7 @@ import { MyAddressPage } from './pages/MyAddressPage';
 import { ScheduleImportPage } from './pages/ScheduleImportPage';
 import { QueueSchedulePage } from './pages/QueueSchedulePage';
 import { StreetsPage } from './pages/StreetsPage';
+import { NewsPage } from './pages/NewsPage';
 
 export const router = createBrowserRouter([
   {
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'outages', element: <OutagesPage /> },
       { path: 'incidents', element: <IncidentsPage /> },
+      { path: 'news', element: <NewsPage /> },
       { path: 'contacts', element: <ContactsPage /> },
       { path: 'my-address', element: <MyAddressPage /> },
       { path: 'schedule-import', element: <ScheduleImportPage /> },

@@ -1,4 +1,4 @@
-import { AlertTriangle, Building2, CalendarDays, Home, MapPin, Phone, Upload, Zap, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Building2, CalendarDays, Home, MapPin, Newspaper, Phone, Upload, Zap, type LucideIcon } from 'lucide-react';
 
 /**
  * Единственный источник правды для навигации: Sidebar и BottomNav читают ЭТОТ список
@@ -19,6 +19,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/', icon: Home, labelKey: 'nav.home', primary: true },
   { to: '/outages', icon: Zap, labelKey: 'nav.outages', primary: true },
   { to: '/incidents', icon: AlertTriangle, labelKey: 'nav.incidents', primary: true },
+  { to: '/news', icon: Newspaper, labelKey: 'nav.news' },
   { to: '/streets', icon: Building2, labelKey: 'nav.streets', primary: true },
   { to: '/contacts', icon: Phone, labelKey: 'nav.contacts', primary: true },
   { to: '/my-address', icon: MapPin, labelKey: 'nav.myAddress' },

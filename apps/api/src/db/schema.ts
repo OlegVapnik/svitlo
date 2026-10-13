@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, uuid, integer, doublePrecision, index, uniqueIndex, check, primaryKey, date, smallint } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, timestamp, uuid, integer, doublePrecision, index, uniqueIndex, check, primaryKey, date, smallint, jsonb } from 'drizzle-orm/pg-core';
 import { sql, relations } from 'drizzle-orm';
 
 export const sources = pgTable('sources', {
@@ -251,3 +251,96 @@ export const incidentRelations = relations(incidents, ({ one }) => ({
 export const parseRunRelations = relations(parseRuns, ({ one }) => ({
   source: one(sources, { fields: [parseRuns.sourceId], references: [sources.id] })
 }));
+
+/**
+ * Довідник населених пунктів (міграція 0015). Наповнюється провайдерами графіків
+ * (services/provider-sync.service.ts). Персональних даних немає: лише назви й коди черг.
+ */
+export const settlements = pgTable('settlements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  region: text('region').notNull().default('chernihivska-oblast'),
+  /** Назва так, як її показуємо людині («Деснянське», «Новгород-Сіверський»). */
+  name: text('name').notNull(),
+  /** Нормалізована назва для пошуку й дедуплікації (див. normalizeSettlementName). */
+  nameNormalized: text('name_normalized').notNull(),
+  /** 'місто' | 'смт' | 'село' або NULL, якщо джерело тип не вказує (не вигадуємо). */
+  kind: text('kind'),
+  /** Джерело: id провайдера ('esvitlo-cn', 'chernihivoblenergo', 'yasno', 'mirror') або 'manual'. */
+  source: text('source').notNull(),
+  /** Ідентифікатор у джерелі (напр. cityId довідника оператора). */
+  sourceRef: text('source_ref'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  regionNameNormalizedUq: uniqueIndex('settlements_region_name_normalized_uq').on(table.region, table.nameNormalized),
+  regionNameIdx: index('settlements_region_name_idx').on(table.region, table.name),
+}));
+
+/** Прив'язка «населений пункт → черга (група ГПВ)» з джерелом і часом останньої перевірки. */
+export const settlementQueues = pgTable('settlement_queues', {
+  region: text('region').notNull().default('chernihivska-oblast'),
+  settlementId: uuid('settlement_id').notNull().references(() => settlements.id, { onDelete: 'cascade' }),
+  /** Черга у форматі застосунку: '3', '2/2'. */
+  queue: text('queue').notNull(),
+  /** Джерело прив'язки — без нього не зрозуміло, кому вірити при розбіжностях. */
+  source: text('source').notNull(),
+  sourceRef: text('source_ref'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.settlementId, table.queue, table.source] }),
+  regionQueueIdx: index('settlement_queues_region_queue_idx').on(table.region, table.queue),
+  settlementIdx: index('settlement_queues_settlement_idx').on(table.settlementId),
+}));
+
+/**
+ * Новини (міграція 0014): джерела (Telegram-канали, RSS) і самі публікації про відключення
+ * та стан енергосистеми. Персональних даних немає — лише публічні пости/стрічки, посилання й текст.
+ */
+export const newsSources = pgTable('news_sources', {
+  sourceKey: text('source_key').primaryKey(),
+  kind: text('kind').notNull(),
+  baseUrl: text('base_url'),
+  regionCpu: text('region_cpu').references(() => regions.cpu, { onDelete: 'set null' }),
+  enabled: boolean('enabled').notNull().default(true),
+  lastOkAt: timestamp('last_ok_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  itemsCount: integer('items_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const newsItems = pgTable('news_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sourceKey: text('source_key').notNull().references(() => newsSources.sourceKey, { onDelete: 'cascade' }),
+  url: text('url').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary'),
+  body: text('body'),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  regionCpu: text('region_cpu').references(() => regions.cpu, { onDelete: 'set null' }),
+  kind: text('kind').notNull(),
+  isUkraineWide: boolean('is_ukraine_wide').notNull().default(false),
+  tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
+  /** URL зображень поста (Telegram-графіки опубліковані картинками); порожньо — текстовий пост. */
+  imageUrls: text('image_urls').array().notNull().default(sql`'{}'::text[]`),
+  contentHash: text('content_hash').notNull(),
+  raw: jsonb('raw'),
+}, (table) => ({
+  contentSourceUniqueIdx: uniqueIndex('news_items_content_source_uq').on(table.contentHash, table.sourceKey),
+  publishedAtIdx: index('news_items_published_at_idx').on(table.publishedAt.desc().nullsLast()),
+  regionPublishedIdx: index('news_items_region_published_idx').on(table.regionCpu, table.publishedAt.desc()),
+  kindIdx: index('news_items_kind_idx').on(table.kind),
+  isUkraineWideIdx: index('news_items_is_ukraine_wide_idx').on(table.isUkraineWide),
+  kindChk: check('news_items_kind_check', sql`${table.kind} IN ('outage','schedule-change','repair','emergency','ukraine','other')`),
+}));
+
+export const newsSourcesRelations = relations(newsSources, ({ many }) => ({
+  items: many(newsItems),
+}));
+
+export const newsItemsRelations = relations(newsItems, ({ one }) => ({
+  source: one(newsSources, { fields: [newsItems.sourceKey], references: [newsSources.sourceKey] }),
+  region: one(regions, { fields: [newsItems.regionCpu], references: [regions.cpu] }),
+}));
+

@@ -15,6 +15,10 @@ x-api-env: &api-env
   # Автоопрос оператора. По умолчанию ВЫКЛ (локальная разработка не должна стучаться к WAF оператора).
   # В production поставьте ENABLE_SCHEDULER=true в .env, иначе данные не обновляются (см. /status dataStale).
   ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-false}
+  # Новини (публічні Telegram-канали + RSS). Типово false: реліз сам не ходить у мережу.
+  # Увімкнути: NEWS_COLLECT_ENABLED=true у .env. Разовий збір — POST /api/v1/admin/news/collect.
+  NEWS_COLLECT_ENABLED: ${NEWS_COLLECT_ENABLED:-false}
+  NEWS_COLLECT_INTERVAL_MIN: ${NEWS_COLLECT_INTERVAL_MIN:-15}
   # Диапазоны доверенных прокси (nginx в compose-сети) — нужны для корректного rate limit по IP посетителя.
   TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
   TELEGRAM_BOT_ENABLED: "false"
@@ -46,6 +50,9 @@ x-api-env: &api-env
   PROVIDER_SYNC_ENABLED: ${PROVIDER_SYNC_ENABLED:-false}
   PROVIDER_SYNC_INTERVAL_MINUTES: ${PROVIDER_SYNC_INTERVAL_MINUTES:-30}
   PROVIDER_SYNC_TIMEOUT_MS: ${PROVIDER_SYNC_TIMEOUT_MS:-15000}
+  # Анти-бот (AGENTS.md, правило 6): ключ сервісу розв'язання капчі/Turnstile. Порожньо = вимкнено.
+  CAPTCHA_SOLVER_API_KEY: ${CAPTCHA_SOLVER_API_KEY:-}
+  CAPTCHA_SOLVER_URL: ${CAPTCHA_SOLVER_URL:-https://2captcha.com}
   # YASNO стоїть за Incapsula WAF (503 з datacenter-IP) — адреса в env, щоб можна було вказати проксі.
   YASNO_API_BASE_URL: ${YASNO_API_BASE_URL:-https://api.yasno.com.ua}
   DTEK_API_BASE_URL: ${DTEK_API_BASE_URL:-https://www.dtek-kem.com.ua}

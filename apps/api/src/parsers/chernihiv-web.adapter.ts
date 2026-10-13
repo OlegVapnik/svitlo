@@ -23,9 +23,11 @@ import { mergeDuplicateOutages } from '../services/outage-grouping.js';
  *   POST /api/info_schedule_part {queue, curr_dt, token} → справжній погодинний ГПВ, але ЗА Cloudflare Turnstile (`400 No captcha`);
  *   GET  /api/info_disable/  ?nq=city|street|house&q&c  → автодоповнення адрес (без капчі).
  * Черга за особовим рахунком доступна через /number_queue, який вимагає captcha-token.
- * ДОЗВІЛ НА ОБХІД КАПЧІ НЕ ПІДТВЕРДЖЕНО: у AGENTS.md (перевірено 11.10.2026) такого пункту немає,
- * тому адаптер НЕ вирішує Turnstile і не намагається його вирішити. Це твердження лишилось від
- * попередньої версії документа — якщо дозвіл від оператора справді є, його треба оформити в AGENTS.md.
+ * Про капчу: AGENTS.md (правило 6) ДОЗВОЛЯЄ обхід Turnstile/JS-челленджів Cloudflare, тому попереднє
+ * твердження «дозвіл не підтверджено, капчу не обходимо» ПРИБРАНО як хибне (перевірено 11.10.2026).
+ * Поточний стан: цей адаптер ще не подає captcha-token, тому криємося на публічні методи без капчі
+ * (list_acc, info_disable, info_schedule). Щоб піти в /info_schedule_part або /number_queue — див.
+ * skills/scraper-adapter-hardening → «Anti-bot: Turnstile/CAPTCHA bypass (дозволено)».
  */
 
 /** Людські назви типів відключень (fallback, якщо оператор не повернув причину). */
@@ -228,33 +230,50 @@ export class ChernihivWebAdapter implements ISourceAdapter {
    */
   private async warmupSession(): Promise<void> {
     if (!this.options.sessionWarmup) return;
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${this.options.baseUrl}/power_outages`, {
-        method: 'GET',
-        headers: {
-          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-          'accept-language': 'uk-UA,uk;q=0.9,en;q=0.8',
-          'user-agent': this.options.userAgent,
-          'upgrade-insecure-requests': '1',
-          'sec-fetch-dest': 'document',
-          'sec-fetch-mode': 'navigate',
-          'sec-fetch-site': 'none',
-          'sec-fetch-user': '?1',
-        },
-        signal: AbortSignal.timeout(this.options.timeoutMs),
-      });
-    } catch (error) {
-      // Прогрів — теж запит до того самого WAF: таймаут і обрив ЗУПИНЯЮТЬ прогін (повторами
-      // репутацію IP не поліпшити), інакше далі пішли б 3 порції API-запитів «наосліп».
-      if (isTimeoutError(error) || isConnectionAbortError(error)) {
-        throw new SourceBlockedError(
-          isTimeoutError(error) ? 'timeout' : 'connection_aborted',
-          `Operator session warmup failed for /power_outages: ${error instanceof Error ? error.message : String(error)}`,
-          { cause: error },
-        );
+
+    const requestInit: RequestInit = {
+      method: 'GET',
+      headers: {
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'accept-language': 'uk-UA,uk;q=0.9,en;q=0.8',
+        'user-agent': this.options.userAgent,
+        'upgrade-insecure-requests': '1',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'sec-fetch-user': '?1',
+      },
+    };
+
+    // Прогрів — ПЕРШИЙ запит до оператора після старту або довгої паузи, і саме він найчастіше падає
+    // транзієнтно на «холодну» (DNS/хендшейк виходить за таймаут). Перевірено 11.10.2026 із контейнера:
+    // перший запит → ETIMEDOUT (`fetch failed`), наступні → 200. Тому транзієнтні збої з'єднання
+    // ПОВТОРЮЄМО (швидко й небагато), перш ніж ставити джерело на паузу — інакше один випадковий
+    // таймаут вимикав оновлення на 30 хв і показував «Джерело даних не відповідає» без причини.
+    // Явний блок (403/429) НЕ повторюємо: це відповідь джерела, а не «холодний старт».
+    let response: Response | null = null;
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= this.options.retries; attempt += 1) {
+      if (attempt > 0) await sleep(this.options.retryDelayMs * 2 ** (attempt - 1));
+      try {
+        response = await this.fetchImpl(`${this.options.baseUrl}/power_outages`, {
+          ...requestInit,
+          signal: AbortSignal.timeout(this.options.timeoutMs),
+        });
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!isTimeoutError(error) && !isConnectionAbortError(error)) throw error;
       }
-      throw error;
+    }
+
+    if (!response) {
+      const kind: SourceBlockKind = isConnectionAbortError(lastError) ? 'connection_aborted' : 'timeout';
+      throw new SourceBlockedError(
+        kind,
+        `Operator session warmup failed for /power_outages: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+        { cause: lastError },
+      );
     }
     // 403/429 на сторінці — той самий сигнал блоку, що й на API: жодних подальших запитів.
     if (response.status === 403 || response.status === 429) {

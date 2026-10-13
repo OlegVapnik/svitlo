@@ -283,3 +283,160 @@ export interface RegionCoverageResponse {
   data: RegionCoverageItem[];
   meta: RegionCoverageMeta;
 }
+
+/**
+ * Населений пункт у результатах пошуку (GET /api/v1/settlements). Саме тут людина обирає
+ * «своє село → свою чергу»; порожній `queues` = джерело ще не дало прив'язки (не вигадуємо).
+ */
+export interface SettlementListItem {
+  id: string;
+  region: string;
+  name: string;
+  kind: 'місто' | 'смт' | 'село' | null;
+  queues: string[];
+}
+
+export interface SettlementSearchResponse {
+  data: SettlementListItem[];
+  meta: { total: number; region: string };
+}
+
+export interface SettlementQueueItem {
+  queue: string;
+  source: string;
+  /** ISO-час останнього підтвердження прив'язки джерелом. */
+  lastSeenAt: string;
+  /** Чи є в БД хоч один слот цієї черги на сьогодні (київська доба). */
+  hasScheduleToday: boolean;
+  /** Найближче майбутнє вікно відключення сьогодні; null — даних немає. */
+  nextOutage: { date: string; timeFrom: string; timeTo: string } | null;
+}
+
+export interface SettlementQueuesResponse {
+  data: {
+    settlement: { id: string; region: string; name: string; kind: 'місто' | 'смт' | 'село' | null };
+    queues: SettlementQueueItem[];
+  };
+}
+
+/** Звіт синхронізації одного провайдера графіків (POST /api/v1/admin/providers/sync). */
+export interface ProviderSyncReport {
+  providerId: string;
+  ok: boolean;
+  /** Записано рядків у schedule_slots (нові + перезаписані). */
+  slots: number;
+  inserted: number;
+  rewritten: number;
+  /** Відхилено як некоректні (битий формат даних джерела). */
+  rejected: number;
+  /** Дати з минулого — свідомо не записані (не видаємо старе за актуальне). */
+  staleDatesSkipped: number;
+  /** Область не з каталогу `regions`. */
+  unknownRegion: number;
+  settlements: number;
+  settlementQueues: number;
+  error: string | null;
+}
+
+/** Моніторинг провайдерів (GET /api/v1/admin/providers). */
+export interface ProviderMonitoringItem {
+  id: string;
+  displayName: string;
+  sourceUrl: string;
+  regions: string[];
+  lastRunAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+}
+
+export interface ProviderSyncResponse {
+  data: { providers: ProviderSyncReport[] };
+  meta: { skipped: string[] };
+}
+
+/** Новини (GET /api/v1/news): лише публічні публікації каналів/стрічок, без персональних даних. */
+export type NewsKind = 'outage' | 'schedule-change' | 'repair' | 'emergency' | 'ukraine' | 'other';
+
+export interface NewsItem {
+  id: string;
+  sourceKey: string;
+  url: string;
+  title: string;
+  summary?: string | null;
+  body?: string | null;
+  publishedAt: string | null;
+  firstSeenAt: string;
+  regionCpu?: string | null;
+  kind: NewsKind;
+  isUkraineWide: boolean;
+  tags: string[];
+  /**
+   * URL зображень, прикріплених до поста. Для Чернігівобленерго графіки відключень часто
+   * опубліковані КАРТИНКАМИ, а не текстом — без цього поля «зміна графіка» показувалась порожньою.
+   * Порожній масив — звичайний текстовий пост (RSS-новини завжди такі).
+   */
+  imageUrls: string[];
+  contentHash: string;
+}
+
+export interface NewsSource {
+  sourceKey: string;
+  kind: string;
+  baseUrl?: string | null;
+  regionCpu?: string | null;
+  enabled: boolean;
+  lastOkAt?: string | null;
+  lastError?: string | null;
+  itemsCount: number;
+}
+
+export interface NewsListMeta {
+  count: number;
+  limit: number;
+  /** true, якщо свіжих публікацій (за 24 год) немає — UI має показати це чесно, а не «тишу». */
+  stale: boolean;
+}
+
+export interface NewsListResponse {
+  data: NewsItem[];
+  meta: NewsListMeta;
+}
+
+export interface NewsSourcesResponse {
+  data: NewsSource[];
+}
+
+export interface NewsCollectPerSource {
+  sourceKey: string;
+  collected: number;
+  inserted: number;
+  skipped: number;
+  error?: string | null;
+}
+
+export interface NewsCollectResponse {
+  collected: number;
+  inserted: number;
+  skipped: number;
+  perSource: NewsCollectPerSource[];
+}
+
+export const newsKindSchema = z.enum(['outage', 'schedule-change', 'repair', 'emergency', 'ukraine', 'other']);
+
+export const newsQuerySchema = z.object({
+  region: z.string().trim().optional(),
+  kind: newsKindSchema.optional(),
+  /**
+   * Виключити категорію (напр. `other`): місцеві стрічки віддають багато загальних новин,
+   * і без серверного фільтра найсвіжіші 50 записів можуть бути майже всі не про світло.
+   */
+  excludeKind: newsKindSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'since має бути у форматі YYYY-MM-DD').optional(),
+  ukraineWide: z.preprocess((val) => {
+    if (typeof val === 'string') return val === 'true' || val === '1';
+    return Boolean(val);
+  }, z.boolean()).optional(),
+});
+
+export type NewsQuery = z.infer<typeof newsQuerySchema>;

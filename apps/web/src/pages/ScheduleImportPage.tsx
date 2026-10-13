@@ -19,8 +19,8 @@ type ImportError = { code: string; message: string; details?: Array<{ path: stri
  *  1) «Завантажити графік з оператора» — бекенд питає публічний `POST /api/info_schedule`
  *     (капчі немає, ПД немає — лише номер черги й дата). ВАЖЛИВО: це **заглушка** оператора,
  *     вона завжди повертає `aData: null`, тому реальних інтервалів ця кнопка не дає
- *     (перевірено 10.10.2026; справжній ГПВ — тільки `info_schedule_part`, він за Turnstile, і
- *     ми його не обходимо);
+ *     (перевірено 10.10.2026; справжній ГПВ — тільки `info_schedule_part`, він за Cloudflare
+ *     Turnstile: обхід дозволено AGENTS.md (правило 6), але капча-клієнта в репо ще немає);
  *  2) ручна вставка JSON — фактичний робочий шлях наповнення `schedule_slots`.
  * Токен і вставлений JSON живуть лише в цьому компоненті й ідуть тільки на /admin/schedules/*.
  */
@@ -101,7 +101,8 @@ export const ScheduleImportPage: React.FC = () => {
   /**
    * Запит публічного методу оператора (POST /admin/schedules/fetch): потрібні черга, дата й адмін-токен.
    * Порожній результат (intervals = 0) — очікуваний: публічний `info_schedule` завжди порожній
-   * (`aData: null`), а метод з даними (`info_schedule_part`) закритий Turnstile і ми його не обходимо.
+   * (`aData: null`), а метод з даними (`info_schedule_part`) за Cloudflare Turnstile: обхід дозволено
+   * (AGENTS.md, правило 6), але капча-клієнта в репо ще немає, тому ця кнопка дає 0 інтервалів.
    */
   const fetchFromOperator = async () => {
     setFetchMsg(null);

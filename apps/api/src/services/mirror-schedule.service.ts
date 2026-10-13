@@ -3,7 +3,9 @@
  * (`MIRROR_SCHEDULE_URL`, типово `https://dtek-api.svitlo-proxy.workers.dev/`).
  *
  * Навіщо це потрібно (HANDOFF §18.9): метод оператора `POST /api/info_schedule` — заглушка
- * (`aData: null`), а `info_schedule_part` закритий Cloudflare Turnstile, який ми не обходимо.
+ * (`aData: null`), а `info_schedule_part` за Cloudflare Turnstile. Обхід Turnstile дозволено
+ * (AGENTS.md, правило 6), проте капча-клієнта в репо ще немає, тому поки що саме дзеркало — єдине
+ * джерело ПОВНОГО добового ГПВ по області.
  * Telegram-канал дає лише «зміни» (окремі черги + час), а не повний добовий ГПВ. Дзеркало ж віддає
  * ПОВНИЙ ГПВ по області: 48 півгодинних значень на кожну чергу й на сьогодні+завтра. Той самий
  * формат читає Java-ядро `core/` (`BlackoutScheduleProvider`), тож контракт перевірений не лише нами.

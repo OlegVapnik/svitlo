@@ -12,6 +12,8 @@ import type {
   StatusResponse,
   StreetQueuePair,
   StreetScheduleData,
+  NewsListResponse,
+  NewsSourcesResponse,
 } from '@svitlo/shared';
 import type { RegionListResponse } from '../lib/region.js';
 import { api } from './client';
@@ -191,3 +193,35 @@ export const useImportTelegramSchedule = () => {
     },
   });
 };
+
+/**
+ * Новини області: пости Telegram-каналів (оператор, Укренерго) + RSS місцевих ЗМІ.
+ * Збір іде фоново (раз на NEWS_COLLECT_INTERVAL_MIN хв), тому 5 хв кешу й опитування раз на
+ * 10 хв: свіже з'являється саме собою, без ручного оновлення сторінки.
+ */
+const NEWS_STALE_MS = 5 * 60_000;
+const NEWS_POLL_MS = 10 * 60_000;
+
+export const useNews = (filters?: { region?: string; kind?: string; excludeKind?: string; ukraineWide?: boolean; limit?: number }) =>
+  useQuery<NewsListResponse>({
+    queryKey: ['news', filters],
+    staleTime: NEWS_STALE_MS,
+    refetchInterval: NEWS_POLL_MS,
+    queryFn: () => {
+      const params: Record<string, string> = {};
+      if (filters?.region) params.region = filters.region;
+      if (filters?.kind) params.kind = filters.kind;
+      if (filters?.excludeKind) params.excludeKind = filters.excludeKind;
+      if (filters?.ukraineWide) params.ukraineWide = 'true';
+      if (filters?.limit) params.limit = String(filters.limit);
+      return api.fetchNews(Object.keys(params).length > 0 ? params : undefined);
+    },
+  });
+
+/** Джерела збору новин: скільки їх і чи не сиплються (lastError видно в UI). */
+export const useNewsSources = () =>
+  useQuery<NewsSourcesResponse>({
+    queryKey: ['newsSources'],
+    staleTime: NEWS_STALE_MS,
+    queryFn: () => api.fetchNewsSources(),
+  });
