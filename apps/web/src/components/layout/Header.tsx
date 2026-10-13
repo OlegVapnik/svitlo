@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Zap } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle.js';
-import { LanguageToggle } from '../ui/LanguageToggle.js';
 import { RegionSelect } from '../ui/RegionSelect.js';
 import { FreshnessChip } from '../status/FreshnessChip.js';
 
@@ -31,7 +30,6 @@ export const Header = () => {
         <div className="flex items-center gap-1.5">
           <RegionSelect />
           <FreshnessChip />
-          <LanguageToggle />
           <ThemeToggle />
         </div>
       </div>
