@@ -70,7 +70,10 @@ export const HomeHeroSection: React.FC = () => {
 
   const schedule = scheduleResponse?.data;
   const intervals = schedule?.intervals ?? [];
+  const hasSchedule = schedule?.source != null;   // регион синхронизирован, дата есть в БД
   const hasIntervals = intervals.length > 0;
+  // Показываем hasRegionData true, если регион синхронизирован (даже если для этой очереди интервалов нет)
+  const hasRegionData = currentRegionData.slots > 0 || hasSchedule;
 
   // Розрахунок вікна графіка на вибрану добу (що зараз, коли наступне, скільки без світла)
   const windowSummary = useMemo(() => {
@@ -78,8 +81,7 @@ export const HomeHeroSection: React.FC = () => {
   }, [hasIntervals, intervals, selectedDate]);
 
   const isOff = Boolean(windowSummary?.isOff);
-  const hasRegionData = currentRegionData.slots > 0 || hasIntervals;
-
+// (deleted_duplicate)
   // Формування підсумкового рядка-відліку
   const statusHeadline = useMemo(() => {
     if (!windowSummary || !hasIntervals) return '';
@@ -236,12 +238,6 @@ export const HomeHeroSection: React.FC = () => {
             {t('regions.noDataForRegionDesc')}
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <Link
-              to="/schedule-import"
-              className="inline-flex min-h-[40px] items-center rounded-full bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90"
-            >
-              {t('nav.scheduleImport')}
-            </Link>
             <a
               href="tel:0800210310"
               className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
@@ -252,16 +248,24 @@ export const HomeHeroSection: React.FC = () => {
           </div>
         </div>
       ) : !hasIntervals ? (
-        /* Графік для цієї черги на обрану дату ще не опублікований */
+        /* Нет отключений для этой очереди на выбранную дату */
         <div className="space-y-4 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {t('home.heroBySchedule')}
               </p>
-              <h2 className="font-display text-3xl font-bold tracking-tight text-muted-foreground sm:text-4xl">
-                {t('home.heroNoData')}
-              </h2>
+              {hasSchedule ? (
+                /* У региона есть данные — значит для очереди просто нет отключений */
+                <h2 className="font-display text-3xl font-bold tracking-tight text-success sm:text-4xl">
+                  {t('home.heroNoOutages')}
+                </h2>
+              ) : (
+                /* Нет данных региона на эту дату — честно говорим что нет расписания */
+                <h2 className="font-display text-3xl font-bold tracking-tight text-muted-foreground sm:text-4xl">
+                  {t('home.heroNoData')}
+                </h2>
+              )}
             </div>
             {address && (
               <span className="truncate text-xs font-medium text-muted-foreground">
@@ -269,9 +273,11 @@ export const HomeHeroSection: React.FC = () => {
               </span>
             )}
           </div>
-          <div className="rounded-xl border border-dashed border-border bg-card/60 p-6 text-center text-sm text-muted-foreground">
-            {t('schedule.notImported')}
-          </div>
+          {!hasSchedule && (
+            <div className="rounded-xl border border-dashed border-border bg-card/60 p-6 text-center text-sm text-muted-foreground">
+              {t('schedule.notPublished')}
+            </div>
+          )}
         </div>
       ) : (
         /* Головний відомий стан черги з 24-годинним таймлайном */

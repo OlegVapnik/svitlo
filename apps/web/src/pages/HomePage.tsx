@@ -33,7 +33,7 @@ export const HomePage: React.FC = () => {
 
   const { data: statusData, isLoading: statusLoading } = useStatus();
   const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability();
-  const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5 });
+  const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5, region: currentRegionData.cpu });
   const { data: incidentsData } = useIncidents();
 
   const status = statusData?.data;

@@ -8,8 +8,9 @@ export default async function outagesRoutes(fastify: FastifyInstance) {
     return await getOutages(filters, { page: 1, limit: 50 });
   });
   
-  fastify.get('/api/v1/outages/stats', async (req, reply) => {
-    return { data: await getOutageStats() };
+  fastify.get('/api/v1/outages/stats', async (req: any, reply) => {
+    const filters = outageFiltersSchema.parse(req.query);
+    return { data: await getOutageStats(new Date(), filters.region) };
   });
   
   fastify.get('/api/v1/outages/:id', async (req: any, reply) => {

@@ -115,14 +115,6 @@ export const MyQueueHero: React.FC<Props> = ({ queue, address, date, schedule, i
           </div>
 
           <div className="flex flex-wrap gap-2 pt-3">
-            {state === 'unknown' && (
-              <Link
-                to="/schedule-import"
-                className="inline-flex min-h-11 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground"
-              >
-                {t('nav.scheduleImport')}
-              </Link>
-            )}
             <Link
               to="/my-address"
               className="inline-flex min-h-11 items-center rounded-full border border-border px-4 text-sm font-semibold text-foreground"

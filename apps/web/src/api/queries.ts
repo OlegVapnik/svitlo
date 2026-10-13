@@ -23,6 +23,7 @@ type OutageFilters = {
   status?: OutageStatus;
   queue?: number;
   area?: string;
+  region?: string;
   dateFrom?: string;
   dateTo?: string;
   limit?: number;

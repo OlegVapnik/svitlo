@@ -71,7 +71,11 @@ async function defaultRegion(): Promise<string> {
  * Метаданные импорта по очереди/дате: количество слотов, источник и время последнего импорта.
  *
  * `region` (cpu области) — типова область застосунку, якщо не передано. Без нього кількість і джерело
- * змішували б «2/2 Чернігівської» і «2/2 Львівської» в одне число, тому фільтр за областю обовʼязковий.
+ * змішували б «2/2 Чернігівської» і «2/2 Львівської» в одне число, поэтому фільтр за областю обовʼязковий.
+ *
+ * Важна умова: если для (region, queue, date) слотов НЕТ, но хотя бы для (region, date) в БД слоты ЕСТЬ
+ * (по любой очереди), то это означает «график для области опубликован, но для этой очереди на эту дату
+ * отключений не запланировано» (source не null, count=0). Если же слотов нет совсем — source=null.
  */
 export async function getQueueScheduleMeta(
   queue: string,
@@ -81,20 +85,44 @@ export async function getQueueScheduleMeta(
   const targetRegion = region ?? (await defaultRegion());
   const { db } = await import('../db/connection.js');
   const { scheduleSlots } = await import('../db/schema.js');
-  const { and, eq, desc } = await import('drizzle-orm');
+  const { and, eq, desc, inArray, sql } = await import('drizzle-orm');
+  // Варіанти одного коду черги: «2/2», «2.2», «2_2» — нечутливий пошук по роздільнику.
+  const queueVariants = [
+    queue,
+    queue.replace('/', '.').replace('_', '.'),
+    queue.replace('/', '_').replace('.', '_'),
+  ].filter((value, index, self) => self.indexOf(value) === index);
+  // 1. Сначала пытаемся найти слоты для конкретной очереди
   const rows = await db
     .select({ source: scheduleSlots.source, createdAt: scheduleSlots.createdAt })
     .from(scheduleSlots)
-    .where(and(eq(scheduleSlots.region, targetRegion), eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)))
+    .where(and(eq(scheduleSlots.region, targetRegion), inArray(scheduleSlots.queue, queueVariants), eq(scheduleSlots.date, date)))
     .orderBy(desc(scheduleSlots.createdAt));
   const latest = rows[0];
-  if (!latest) return { count: 0, source: null, lastImportedAt: null };
-  return { count: rows.length, source: latest.source, lastImportedAt: latest.createdAt.toISOString() };
+  if (latest) return { count: rows.length, source: latest.source, lastImportedAt: latest.createdAt.toISOString() };
+  // 2. Если для конкретной очереди слотов нет — проверяем, есть ли вообще данные региона на эту дату
+  const [anySlot] = await db
+    .select({ source: scheduleSlots.source, createdAt: scheduleSlots.createdAt })
+    .from(scheduleSlots)
+    .where(and(eq(scheduleSlots.region, targetRegion), eq(scheduleSlots.date, date)))
+    .orderBy(desc(scheduleSlots.createdAt))
+    .limit(1);
+  if (anySlot) {
+    // Данные региона есть: отключений для этой очереди не запланировано — не null, не «не импортовано»
+    return { count: 0, source: anySlot.source, lastImportedAt: anySlot.createdAt.toISOString() };
+  }
+  // 3. Совсем нет данных региона на эту дату
+  return { count: 0, source: null, lastImportedAt: null };
 }
 
 /**
  * Слоти однієї області/черги/дати у UTC. Невідома область дає порожній масив — це не помилка
  * (контракт: невідома область = чесний порожній графік, а не чужий).
+ *
+ * Пошук НЕчутливий до роздільника черги: «2/2», «2.2» і «2_2» — один і той самий код. Це потрібно,
+ * бо дзеркало та провайдери можуть віддавати `2.2`, а UI та канонічний формат використовують `2/2`.
+ * При записі всі сервіси нормалізують очередь через `normalizeQueueCode` до `2/2`, але при читанні
+ * скасовуємо помилки старих/чужих рядків.
  */
 export async function getQueueSchedule(
   queue: string,
@@ -104,11 +132,17 @@ export async function getQueueSchedule(
   const targetRegion = region ?? (await defaultRegion());
   const { db } = await import('../db/connection.js');
   const { scheduleSlots } = await import('../db/schema.js');
-  const { and, eq } = await import('drizzle-orm');
+  const { and, eq, inArray } = await import('drizzle-orm');
+  // Варіанти одного коду черги: «2/2», «2.2», «2_2» — нечутливий пошук по роздільнику.
+  const queueVariants = [
+    queue,
+    queue.replace('/', '.').replace('_', '.'),
+    queue.replace('/', '_').replace('.', '_'),
+  ].filter((value, index, self) => self.indexOf(value) === index);
   const rows = await db
     .select()
     .from(scheduleSlots)
-    .where(and(eq(scheduleSlots.region, targetRegion), eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)));
+    .where(and(eq(scheduleSlots.region, targetRegion), inArray(scheduleSlots.queue, queueVariants), eq(scheduleSlots.date, date)));
   const toUtc = (time: string, end: boolean) => {
     if (end && time === '00:00') {
       const nextDay = new Date(`${date}T00:00:00Z`);

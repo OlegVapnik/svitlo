@@ -37,6 +37,7 @@ const TabFallback = () => (
 );
 import { useOutages, useOutageStats } from '../api/queries.js';
 import type { Outage, OutageStatus } from '@svitlo/shared';
+import { useRegion } from '../hooks/useRegion.js';
 import { outageCategory, resolveOutageMapPoint } from '../lib/outage-location.js';
 import { kyivDayStart, outageOverlapsKyivDay } from '../lib/outage-dates.js';
 
@@ -99,16 +100,18 @@ export const OutagesPage: React.FC = () => {
   }, [filters.datePreset, calendarSelectedDate]);
 
   // Fetch outages with filters
+  const { currentRegionData } = useRegion();
   const { data: outagesResponse, isLoading, isError, refetch } = useOutages({
     query: searchQuery || undefined,
     status: filters.status,
     queue: filters.queue,
     area: filters.area,
+    region: currentRegionData.cpu,
     ...dateParams,
   });
 
   // Fetch outage stats for charts
-  const { data: statsResponse } = useOutageStats();
+  const { data: statsResponse } = useOutageStats({ region: currentRegionData.cpu });
 
   const outages = (outagesResponse?.data || []).map((item) => ({
     ...item,

@@ -27,7 +27,7 @@ export interface Incident {
 export interface Contact { id: string; type: string; label: string; value: string; region?: string | null; }
 export interface StatusResponse { grid: { level: 'stable' | 'warning' | 'emergency'; message: string }; activeOutages: number; scheduledOutages: number; activeIncidents: number; scheduledIncidents?: number; totalIncidents?: number; lastUpdatedAt?: string | null; dataStale?: boolean; /** Оцінка моменту наступной спроби опитування (пауза circuit breaker або наступний слот); null — планувальник вимкнено. */ nextAttemptAt?: string | null; /** Остання помилка джерела без персональних даних (уже санитизована на боці API). */ lastError?: string | null; /** До цього моменту джерело на паузі; null — не на паузі. */ pausedUntil?: string | null; /** Невдач підряд при опитуванні джерела. */ consecutiveParseFailures?: number; powerSummary?: PowerSummary | null; }
 export interface PaginationQuery { page: number; limit: number; }
-export interface OutageFilters { query?: string; status?: OutageStatus; queue?: number; area?: string; dateFrom?: string; dateTo?: string; limit?: number; }
+export interface OutageFilters { query?: string; status?: OutageStatus; queue?: number; area?: string; region?: string; dateFrom?: string; dateTo?: string; limit?: number; }
 export interface OutageListResponse { data: Outage[]; meta?: Record<string, unknown>; }
 export interface OutageDetailResponse { data: Outage; }
 export interface OutageStatsResponse { data: OutageStats; }
@@ -250,6 +250,7 @@ export const outageFiltersSchema = {
     if (['scheduled', 'active', 'finished', 'cancelled'].includes(String(value.status))) result.status = value.status as OutageStatus;
     if (value.queue !== undefined) result.queue = Number(value.queue);
     if (typeof value.area === 'string') result.area = value.area;
+    if (typeof value.region === 'string') result.region = value.region;
     if (typeof value.dateFrom === 'string') result.dateFrom = value.dateFrom;
     if (typeof value.dateTo === 'string') result.dateTo = value.dateTo;
     if (value.limit !== undefined) result.limit = Number(value.limit);

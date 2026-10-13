@@ -55,6 +55,14 @@ function computeStatus(row: {
 
 export async function getOutages(filters: OutageFilters, pagination: PaginationQuery) {
   const now = new Date();
+
+  // Фільтр за областю: сьогодні єдиний джерело адресних відключень у `outage_events` —
+  // Чернігівобленерго (с. Деснянське та інші). Якщо користувач обрал iншу область (kyiv, lviv),
+  // не повертаємо чернігівські записи: для них детальных уличных робот немає — чесний пустий массив.
+  if (filters.region && filters.region !== 'chernihivska-oblast') {
+    return { data: [], meta: { page: pagination.page, limit: pagination.limit, total: 0, totalPages: 1 } };
+  }
+
   const conditions: any[] = [];
 
   if (filters.dateFrom) {
@@ -160,7 +168,19 @@ export async function getOutageById(id: string) {
   };
 }
 
-export async function getOutageStats(now: Date = new Date()): Promise<OutageStats> {
+export async function getOutageStats(now: Date = new Date(), region?: string): Promise<OutageStats> {
+  // Фільтр за областю (як у getOutages): єдине джерело адресних відключень — Чернігівобленерго.
+  // Для інших областей — чесна «порожня» статистика (0 скрізь), щоб не показувати чернігівські села.
+  if (region && region !== 'chernihivska-oblast') {
+    return {
+      byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0, totalMinutes: 0 })),
+      byDay: [],
+      byArea: [],
+      heatmap: Array.from({ length: 7 * 24 }, (_, i) => ({ dayOfWeek: Math.floor(i / 24), hour: i % 24, count: 0 })),
+      totalActive: 0,
+      totalScheduled: 0,
+    };
+  }
   // Читаем КАНОНИЧЕСКИЕ события, а не сырые адресные строки: иначе одна реальная авария
   // на 30 адресов попадает в статистику 30 раз (см. skills/outage-data-core, invariant 5).
   // «Сейчас» приходит параметром: SQL now() и представление outage_events_v не используем,
