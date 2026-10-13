@@ -21,6 +21,9 @@ x-api-env: &api-env
   NEWS_COLLECT_INTERVAL_MIN: ${NEWS_COLLECT_INTERVAL_MIN:-15}
   # Диапазоны доверенных прокси (nginx в compose-сети) — нужны для корректного rate limit по IP посетителя.
   TRUST_PROXY: ${TRUST_PROXY:-loopback,uniquelocal}
+  # Дозволені CORS-походження (через кому). Порожньо в production = CORS вимкнено (безпечно —
+  # фронт і API ходять на один origin через nginx). '*' — тільки для локальної розробки.
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
   TELEGRAM_BOT_ENABLED: "false"
   CHERNIHIV_WEB_ENABLED: ${CHERNIHIV_WEB_ENABLED:-true}
   CHERNIHIV_BASE_URL: ${CHERNIHIV_BASE_URL:-https://chernihivoblenergo.com.ua}

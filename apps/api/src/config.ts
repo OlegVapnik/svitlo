@@ -105,6 +105,10 @@ const envSchema = z.object({
   TELEGRAM_SESSION: z.string().optional(),
   NOMINATIM_BASE_URL: z.string().url().default('https://nominatim.openstreetmap.org'),
   NOMINATIM_RATE_LIMIT_MS: z.coerce.number().default(1100),
+  // Дозволені CORS-походження (через кому). Порожньо в development = '*' (усе дозволено),
+  // у production порожньо = CORS вимкнено (відповідь без заголовків) — безпечний дефолт.
+  CORS_ORIGINS: z.string().default('').transform((value) =>
+    value.split(',').map((item) => item.trim()).filter(Boolean)),
   NODE_ENV: z.string().default('development'),
   LOG_LEVEL: z.string().default('info'),
   TZ: z.string().default('Europe/Kyiv')
@@ -115,6 +119,19 @@ const envSchema = z.object({
       path: ['PARSE_INTERVAL_JITTER_MINUTES'],
       message: 'PARSE_INTERVAL_JITTER_MINUTES must be smaller than PARSE_INTERVAL_MINUTES',
     });
+  }
+  // Безпечний адмін-токен: у production не можна лишати дефолтний/«change-me»/порожній,
+  // інакше API зламується тривіальним токеном. Змінна має бути задана явно в .env.
+  if (value.NODE_ENV === 'production') {
+    const weak = ['development-admin-token', 'change-me-to-a-secure-token', ''];
+    if (weak.includes(value.ADMIN_TOKEN) || value.ADMIN_TOKEN.length < 16) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ADMIN_TOKEN'],
+        message:
+          'ADMIN_TOKEN must be set explicitly (>=16 chars, not a known default) in production',
+      });
+    }
   }
 });
 

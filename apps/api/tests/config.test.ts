@@ -10,6 +10,9 @@ import { describe, expect, test, vi } from 'vitest';
  */
 async function importConfig(overrides: Record<string, string>) {
   vi.resetModules();
+  // Скидаємо стаби env попередніх тестів, інакше вони «протікають» у наступні кейси
+  // (напр. PARSE_INTERVAL_MINUTES='0' з одного тесту лишився б в іншому).
+  vi.unstubAllEnvs();
   vi.stubEnv('DATABASE_URL', 'postgresql://test:test@localhost:5432/test'); // scan:allow: фикстура теста
   for (const [key, value] of Object.entries(overrides)) vi.stubEnv(key, value);
   return await import('../src/config.js');
@@ -39,5 +42,32 @@ describe('config: PARSE_INTERVAL_MINUTES', () => {
     await expect(
       importConfig({ PARSE_INTERVAL_MINUTES: '30', PARSE_INTERVAL_JITTER_MINUTES: '30' }),
     ).rejects.toThrow(/PARSE_INTERVAL_JITTER_MINUTES/u);
+  });
+});
+
+describe('config: ADMIN_TOKEN у production', () => {
+  test('сильний явно заданий токен приймається', async () => {
+    const { env } = await importConfig({
+      NODE_ENV: 'production',
+      ADMIN_TOKEN: 'xk3l#Qp9$vT2&wR7!zN1',
+    });
+    expect(env.ADMIN_TOKEN).toBe('xk3l#Qp9$vT2&wR7!zN1');
+  });
+
+  test('дефолтний development-токен у production — помилка на старті', async () => {
+    await expect(
+      importConfig({ NODE_ENV: 'production', ADMIN_TOKEN: 'development-admin-token' }),
+    ).rejects.toThrow(/ADMIN_TOKEN/u);
+  });
+
+  test('короткий токен (<16) у production — помилка на старті', async () => {
+    await expect(
+      importConfig({ NODE_ENV: 'production', ADMIN_TOKEN: 'short-token' }),
+    ).rejects.toThrow(/ADMIN_TOKEN/u);
+  });
+
+  test('у development дефолтний токен допустимий (не блокує локальний запуск)', async () => {
+    const { env } = await importConfig({ NODE_ENV: 'development' });
+    expect(env.ADMIN_TOKEN).toBe('development-admin-token');
   });
 });
