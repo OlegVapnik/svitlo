@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
-import { ADMIN_ITEMS, SIDEBAR_ITEMS, isNavItemActive, type NavItem } from './nav-items.js';
+import { SIDEBAR_ITEMS, isNavItemActive, type NavItem } from './nav-items.js';
 
 function NavLink({ item, compact = false }: { item: NavItem; compact?: boolean }) {
   const { t } = useTranslation();
@@ -39,17 +39,6 @@ export const Sidebar = () => {
       {SIDEBAR_ITEMS.map((item) => (
         <NavLink key={item.to} item={item} />
       ))}
-
-      {ADMIN_ITEMS.length > 0 && (
-        <>
-          <div className="mt-4 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            {t('nav.admin')}
-          </div>
-          {ADMIN_ITEMS.map((item) => (
-            <NavLink key={item.to} item={item} compact />
-          ))}
-        </>
-      )}
 
       <p className="mt-auto px-3 pt-4 text-[11px] leading-relaxed text-muted-foreground/80">
         {t('common.serverHint')}
