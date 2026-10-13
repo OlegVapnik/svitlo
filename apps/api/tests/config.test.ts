@@ -62,7 +62,7 @@ describe('config: ADMIN_TOKEN у production', () => {
 
   test('короткий токен (<16) у production — помилка на старті', async () => {
     await expect(
-      importConfig({ NODE_ENV: 'production', ADMIN_TOKEN: 'short-token' }),
+      importConfig({ NODE_ENV: 'production', ADMIN_TOKEN: 'short-token' }), // scan:allow — заведомо слабый тестовый токен
     ).rejects.toThrow(/ADMIN_TOKEN/u);
   });
 

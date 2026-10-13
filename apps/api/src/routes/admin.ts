@@ -19,8 +19,8 @@ const fetchScheduleRequestSchema = z.object({
 });
 
 export default async function adminRoutes(fastify: FastifyInstance) {
-  // Негайний запуск парсингу реальних джерел (web-API оператора тощо).
-  // Корисно, щоб побачити свіжі відключення, не чекаючи планувальника.
+  // Негайний запуск парсингу реальних джерел (web-API оператора тощо) + синхронізація графіків
+  // провайдерів (уся Україна). Корисно, щоб побачити свіжі відключення, не чекаючи планувальника.
   fastify.post(
     '/api/v1/admin/parse',
     { preHandler: [(fastify as any).authenticate] },
@@ -35,7 +35,28 @@ export default async function adminRoutes(fastify: FastifyInstance) {
           results.push({ sourceId: source.id, name: source.name, error: error instanceof Error ? error.message : String(error) });
         }
       }
-      return { data: results };
+
+      // ГРАФІКИ ПРОВАЙДЕРІВ (мультирегіональність): той самий тригер оновлює і відключення,
+      // і розклад ГПВ провайдерів з усіх областей України. Захищено try/catch: навіть якщо
+      // жоден провайдер не зареєстрований — запит не падає, відключення вже збережені вище.
+      const providerReports: Array<{ providerId: string; ok?: boolean; slots?: number; error?: string | null }> = [];
+      const providerNotes: string[] = [];
+      try {
+        const { getRegisteredProviders } = await import('../providers/registry.js');
+        const { syncProviderSchedules } = await import('../services/provider-sync.service.js');
+        const { providers, skipped } = await getRegisteredProviders();
+        if (providers.length > 0) {
+          const reports = await syncProviderSchedules(providers);
+          providerReports.push(...reports.map((r) => ({ providerId: r.providerId, ok: r.ok, slots: r.slots, error: r.error })));
+          if (skipped.length > 0) providerNotes.push(...skipped);
+        } else {
+          providerNotes.push(...skipped);
+        }
+      } catch (error) {
+        providerNotes.push(error instanceof Error ? error.message : String(error));
+      }
+
+      return { data: { results, providers: providerReports, notes: providerNotes } };
     },
   );
 

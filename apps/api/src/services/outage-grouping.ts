@@ -39,12 +39,14 @@ export function summarizeAffectedAddresses(addresses: string[]): string {
   return streets.length > 4 ? `${shown} та інші вулиці` : shown;
 }
 
-/** Ключ події — усе, крім адрес (саме адреси й створювали «дублікати»). */
+/** Ключ події — усе, крім адрес і часу завершення: саме вони й створювали «дублікати».
+ *  Одне й те саме відключення з різним `endsAt` по різних вулицях (оператор оновлює
+ *  час завершення окремих адрес) зливається в одну подію; `upsertOutageEvent` потім
+ *  пише `least(starts_at)` / `greatest(ends_at)` (HANDOFF §9.4). */
 export function outageEventKey(row: GroupableOutage): string {
   return [
     row.areaName.trim().toLocaleLowerCase('uk-UA'),
     row.startsAt.toISOString(),
-    row.endsAt.toISOString(),
     (row.reason ?? '').trim().toLocaleLowerCase('uk-UA'),
   ].join('|');
 }

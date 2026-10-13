@@ -6,6 +6,7 @@ import {
   FileQuestion,
   PhoneCall,
   RefreshCw,
+  Star,
   Zap,
   ZapOff,
 } from 'lucide-react';
@@ -16,6 +17,7 @@ import { Skeleton } from '../ui/Skeleton.js';
 import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useRegionQueue } from '../../hooks/useRegionQueue.js';
+import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useQueueSchedule } from '../../api/queries.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
@@ -33,8 +35,9 @@ function formatKyivTime(iso: string): string {
 
 export const HomeHeroSection: React.FC = () => {
   const { t } = useTranslation();
-  const { currentRegion, currentRegionData, isLoading: regionLoading } = useRegion();
+  const { currentRegion, currentRegionData, setRegion, isLoading: regionLoading } = useRegion();
   const { address } = useMyAddress();
+  const { bookmarks, primaryBookmark, addBookmark, removeBookmark, setPrimaryBookmark } = useBookmarks();
 
   // Вибір дати: сьогодні (0) або завтра (1) у київському часі
   const [selectedDayOffset, setSelectedDayOffset] = useState<0 | 1>(0);
@@ -43,6 +46,19 @@ export const HomeHeroSection: React.FC = () => {
   // Черга, збережена окремо для кожної області
   const availableQueues = currentRegionData.queues ?? [];
   const { selectedQueue, selectQueue } = useRegionQueue(currentRegion, availableQueues);
+
+  /** Перемикання на збережену закладку: зміна області + вибір її черги в один клік. */
+  const applyBookmark = (b: { regionCpu: string; queue: string }) => {
+    setRegion(b.regionCpu);
+    selectQueue(b.queue);
+  };
+
+  /** Додати поточну область+чергу в закладки (або оновити головну). */
+  const saveCurrentAsBookmark = () => {
+    if (!selectedQueue || !currentRegionData.nameUa) return;
+    const label = currentRegionData.nameUa;
+    addBookmark({ label, regionCpu: currentRegion, queue: selectedQueue });
+  };
 
   // Запит графіка для обраної черги, дати й області через єдиний клієнт
   const {
@@ -86,6 +102,43 @@ export const HomeHeroSection: React.FC = () => {
         <RegionPicker variant="prominent" />
       </div>
 
+      {/* 1.5. Швидкі закладки: збережені області+черги з РІЗНИХ областей України */}
+      {bookmarks.length > 0 && (
+        <div role="group" aria-label={t('home.bookmarks')} className="flex flex-wrap items-center gap-2">
+          {bookmarks.map((bm) => {
+            const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
+            return (
+              <div key={bm.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrimaryBookmark(bm.id);
+                    applyBookmark(bm);
+                  }}
+                  aria-current={isActive ? 'true' : undefined}
+                  className={cn(
+                    'inline-flex min-h-[38px] items-center gap-1.5 rounded-full px-2 text-xs font-semibold transition-colors',
+                    isActive ? 'text-primary' : 'text-foreground hover:text-primary',
+                  )}
+                >
+                  <Star className={cn('h-3.5 w-3.5', isActive && 'fill-current')} aria-hidden />
+                  <span className="max-w-[10rem] truncate">{bm.label}</span>
+                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-muted-foreground">{bm.queue}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeBookmark(bm.id)}
+                  aria-label={`${t('common.delete')} ${bm.label}`}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive"
+                >
+                  <span aria-hidden className="text-base leading-none">×</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* 2. Панель керування: перемикач дати та вибір черги області */}
       <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
         {/* Вибір черги (запам'ятовується для кожної області) */}
@@ -95,6 +148,20 @@ export const HomeHeroSection: React.FC = () => {
           onSelect={selectQueue}
           disabled={scheduleLoading}
         />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={!selectedQueue}
+            onClick={saveCurrentAsBookmark}
+            aria-label={t('home.addToBookmarks')}
+          >
+            <Star className="h-3.5 w-3.5" aria-hidden />
+            {t('home.addToBookmarks')}
+          </Button>
 
         {/* Перемикач дати: Сьогодні / Завтра */}
         <div
@@ -130,6 +197,7 @@ export const HomeHeroSection: React.FC = () => {
           >
             {t('outages.tomorrow')}
           </button>
+        </div>
         </div>
       </div>
 

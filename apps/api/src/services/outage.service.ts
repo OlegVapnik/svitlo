@@ -1,42 +1,83 @@
 import { db } from '../db/connection.js';
-import { outages, outageEvents } from '../db/schema.js';
-import { eq, and, gte, lte, sql, desc, or, ilike, isNull, not } from 'drizzle-orm';
+import { outageEvents, outageEventAddresses } from '../db/schema.js';
+import { eq, and, gte, lte, sql, desc, or, ilike, isNull, not, inArray } from 'drizzle-orm';
 import type { OutageFilters, PaginationQuery, OutageStats } from '@svitlo/shared';
-import { mergeDuplicateOutages } from './outage-grouping.js';
 
-/** Верхня межа рядків, які вичитуємо для згортання дублікатів перед пагінацією. */
-const MAX_ROWS_FOR_GROUPING = 1000;
+/** Верхня межа рядків в одному запиті (для пагінації). */
+const MAX_ROWS_FOR_GROUPING = 500;
+
+/**
+ * Агрегирует адреса событий: для каждого event_id собирает список уникальных улиц/адресов
+ * из outage_event_addresses. Возвращает Map<eventId, addressesSummary>.
+ */
+async function loadAddressesForEventIds(eventIds: string[]): Promise<Map<string, string>> {
+  if (eventIds.length === 0) return new Map();
+  const addressRows = await db
+    .select({
+      eventId: outageEventAddresses.eventId,
+      addressRaw: outageEventAddresses.addressRaw,
+    })
+    .from(outageEventAddresses)
+    .where(inArray(outageEventAddresses.eventId, eventIds));
+
+  const byEvent = new Map<string, string[]>();
+  for (const row of addressRows) {
+    const list = byEvent.get(row.eventId);
+    if (list) {
+      if (!list.includes(row.addressRaw)) list.push(row.addressRaw);
+    } else {
+      byEvent.set(row.eventId, [row.addressRaw]);
+    }
+  }
+
+  const result = new Map<string, string>();
+  for (const [eventId, addrs] of byEvent) {
+    // Показываем до 4 уникальных улиц, остальные — «та інші вулици»
+    const shown = addrs.slice(0, 4).join('; ');
+    result.set(eventId, addrs.length > 4 ? `${shown} та інші вулици` : shown);
+  }
+  return result;
+}
+
+/**
+ * Вычисляет статус события на лету (без хранимого поля).
+ */
+function computeStatus(row: {
+  startsAt: Date;
+  endsAt: Date | null;
+  cancelledAt: Date | null;
+}, now: Date): 'scheduled' | 'active' | 'finished' | 'cancelled' {
+  if (row.cancelledAt) return 'cancelled';
+  if (row.startsAt.getTime() > now.getTime()) return 'scheduled';
+  if (!row.endsAt || row.endsAt.getTime() > now.getTime()) return 'active';
+  return 'finished';
+}
 
 export async function getOutages(filters: OutageFilters, pagination: PaginationQuery) {
-  const conditions = [];
+  const now = new Date();
+  const conditions: any[] = [];
 
   if (filters.dateFrom) {
-    conditions.push(gte(outages.endsAt, new Date(filters.dateFrom)));
+    conditions.push(gte(outageEvents.startsAt, new Date(filters.dateFrom)));
   }
 
   if (filters.dateTo) {
-    conditions.push(lte(outages.startsAt, new Date(filters.dateTo)));
-  }
-
-  if (filters.status) {
-    conditions.push(eq(outages.status, filters.status));
-  }
-
-  if (filters.queue !== undefined) {
-    conditions.push(eq(outages.queue, filters.queue));
+    conditions.push(lte(outageEvents.startsAt, new Date(filters.dateTo)));
   }
 
   if (filters.area) {
-    conditions.push(eq(outages.areaName, filters.area));
+    conditions.push(eq(outageEvents.areaName, filters.area));
   }
 
   if (filters.query) {
+    // Поиск по адресам через таблицу адресов ИЛИ по названию области (населенного пункта).
+    // Одно логическое условие: подходящие event_id из outage_event_addresses (по улице),
+    // либо area_name, похожий на запрос.
     const q = `%${filters.query}%`;
     conditions.push(
       or(
-        ilike(outages.addressesNormalized, q),
-        ilike(outages.addressesRaw, q),
-        ilike(outages.areaName, q),
+        sql`${outageEvents.id} IN (SELECT event_id FROM outage_event_addresses WHERE address_raw ILIKE ${q})`,
+        ilike(outageEvents.areaName ?? sql`''`, q),
       ),
     );
   }
@@ -44,21 +85,47 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
   const offset = (pagination.page - 1) * pagination.limit;
 
-  // Згортаємо дублікати, що відрізняються лише адресами, ДО пагінації: інакше одна
-  // подія (село вимикають цілком) займає десятки рядків списку й «смітить» цифрами.
+  // Читаем канонические события напрямую из outage_events
   const rows = await db
     .select()
-    .from(outages)
+    .from(outageEvents)
     .where(whereClause)
-    .orderBy(desc(outages.startsAt))
-    .limit(MAX_ROWS_FOR_GROUPING);
+    .orderBy(desc(outageEvents.startsAt))
+    .limit(pagination.limit)
+    .offset(offset);
 
-  const merged = mergeDuplicateOutages(rows);
-  const total = merged.length;
+  // Собираем адреса для этих событий
+  const eventIds = rows.map((r) => r.id);
+  const addressesMap = await loadAddressesForEventIds(eventIds);
+
+  // Считаем общее количество (без пагинации)
+  const [countRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(outageEvents)
+    .where(whereClause);
+  const total = countRow?.count ?? 0;
+
+  const data = rows.map((row) => ({
+    id: row.id.toString(),
+    startsAt: row.startsAt.toISOString(),
+    endsAt: row.endsAt?.toISOString() ?? null,
+    areaName: row.areaName ?? '',
+    addressesRaw: addressesMap.get(row.id.toString()) ?? '',
+    addressesNormalized: '',
+    reason: row.reason ?? null,
+    status: computeStatus(row, now),
+    queue: null,
+    source: 'outage_events',
+    sourceId: row.sourceId.toString(),
+    contentHash: row.eventKey,
+    firstSeenAt: row.firstSeenAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }));
+
   const totalPages = Math.max(1, Math.ceil(total / pagination.limit));
 
   return {
-    data: merged.slice(offset, offset + pagination.limit),
+    data,
     meta: {
       page: pagination.page,
       limit: pagination.limit,
@@ -69,8 +136,28 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
 }
 
 export async function getOutageById(id: string) {
-  const [record] = await db.select().from(outages).where(eq(outages.id, id));
-  return record || null;
+  const [record] = await db.select().from(outageEvents).where(eq(outageEvents.id, id));
+  if (!record) return null;
+
+  const addressesMap = await loadAddressesForEventIds([record.id.toString()]);
+  const now = new Date();
+
+  return {
+    id: record.id.toString(),
+    startsAt: record.startsAt.toISOString(),
+    endsAt: record.endsAt?.toISOString() ?? null,
+    areaName: record.areaName ?? '',
+    addressesRaw: addressesMap.get(record.id.toString()) ?? '',
+    addressesNormalized: '',
+    reason: record.reason ?? null,
+    status: computeStatus(record, now),
+    queue: null,
+    source: 'outage_events',
+    sourceId: record.sourceId.toString(),
+    contentHash: record.eventKey,
+    firstSeenAt: record.firstSeenAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  };
 }
 
 export async function getOutageStats(now: Date = new Date()): Promise<OutageStats> {
@@ -183,28 +270,7 @@ export async function getOutageStats(now: Date = new Date()): Promise<OutageStat
 }
 
 export async function updateOutageStatuses() {
-  const now = new Date();
-
-  // Mark scheduled -> active if time has come
-  await db
-    .update(outages)
-    .set({ status: 'active', updatedAt: now })
-    .where(
-      and(
-        lte(outages.startsAt, now),
-        gte(outages.endsAt, now),
-        eq(outages.status, 'scheduled'),
-      ),
-    );
-
-  // Mark active/scheduled -> finished if endsAt has passed
-  await db
-    .update(outages)
-    .set({ status: 'finished', updatedAt: now })
-    .where(
-      and(
-        lte(outages.endsAt, now),
-        or(eq(outages.status, 'active'), eq(outages.status, 'scheduled')),
-      ),
-    );
+  // Устарело: после перехода на outage_events статус вычисляется на лету в computeStatus().
+  // Оставлено для обратной совместимости parse.service.ts.
+  return;
 }

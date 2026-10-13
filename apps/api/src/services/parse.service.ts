@@ -18,6 +18,8 @@ import { markMissingEventsCancelled, upsertOutageEvent, upsertOutageEventAddress
 import { clearSourcePause, recordSourceFailure, recordSourceSuccess } from './source-breaker-state.js';
 import { importTelegramSchedule } from './telegram-schedule.service.js';
 import { importMirrorScheduleFromSource } from './mirror-schedule.service.js';
+import { syncProviderSchedules } from './provider-sync.service.js';
+import { getRegisteredProviders } from '../providers/registry.js';
 import { sanitizeSourceError } from './source-breaker.js';
 import type { SourceFailureKind } from '../parsers/source-errors.js';
 
@@ -413,6 +415,33 @@ export async function runParse(sourceId: string) {
         logger.warn(
           { err: mirrorError, sourceId },
           'Mirror schedule auto-import failed; keeping existing schedule_slots',
+        );
+      }
+    }
+
+    // СИНХРОНІЗАЦІЯ ПРОВАЙДЕРІВ ГРАФІКІВ (мультирегіональність): провайдери (mirror, YASNO,
+    // DTEK, e-svitlo, Чернігівобленерго) пишуть `schedule_slots` + довідник сіл/улиць кожен
+    // зі своїм `source`, тому ручні/telegram-рядки не затираються. Падіння одного провайдера
+    // НЕ валить парсинг: вище дані відключень завжди вже збережено.
+    //
+    // Викликаємо лише коли синхронізація провайдерів увімкнена (PROVIDER_SYNC_ENABLED=true):
+    // реліз не має непомітно ходити до сторонніх API в бойовому режимі.
+    if (env.PROVIDER_SYNC_ENABLED) {
+      try {
+        const { providers, skipped } = await getRegisteredProviders();
+        if (providers.length > 0) {
+          const reports = await syncProviderSchedules(providers);
+          logger.info(
+            { sourceId, providerCount: providers.length, skipped, reports },
+            'Provider schedules synced during parse cycle',
+          );
+        } else {
+          logger.warn({ sourceId, skipped }, 'Provider sync during parse: no providers registered');
+        }
+      } catch (providerError) {
+        logger.warn(
+          { err: providerError, sourceId },
+          'Provider schedules sync failed during parse; keeping existing schedule_slots',
         );
       }
     }

@@ -1,74 +1,55 @@
----
-name: agent-discipline
-description: "Universal working protocol for ANY task that edits files, runs commands, or makes claims about code, data or servers: read before editing, verify before claiming, small reversible steps, explicit stop conditions, fixed report format. Use at the start of EVERY coding, refactoring, bug-fixing, debugging or analysis task, especially with fast/small models that tend to guess file names, APIs and results. Триггеры: исправь, добавь, переделай, рефакторинг, багфикс, проверь, почини, сделай."
----
+# Skill: Agent Discipline (`agent-discipline`)
 
-# Agent discipline
+## Когда применять
+**Всегда.** Это базовый операционный цикл для любой задачи в репозитории `Svitlo`.
 
-Why this exists: the costly failures of coding agents are not "wrong algorithm", they are
-(1) editing from a guess instead of from the file, (2) saying "done" without running anything,
-(3) wide diffs nobody can review, (4) destructive commands. This protocol removes those four.
+## Рабочий цикл (7 обязательных шагов)
 
-## The loop (follow in order, do not skip)
+1. **Понять (Restate):**
+   - В 1–2 предложениях зафиксируй цель задачи, затронутые слои (`shared` / `api` / `web` / `db` / `docker`) и критерий готовности.
+   - Проверь раздел `Permissions` в `AGENTS.md`: если действие входит в «Часть 2 (Требует согласия)» — остановись и спроси человека до выполнения.
 
-1. **Restate** the task in one sentence and write the *observable* success criterion
-   ("`pnpm --filter @svitlo/api test` passes and `GET /outages` returns `meta.total == 6`").
-   If you cannot state a criterion, ask exactly one clarifying question, then continue.
-2. **Orient** before touching anything:
-   - list the directory, read every file you will change, read its direct importers/callers;
-   - `grep -rn "<symbol>"` for every function/type you will rename or change;
-   - never edit a file you have not read in this session;
-   - never invent file paths, function names, package versions, CLI flags or env vars.
-     Confirm with `ls`, `grep`, `<tool> --help`, `package.json`, lockfile, or the type definitions.
-3. **Safety net**:
-   - if the repo has git: `git status` must be understood; work on a branch `ai/<topic>`;
-   - if there is no git: copy the files you will change to `.ai-backup/<YYYYMMDD-HHMM>/` first.
-4. **Plan**: at most 7 bullets, list the files to touch. Choose the *smallest* diff that meets the criterion.
-   If the plan touches more than 5 files, or contains any risky action (below), show the plan and wait for approval when a human is present.
-5. **Implement in small steps.** After each step run the cheapest relevant check
-   (typecheck of the package, the one test file, a `curl`). Fix before moving on.
-6. **Verify with evidence**: run the commands and quote the actual output lines.
-   Label each claim as one of: `verified` (you ran it), `reasoned` (not run, derived from code), `assumed`.
-7. **Report** using the template at the bottom.
+2. **Прочитать (Orient — Read Before Edit):**
+   - Прочитай `HANDOFF.md` (текущий контекст) и профильные скилы из таблицы Router в `AGENTS.md`.
+   - Прочитай реальные исходники изменяемых файлов. **Запрещено** угадывать сигнатуры функций, имена таблиц или пути.
 
-## Risky actions: ask first, always
+3. **Бэкап (Backup / Branch):**
+   - Проверь `git status --short` и текущую ветку (`git branch --show-current`).
+   - Если задача затрагивает схему или данные рабочей БД PostgreSQL — обязательно сними дамп перед правками:
+     ```bash
+     STAMP=$(date +%F_%H%M)
+     mkdir -p ../svitlo-backups
+     docker compose exec -T db pg_dump -U svitlo -d svitlo -Fc > ../svitlo-backups/svitlo_${STAMP}.dump
+     ```
 
-Deleting or overwriting many files; `rm -rf`; `git reset --hard`; `git push --force`; dropping/truncating tables;
-destructive migrations; rotating or printing secrets; editing `.env`; running a script you have not read;
-calls to third-party production APIs; anything that cannot be undone from the backup/branch.
+4. **План (Small Plan):**
+   - Составь короткий план из 3–5 проверяемых шагов.
+   - Если изменения затрагивают и типы, и API, и UI — всегда иди в порядке: `packages/shared` → `apps/api/src/db` → `apps/api/src/services & routes` → `apps/web/src/api` → `apps/web/src/components & pages`.
 
-## Anti-hallucination rules
+5. **Мелкие шаги (Small Steps, Atomic Edits):**
+   - Вноси изменения логически завершёнными блоками (создавай файл целиком или заменяй функцию целиком, избегая десятков мелких патчей).
+   - Если объём задачи превышает 100 правок — остановись на работающей логической границе, зафиксируй коммит и обнови `HANDOFF.md`.
 
-- Unknown means unknown. Write "unknown — to find out run `<command>`" instead of guessing.
-- Numbers, versions, line counts: copy from tool output, never from memory.
-- Library APIs: check the installed version (lockfile or `node_modules/<pkg>/package.json`) and read its `.d.ts`
-  or docs for the exact signature before using it.
-- Do not weaken a test to make it pass. If an assertion is wrong, say why and fix the assertion explicitly.
-- Do not silence errors (`any`, `@ts-ignore`, empty `catch`, `|| true`) without a one-line comment explaining why.
-- No drive-by refactors. Put them under "Noticed but not changed".
-- Do not claim a file exists, a test passes, or a service is running unless you just observed it.
+6. **Проверка (Verify with Evidence):**
+   - Запусти проверку типов обоих приложений (`tsc --noEmit`), сканер секретов и (при правках UI) проверку токенов Tailwind v4.
+   - Если менялся рантайм — проверь живой ответ через `curl` или логи контейнера (`| tail -15`).
 
-## When something fails
+7. **Отчёт (Fixed Report):**
+   - Выдай лаконичный отчёт строго в 4 пунктах без простыней логов:
+     - **Done:** что именно реализовано/исправлено.
+     - **Changed:** список изменённых/созданных файлов.
+     - **Verified:** точные коды возврата и 1 строка итога по каждой проверке.
+     - **Next:** что осталось сделать или зафиксировано в `HANDOFF.md`.
 
-- Same error twice: stop editing. Re-read the full error. Write at least two hypotheses and test the cheapest first.
-- The third attempt must use a different approach from the first two.
-- After 5 tool calls on one sub-problem without progress, stop and report what you know and what you tried.
-
-## Context hygiene (important for small context windows)
-
-- `grep` first, then read only the relevant line range of big files (>300 lines).
-- Keep a running "facts" list of at most 10 lines (paths, decisions, commands that worked) and refer to it.
-- Pipe long output through `head`/`tail`/`grep`.
-
-## Report template (always use)
-
-```
-Done: <1–2 lines>
-Changed: <file> — <why> (one line per file)
-Verified: <command> → <result>   (or "not run: <reason>")
-Assumptions / not verified:
-Noticed but not changed:
-Next step (if any):
+## Команды быстрой проверки
+```bash
+git status --short
+./apps/api/node_modules/.bin/tsc --noEmit
+./apps/web/node_modules/.bin/tsc --noEmit
+python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .
 ```
 
-Reply in the user's language. Keep identifiers and code in English, keep domain terms (відключення, черга, ГПВ) as they appear in the code.
+## Типичные ошибки
+- Редактирование кода по памяти без чтения файла (`TS2304` / поломка импортов).
+- Накат миграций или backfill на рабочую БД без предварительного `pg_dump` в `../svitlo-backups/`.
+- Запуск полной тестовой матрицы, когда человек просил быструю правку в экономном режиме.

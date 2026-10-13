@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Info, MapPin, Plus, Trash2 } from 'lucide-react';
+import { CalendarDays, Info, MapPin, Plus, Star, Trash2 } from 'lucide-react';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
 import { Button } from '../components/ui/Button.js';
 import { Card, CardContent } from '../components/ui/Card.js';
@@ -12,6 +12,7 @@ import { EmptyState } from '../components/common/EmptyState.js';
 import { ErrorState } from '../components/common/ErrorState.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
 import { useRegion } from '../hooks/useRegion.js';
+import { useBookmarks } from '../hooks/useBookmarks.js';
 import { useQueues, useStreetQueues, useStreetSchedule } from '../api/queries.js';
 import { api } from '../api/client.js';
 import { formatDateTime, formatTimeRange } from '../lib/date.js';
@@ -35,6 +36,7 @@ export const StreetsPage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { currentRegion } = useRegion();
+  const { addBookmark } = useBookmarks();
   const { data: queuesData } = useQueues(currentRegion);
   const queueOptions = useMemo(() => {
     const list = (queuesData?.data ?? []).map((q) => q.queue);
@@ -130,6 +132,25 @@ export const StreetsPage: React.FC = () => {
                   <p className="tabular text-xs text-muted-foreground">{date}</p>
                 </div>
                 <Badge variant="info">{t('streets.queue')} {schedule.queue}</Badge>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    addBookmark({
+                      label: schedule.street || street,
+                      regionCpu: currentRegion,
+                      settlementName: undefined,
+                      streetName: schedule.street || street,
+                      queue: schedule.queue ?? '',
+                    });
+                  }}
+                  aria-label={`${t('common.save')} ${schedule.street || street}`}
+                >
+                  <Star className="h-3.5 w-3.5" aria-hidden />
+                  {t('streets.addToBookmarks')}
+                </Button>
               </div>
               <QueueScheduleBar intervals={schedule.intervals} date={date} />
               {schedule.intervals.length > 0 && (

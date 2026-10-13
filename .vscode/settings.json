@@ -23,7 +23,6 @@
     ],
     "sqltools.results.limit": 200,
     "sqltools.autoOpenSessionFiles": false,
-    "terminal.integrated.defaultProfile.linux": "zsh",
     "editor.formatOnSave": true,
     "search.exclude": {
         "**/node_modules": true,

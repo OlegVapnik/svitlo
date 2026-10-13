@@ -21,13 +21,26 @@ describe('outage grouping по адресах', () => {
     expect(merged[0]!.addressesRaw).toContain('вул. Молодіжна');
   });
 
-  test('не згортає події з різним часом або причиною', () => {
+  test('не згортає події з різним часом початку або причиною', () => {
     const merged = mergeDuplicateOutages([
       { ...base, addressesRaw: 'вул. Шевченка 13' },
+      // Різний час ЗАВЕРШЕННЯ не розділяє (HANDOFF §9.4): оператор оновлює endsAt окремих
+      // адрес, тож одне вікно з різними кінцями мусить злитись в одну подію.
       { ...base, endsAt: new Date('2026-10-09T20:00:00.000Z'), addressesRaw: 'вул. Шевченка 13' },
+      // Різна причина — РОЗДІЛЯЄ (інша подія).
       { ...base, reason: 'Виконання ремонтних робіт', addressesRaw: 'вул. Шевченка 13' },
     ]);
-    expect(merged).toHaveLength(3);
+    expect(merged).toHaveLength(2);
+  });
+
+  test('різний час завершення однієї події зливає в одну групу', () => {
+    const merged = mergeDuplicateOutages([
+      { ...base, endsAt: new Date('2026-10-09T19:00:00.000Z'), addressesRaw: 'вул. Шевченка 13' },
+      { ...base, endsAt: new Date('2026-10-09T21:30:00.000Z'), addressesRaw: 'вул. Зарічна 43' },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.addressesRaw).toContain('вул. Шевченка');
+    expect(merged[0]!.addressesRaw).toContain('вул. Зарічна');
   });
 
   test('ключ події не залежить від адрес', () => {

@@ -7,7 +7,7 @@ import { Input } from '../components/ui/Input.js';
 import { EmptyState } from '../components/common/EmptyState.js';
 import { OutageList } from '../components/outages/OutageList.js';
 import { useMyAddress } from '../hooks/useMyAddress.js';
-import { useMyQueues } from '../hooks/useMyQueues.js';
+import { useBookmarks } from '../hooks/useBookmarks.js';
 import { useRegion } from '../hooks/useRegion.js';
 import { useOutages } from '../api/queries.js';
 import { api, ApiError } from '../api/client.js';
@@ -39,7 +39,7 @@ export const MyAddressPage: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion } = useRegion();
   const { address, setAddress, clearAddress } = useMyAddress();
-  const { addQueue } = useMyQueues();
+  const { addBookmark } = useBookmarks();
   const [inputVal, setInputVal] = useState(address || '');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [accountInput, setAccountInput] = useState(() => localStorage.getItem(ACCOUNT_KEY) || '');
@@ -92,13 +92,19 @@ export const MyAddressPage: React.FC = () => {
     }
   };
 
-  /** «Це моя адреса»: подставляем найденную вулицю та чергу в настройки (адрес + мои черги). */
+  /** «Це моя адреса»: подставляем найденную вулицю та чергу в закладки (адрес + мои черги). */
   const useFoundPlace = () => {
     if (accountState.status !== 'found') return;
     const { street, queue, account } = accountState.place;
     setAddress(street);
     setInputVal(street);
-    addQueue(queue);
+    addBookmark({
+      label: street,
+      regionCpu: currentRegion,
+      settlementName: undefined,
+      streetName: street,
+      queue,
+    });
     localStorage.setItem(ACCOUNT_KEY, account);
     localStorage.setItem('myQueueStreet', street);
     setSavedSuccess(true);

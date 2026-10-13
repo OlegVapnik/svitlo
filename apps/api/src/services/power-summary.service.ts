@@ -1,20 +1,37 @@
-import { and, gte, lte } from 'drizzle-orm';
+import { and, gte, lte, isNull, or, sql } from 'drizzle-orm';
 import type { PowerSummary, PowerWindowSummary } from '@svitlo/shared';
 import { db } from '../db/connection.js';
-import { outages } from '../db/schema.js';
+import { outageEvents } from '../db/schema.js';
 import { computeWindowSummary, kyivDayStart } from './power-summary.js';
-import { mergeDuplicateOutages } from './outage-grouping.js';
 
-/** Рахує підсумок по вікну (без світла / зі світлом / надійність) на основі даних БД. */
+
+/** Рахує підсумок по вікну (без світла / зі світлом / надійність) на основі КАНОНИЧНЫХ данных. */
 export async function summarizeWindow(label: string, start: Date, end: Date): Promise<PowerWindowSummary> {
+  const now = new Date();
   const rows = await db
-    .select({ startsAt: outages.startsAt, endsAt: outages.endsAt, areaName: outages.areaName, addressesRaw: outages.addressesRaw, reason: outages.reason })
-    .from(outages)
-    .where(and(lte(outages.startsAt, end), gte(outages.endsAt, start)));
+    .select({
+      startsAt: outageEvents.startsAt,
+      endsAt: outageEvents.endsAt,
+    })
+    .from(outageEvents)
+    .where(
+      and(
+        isNull(outageEvents.cancelledAt),
+        or(
+          and(lte(outageEvents.startsAt, end), gte(outageEvents.startsAt, start)),
+          and(lte(outageEvents.startsAt, end), isNull(outageEvents.endsAt)),
+          and(lte(outageEvents.startsAt, end), gte(outageEvents.endsAt, start)),
+        ),
+      ),
+    );
 
-  // Згортаємо дублікати за адресами, щоб «кількість перерв» була кількістю подій,
-  // а не кількістю вулиць/будинків однієї події.
-  return computeWindowSummary(label, start, end, mergeDuplicateOutages(rows));
+  // Канонические события уже без дубликатов
+  const outageRows = rows.map((row) => ({
+    startsAt: row.startsAt,
+    endsAt: row.endsAt ?? now,
+  }));
+
+  return computeWindowSummary(label, start, end, outageRows);
 }
 
 /**

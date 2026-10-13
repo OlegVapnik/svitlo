@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import { and, gte, lte } from 'drizzle-orm';
+import { and, gte, lte, sql } from 'drizzle-orm';
 import { db } from '../db/connection.js';
-import { outages } from '../db/schema.js';
+import { outageEvents } from '../db/schema.js';
+import type { OutageRow } from '../services/power-summary.js';
 import { buildReliabilityReport, kyivMonthStart } from '../services/reliability.js';
-import { mergeDuplicateOutages } from '../services/outage-grouping.js';
 
 export default async function reliabilityRoutes(fastify: FastifyInstance) {
   // Надійність електропостачання по днях/тижнях/місяцях з початку поточного місяця.
@@ -11,10 +11,25 @@ export default async function reliabilityRoutes(fastify: FastifyInstance) {
     const now = new Date();
     const from = kyivMonthStart(now);
     const rows = await db
-      .select({ startsAt: outages.startsAt, endsAt: outages.endsAt, areaName: outages.areaName, addressesRaw: outages.addressesRaw, reason: outages.reason })
-      .from(outages)
-      .where(and(gte(outages.endsAt, from), lte(outages.startsAt, now)));
-    // Без дублікатів за адресами — щоб «кількість перерв» була кількістю подій.
-    return { data: buildReliabilityReport(now, mergeDuplicateOutages(rows)) };
+      .select({
+        startsAt: outageEvents.startsAt,
+        endsAt: outageEvents.endsAt,
+        areaName: outageEvents.areaName,
+        reason: outageEvents.reason,
+      })
+      .from(outageEvents)
+      .where(
+        and(
+          // События, которые хотя бы частично пересекаются с окном [from, now]
+          gte(outageEvents.endsAt ?? sql`${outageEvents.startsAt}`, from),
+          lte(outageEvents.startsAt, now),
+        ),
+      );
+    // Маппим в OutageRow для buildReliabilityReport
+    const outageRows: OutageRow[] = rows.map((row) => ({
+      startsAt: row.startsAt,
+      endsAt: row.endsAt ?? now,  // незавершённая авария = длится до сейчас
+    }));
+    return { data: buildReliabilityReport(now, outageRows) };
   });
 }

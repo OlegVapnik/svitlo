@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarDays, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { CalendarDays, Plus, RefreshCw, Star, Trash2 } from 'lucide-react';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
 import type { QueueSummary } from '@svitlo/shared';
 import { Card, CardContent } from '../components/ui/Card.js';
@@ -10,9 +10,9 @@ import { Select } from '../components/ui/Select.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { EmptyState } from '../components/common/EmptyState.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
-import { useMyQueues } from '../hooks/useMyQueues.js';
+import { useBookmarks } from '../hooks/useBookmarks.js';
 import { useRegion } from '../hooks/useRegion.js';
-import { useQueueSchedule, useQueues } from '../api/queries.js';
+import { useQueueSchedule, useQueues, useRegions } from '../api/queries.js';
 import { isQueueCode, normalizeQueueCode } from '../lib/queue.js';
 
 function kyivDate(offsetDays = 0): string {
@@ -31,7 +31,8 @@ function kyivDate(offsetDays = 0): string {
 export const QueueSchedulePage: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, currentRegionData } = useRegion();
-  const { queues, addQueue, removeQueue } = useMyQueues();
+  const { bookmarks, addBookmark, removeBookmark, setPrimaryBookmark } = useBookmarks();
+  const { data: regionsData } = useRegions();
   const { data: queuesData, isLoading: queuesLoading } = useQueues(currentRegion);
   const [street, setStreet] = useState(() => localStorage.getItem('myQueueStreet') || '');
   const [newQueue, setNewQueue] = useState('');
@@ -53,7 +54,14 @@ export const QueueSchedulePage: React.FC = () => {
   const handleAdd = () => {
     if (!canAdd) return;
     localStorage.setItem('myQueueStreet', street.trim());
-    addQueue(code);
+    // Закладка с текущей областью, вулицей и чергой.
+    addBookmark({
+      label: street.trim().length > 0 ? street.trim() : (currentRegionData.nameUa || currentRegion),
+      regionCpu: currentRegion,
+      settlementName: undefined,
+      streetName: street.trim().length > 0 ? street.trim() : undefined,
+      queue: code,
+    });
     setNewQueue('');
   };
 
@@ -125,12 +133,12 @@ export const QueueSchedulePage: React.FC = () => {
         <span className="tabular self-center text-sm text-muted-foreground">{date}</span>
       </div>
 
-      {queues.length === 0 ? (
+      {bookmarks.length === 0 ? (
         <EmptyState icon={CalendarDays} title={t('queues.emptyTitle')} description={t('queues.emptyDesc')} />
       ) : (
         <div className="space-y-4">
-          {queues.map((queue) => (
-            <QueueScheduleCard key={queue} queue={queue} street={street} date={date} onRemove={removeQueue} />
+          {bookmarks.map((bm) => (
+            <QueueScheduleCard key={bm.id} regionCpu={bm.regionCpu} queue={bm.queue} street={bm.streetName ?? bm.label} date={date} isPrimary={bm.isPrimary ?? false} onRemove={() => removeBookmark(bm.id)} onSetPrimary={() => setPrimaryBookmark(bm.id)} />
           ))}
         </div>
       )}
@@ -139,25 +147,23 @@ export const QueueSchedulePage: React.FC = () => {
 };
 
 type QueueCardProps = {
+  regionCpu: string;
   queue: string;
   street: string;
   date: string;
-  onRemove: (queue: string) => void;
+  isPrimary: boolean;
+  onRemove: () => void;
+  onSetPrimary: () => void;
 };
 
 /**
- * Картка однієї черги. Окремий компонент, бо графік тягне react-query-хук `useQueueSchedule`,
- * а хук не можна викликати всередині `map` батьківської сторінки (rules of hooks).
- *
- * Раніше сторінка запитувала графік ЛИШЕ по кнопці «Оновити», тож при відкритті всі картки
- * показували «Графік не імпортовано», навіть коли слоти в базі були (а при зміні дати на
- * «Завтра» лишався старий графік). Тепер хук вантажить графік сам на монтуванні, перезапитує
- * при зміні дати й далі опитує його раз на хвилину — так само, як на головній.
+ * Картка однієї черги з з СОЮ областю (закладка). Раніше черга запитувала графік по
+ * глобальній поточній області — з-за этого черги різних областей показували хибні дані.
+ * Теперь `regionCpu` берётся із закладки, і графік запитуется саме для єтої області.
  */
-const QueueScheduleCard: React.FC<QueueCardProps> = ({ queue, street, date, onRemove }) => {
+const QueueScheduleCard: React.FC<QueueCardProps> = ({ regionCpu, queue, street, date, isPrimary, onRemove, onSetPrimary }) => {
   const { t } = useTranslation();
-  const { currentRegion } = useRegion();
-  const { data, isLoading, isFetching, isError, refetch } = useQueueSchedule(queue, date, currentRegion);
+  const { data, isLoading, isFetching, isError, refetch } = useQueueSchedule(queue, date, regionCpu);
   const intervals = data?.data.intervals ?? [];
 
   return (
@@ -167,13 +173,20 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({ queue, street, date, onRe
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="truncate text-sm font-semibold text-foreground sm:text-base">{street || t('queues.streetFallback')}</h2>
             <Badge variant="info">{t('queues.queueLabel')} {queue}</Badge>
+            {isPrimary && <Badge variant="default" className="text-[11px]">{t('queues.primary')}</Badge>}
           </div>
           <div className="flex gap-2">
+            {!isPrimary && (
+              <Button size="sm" variant="outline" onClick={onSetPrimary} aria-label={t('queues.setPrimary')} className="gap-1.5">
+                <Star className="h-3.5 w-3.5" aria-hidden />
+                {t('queues.setPrimary')}
+              </Button>
+            )}
             <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()} className="gap-1.5">
               <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden />
               {isFetching ? t('queues.loading') : t('queues.refresh')}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => onRemove(queue)} aria-label={`${t('queues.delete')}: ${queue}`}>
+            <Button size="sm" variant="outline" onClick={onRemove} aria-label={`${t('queues.delete')}: ${queue}`}>
               <Trash2 className="h-4 w-4" aria-hidden />
             </Button>
           </div>
