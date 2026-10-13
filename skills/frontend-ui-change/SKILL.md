@@ -1,6 +1,6 @@
 ---
 name: frontend-ui-change
-description: "Conventions and checklist for changing the Svitlo React/Vite/Tailwind PWA (apps/web): Tailwind v4 CSS-first semantic tokens (bg-card, text-muted-foreground) defined in globals.css @theme (no tailwind.config.ts), api/client.ts as the single HTTP path, TanStack Query hooks, i18n uk/ru, navigation lists, charts (ECharts), map (Leaflet), PWA/service-worker behaviour, localStorage hooks, accessibility and bundle size. Use for any page/component/style change, 'element has no background/text invisible', empty Contacts page, timeline/graph bugs, language strings. Триггеры: компонент, страница, стили, tailwind, тема, прозрачный фон, перевод, i18n, график, таймлайн, PWA, кэш, Контакти."
+description: "Conventions and checklist for changing the Svitlo React/Vite/Tailwind PWA (apps/web): Tailwind v4 CSS-first semantic tokens (bg-card, text-muted-foreground) defined in globals.css @theme (no tailwind.config.ts), api/client.ts as the single HTTP path, TanStack Query hooks, i18n (українська, єдина мова — uk.json), navigation lists, charts (ECharts), map (Leaflet), PWA/service-worker behaviour, localStorage hooks, accessibility and bundle size. Use for any page/component/style change, 'element has no background/text invisible', empty Contacts page, timeline/graph bugs, language strings. Триггеры: компонент, страница, стили, tailwind, тема, прозрачный фон, перевод, i18n, график, таймлайн, PWA, кэш, Контакти."
 ---
 
 # Frontend change (apps/web)
@@ -59,7 +59,7 @@ description: "Conventions and checklist for changing the Svitlo React/Vite/Tailw
 - Format with Prettier (`.prettierrc`: singleQuote, printWidth 100, trailingComma all, semi). Do not leave one-line "minified" source files.
 
 **i18n**
-- User-visible strings via `t('namespace.key')`; add the key to **both** `i18n/uk.json` and `i18n/ru.json`. No new hardcoded Ukrainian in JSX. Namespaces: `nav, status, outages, incidents, contacts, myAddress, common, charts, streets`.
+- User-visible strings via `t('namespace.key')`; **мова одна — українська** (`i18n/uk.json`). Ключів `ru.json`/`en.json` більше немає (видалені: три тексти для одного факту розходились). No new hardcoded Ukrainian in JSX. Namespaces: `nav, status, outages, incidents, news, contacts, myAddress, common, charts, streets`.
 - Server-provided texts (reasons, grid messages) are Ukrainian only; do not pretend they are translated.
 
 **PWA**

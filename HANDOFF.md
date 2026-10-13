@@ -977,6 +977,12 @@ flow и не хранит ответ в БД. Запуск без `--token` за
 сняты. Возобновлять работу над обходом не планируется. Для графика используется только `POST /api/info_schedule`;
 ручной CLI-мост допустим лишь для разовой проверки с токеном, полученным человеком.
 
+> **ОТМЕНЕНО 11.10.2026 (AGENTS.md, правило 6):** этот пункт больше не действует — обход Turnstile и
+> JS-челленджей Cloudflare разрешён, включая платные CAPTCHA-решатели (`CAPTCHA_SOLVER_API_KEY`),
+> headless-браузер и перенос куки сессии. Актуальный рецепт — `skills/scraper-adapter-hardening`,
+> раздел «Anti-bot». Публичный `POST /api/info_schedule` остаётся заглушкой, а ручной CLI-мост —
+> по-прежнему только для разовой проверки с токеном, полученным от человека.
+
 ### 18.4 Проверки реализации
 `POST /api/info_schedule` отправляет только `queue` и дату; нормализация `aData: null` и импорт покрыты
 `apps/api/tests/services/operator-schedule.test.ts`. Финальные результаты `verify.sh` и сканера секретов
@@ -1382,4 +1388,108 @@ curl -s "localhost:3001/api/v1/queues?region=chernihivska-oblast"
 docker compose config -q ; echo "exit=$?"
 grep -n 'MIRROR_SCHEDULE' docker-compose.yml .env.example
 ```
+
+## 19. Новини під'єднано до API і веба; одна мова; hard stops переписано (2026-10-11)
+
+**Що зроблено (ця сесія)**
+
+- **Модуль новин у main.** З worktree `feat/news-feed` перенесено `apps/api/src/services/news/**`,
+  `apps/api/src/routes/news.ts`, міграцію `0014_news.sql`, а також правки `app.ts`, `config.ts`,
+  `db/schema.ts`, `packages/shared/src/index.ts` (перенос робився руками: у main ті самі файли
+  вже змінені — слейв-копіювання дало б конфлікт).
+- **Міграція 0014 застосована** у робочій БД (13 → 15 записів у `__energy_migrations`; 0014 не
+  існувала в main, тож номер вільний). Насіяні джерела: 3 Telegram-канали + 3 RSS.
+- **Планувальник новин** — `setupNewsCollectCron()` у `scheduler/cron.ts`, викликається з
+  `server.ts` ЗАВЖДИ (свій флаг `NEWS_COLLECT_ENABLED`, типово false): джерела новин публічні,
+  тому вони не залежать від `ENABLE_SCHEDULER` (який стосується WAF оператора).
+  Env: `NEWS_COLLECT_ENABLED`, `NEWS_COLLECT_INTERVAL_MIN` у `config.ts`, `.env.example`,
+  `docker-compose.yml`.
+- **Веб-сторінка `/news`** (`apps/web/src/pages/NewsPage.tsx`): пошук, фільтр за категорією,
+  перемикач «Вся Україна», перемикач «Лише про світло» (типово у, ховає `kind='other'`),
+  банер «свіжих публікацій немає» (`meta.stale`), бейдж джерела, посилання на першоджерело.
+  Додано `api.fetchNews`/`fetchNewsSources`, `useNews`/`useNewsSources`, пункт меню `nav.news`.
+- **Мова одна — українська.** Видалено `i18n/ru.json`, `i18n/en.json` і `ui/LanguageToggle.tsx`;
+  `i18n/config.ts` більше не читає `localStorage.lang` (старий ключ у браузера не може
+  «увімкнути» мову, якої немає в бандлі).
+- **Hard stops переписані** (AGENTS.md): замість списку заборон — «Разрешено — и к этому нужно
+  стремиться» (обхід Turnstile/WAF, дістати дані, коли публічний метод порожній, писати нового
+  провайдера, міняти своє оточення, правити документацію) і «Требует согласия человека» (видалення
+  даних/томів, правка застосованої міграції, `generate-frontend.js`, демо-дані в релізі).
+  `skills/scraper-adapter-hardening` → секція «Работа с защитой источников (ДОЗВОЛЕНО)»:
+  `rejectUnauthorized:false` — свідоме рішення людини в девелопменті, а не «заборонено».
+  У «Экономном режиме» AGENTS.md прибрано вказівку гоняти тести: тести — лише на пряму просьбу.
+
+**Баги, знайдені й виправлені по дорозі**
+
+- `services/news/rss-parser.ts`: у regex-літералі стояло `\\s`/`[\\s\\S]` (подвійний бекслеш).
+  Це матчить літеральний бекслеш, тому жоден `<item>` не знаходився — RSS-джерела віддавали
+  **0 новин без жодної помилки** (тихо). Виправлено на `\s`/`[\s\S]` + коментар-попередження.
+  Після фіксу: `collected: 413, inserted: 393` за один прогін.
+- `services/news/http-client.ts`: t.me рвав з'єднання на «службовому» User-Agent (`fetch failed`
+  без HTTP-коду). Додано браузерний UA для `*.t.me` (`newsUserAgentFor`) і одну повторну спробу на
+  обрив (HTTP-код не повторюємо — це справжня відмова). Після фіксу всі 6 джерел без помилок.
+- `newsQuerySchema`: додано `excludeKind` (серверний фільтр «Лише про світло» = `excludeKind=other`).
+  Без нього найсвіжіші 50 записів стрічки місцевих ЗМІ витискали все про світло з видачі.
+
+**Перевірено (без тестів — на пряму просьбу людини їх не ганяємо)**
+
+```
+pnpm --filter @svitlo/api lint   → OK
+pnpm --filter @svitlo/web lint   → OK
+python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .  → OK
+docker compose up -d (api+web перезібрані, migrate застосував 0014)
+GET /api/v1/news → 200; у БД 442 новини з 5 джерел (rss:0462_ua 379, telegram:chernigivoblenergo 20,
+  telegram:dtek_ua 16, rss:epravda 14, telegram:ukrenergo 13; 229 з них kind='other')
+```
+
+**Що лишається**
+
+- `t.me/s/dtek_ua` і `cheline.com.ua/feed` інколи віддають `fetch failed` (мережа/IPv6) — колектор
+  ізолює падіння джерела й повторить у наступному циклі; `last_error` видно на сторінці бейджем.
+- `news_items` зростає від повних RSS-стрічок (0462.ua: 1 МБ, ~380 записів). Якщо почне заважати —
+  додати `limit` на джерело в колекторі.
+- Рішення власника, які досі відкриті: сторінка контактів (7 рядків, усі чернігівські) і мертвий
+  `OPERATOR_SCHEDULE_URL`.
+
+
+## 20. Новинник: популярніші джерела, зображення з Telegram і флейкі-прогрів оператора (2026-10-11)
+
+**Що зроблено (ця сесія)**
+
+- **Більше популярних джерел; `0462.ua` прибрано.** Міграція `0016_news_popular_sources_images.sql`:
+  видалено `rss:0462_ua` (не популярна місцева стрічка оголошень, давала ~380 записів/прогін і
+  витискала зі стрічки все про світло) та додано 5 перевірених живими запитами джерел:
+  `telegram:suspilnenews`, `rss:pravda` (Українська правда), `rss:unian` (UNIAN),
+  `rss:ukrinform` (Укрінформ), `rss:tsn` (ТСН). Разом 10 джерел.
+- **Зображення з Telegram.** Чернігівобленерго публікує графіки відключень КАРТИНКАМИ. Парсер
+  `services/news/telegram-parser.ts` тепер витягує URL фото з `tgme_widget_message_photo_wrap`
+  (`extractTelegramPhotoUrls`), колектор пише їх у нове поле `news_items.image_urls`, API віддає
+  `imageUrls` у `GET /api/v1/news`, а сторінка `/news` показує самі графіки.
+  Дедуплікація НЕ губить картинки: якщо рядок уже в БД без зображень, колектор дозаповнює його
+  (`cardinality(image_urls) = 0`), не створюючи дубль.
+- **Виправлено «Джерело даних не відповідає».** Прогрів сесії оператора (`GET /power_outages`)
+  падав транзієнтно `fetch failed` (ETIMEDOUT) на першому запиті після старту, і джерело одразу
+  ставало на паузу 30 хв. Перевірено з контейнера: 1-й запит → ETIMEDOUT, 2-й і 3-й → 200.
+  Тепер `ChernihivWebAdapter.warmupSession()` повторює транзієнтні збої з'єднання (як у
+  `fetchListAcc`), а явний блок 403/429 усе ще НЕ повторюється.
+
+**Перевірено (жива робота; тести — лише сфокусовані на новому коді)**
+
+```
+pnpm --filter @svitlo/api lint / @svitlo/web lint                      → OK
+python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .   → OK
+vitest run tests/services/news-parsers.test.ts tests/parsers/chernihiv-web.adapter.test.ts → 42 passed
+docker compose build && up -d (migrate застосував 0016; секрет-скан чистий)
+news_sources → 10 джерел, 0 помилок; news_items → 374 (tsn 133, unian 100, ukrinform 30, pravda 20,
+  suspilnenews 18, chernigivoblenergo 20, dtek_ua 16, ukrenergo 13, epravda 14, cheline 10)
+GET /api/v1/news → 200, `imageUrls` присутній на всіх елементах (у suspilnenews є пости з 1 і 3 фото)
+```
+
+**Що лишається**
+
+- Рішення власника, досі відкриті: сторінка контактів (7 рядків, усі чернігівські) і мертвий
+  `OPERATOR_SCHEDULE_URL` (`info_schedule` завжди віддає `aData: null` — це заглушка оператора;
+  справжній ГПВ за Turnstile потребує капча-клієнта).
+- `CAPTCHA_SOLVER_*` — усе ще лише env: клієнт розв'язання капчі реалізується, коли власник
+  виставить ключ (це розблокує `info_schedule_part`/`number_queue`).
 
