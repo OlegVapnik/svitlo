@@ -11,6 +11,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Не ждём закрытия всех вкладок: старый precache-кэш вычищаем, иначе браузер месяц
+      // показывает прежний бандл и «залипает» на старой вёрстке.
+      cleanupOutdatedCaches: true,
       manifest: {
         name: 'Svitlo — Чернігів',
         short_name: 'Svitlo',
@@ -29,6 +32,9 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Новый SW вступает в силу сразу и забирает открытые вкладки — без кнопки «обновить».
+        skipWaiting: true,
+        clientsClaim: true,
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {

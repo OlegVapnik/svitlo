@@ -43,103 +43,123 @@ const STATUS_POLL_MS = 30_000;
  */
 const OUTAGE_POLL_MS = 60_000;
 
-export const useOutages = (filters?: OutageFilters) => useQuery<OutageListResponse>({
-  queryKey: ['outages', filters],
-  staleTime: OUTAGE_STALE_MS,
-  refetchInterval: OUTAGE_POLL_MS,
-  queryFn: () => {
-    const params = filters && Object.fromEntries(
-      Object.entries(filters).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]),
-    );
-    return api.fetchOutages(params);
-  },
-});
+export const useOutages = (filters?: OutageFilters) =>
+  useQuery<OutageListResponse>({
+    queryKey: ['outages', filters],
+    staleTime: OUTAGE_STALE_MS,
+    refetchInterval: OUTAGE_POLL_MS,
+    queryFn: () => {
+      const params =
+        filters &&
+        Object.fromEntries(
+          Object.entries(filters)
+            .filter(([, value]) => value !== undefined)
+            .map(([key, value]) => [key, String(value)]),
+        );
+      return api.fetchOutages(params);
+    },
+  });
 
-export const useOutage = (id: string) => useQuery<OutageDetailResponse>({
-  queryKey: ['outage', id],
-  queryFn: () => api.fetchOutage(id),
-  enabled: !!id,
-});
+export const useOutage = (id: string) =>
+  useQuery<OutageDetailResponse>({
+    queryKey: ['outage', id],
+    queryFn: () => api.fetchOutage(id),
+    enabled: !!id,
+  });
 
-export const useOutageStats = (params?: Record<string, string>) => useQuery<OutageStatsResponse>({
-  queryKey: ['outagesStats', params],
-  staleTime: OUTAGE_STALE_MS,
-  queryFn: () => api.fetchOutageStats(params),
-});
+export const useOutageStats = (params?: Record<string, string>) =>
+  useQuery<OutageStatsResponse>({
+    queryKey: ['outagesStats', params],
+    staleTime: OUTAGE_STALE_MS,
+    queryFn: () => api.fetchOutageStats(params),
+  });
 
-export const useIncidents = () => useQuery<IncidentListResponse>({
-  queryKey: ['incidents'],
-  queryFn: api.fetchIncidents,
-  staleTime: OUTAGE_STALE_MS,
-  refetchInterval: 60000,
-});
+export const useIncidents = () =>
+  useQuery<IncidentListResponse>({
+    queryKey: ['incidents'],
+    queryFn: api.fetchIncidents,
+    staleTime: OUTAGE_STALE_MS,
+    refetchInterval: 60000,
+  });
 
-export const useStatus = () => useQuery<{ data: StatusResponse }>({
-  queryKey: ['status'],
-  queryFn: api.fetchStatus,
-  // Свежесть данных и пауза источника видны в шапке на каждой странице: короткий интервал обязателен.
-  staleTime: STATUS_POLL_MS / 2,
-  refetchInterval: STATUS_POLL_MS,
-});
+export const useStatus = () =>
+  useQuery<{ data: StatusResponse }>({
+    queryKey: ['status'],
+    queryFn: api.fetchStatus,
+    // Свежесть данных и пауза источника видны в шапке на каждой странице: короткий интервал обязателен.
+    staleTime: STATUS_POLL_MS / 2,
+    refetchInterval: STATUS_POLL_MS,
+  });
 
-export const useReliability = () => useQuery<ReliabilityResponse>({
-  queryKey: ['reliability'],
-  queryFn: api.fetchReliability,
-  refetchInterval: 300000,
-});
+export const useReliability = () =>
+  useQuery<ReliabilityResponse>({
+    queryKey: ['reliability'],
+    queryFn: api.fetchReliability,
+    refetchInterval: 300000,
+  });
 
-export const useContacts = () => useQuery<ContactListResponse>({
-  queryKey: ['contacts'],
-  queryFn: api.fetchContacts,
-});
+export const useContacts = () =>
+  useQuery<ContactListResponse>({
+    queryKey: ['contacts'],
+    queryFn: api.fetchContacts,
+  });
 
-export const useHealth = () => useQuery({
-  queryKey: ['health'],
-  queryFn: api.fetchHealth,
-});
+export const useHealth = () =>
+  useQuery({
+    queryKey: ['health'],
+    queryFn: api.fetchHealth,
+  });
 
-export const useStreetQueues = () => useQuery<{ data: StreetQueuePair[] }>({
-  queryKey: ['streetQueues'],
-  queryFn: () => api.fetchStreetQueues(),
-});
+export const useStreetQueues = () =>
+  useQuery<{ data: StreetQueuePair[] }>({
+    queryKey: ['streetQueues'],
+    queryFn: () => api.fetchStreetQueues(),
+  });
 
 /**
  * Список очередей для страницы «Мої черги». Источник — реальные данные (GET /api/v1/queues?region=...),
  * а не зашитый в веб массив: если импорта не было, список пустой и страница это признаёт.
  */
-export const useQueues = (region?: string) => useQuery<{ data: QueueSummary[] }>({
-  queryKey: ['queues', region],
-  queryFn: ({ signal }) => api.fetchQueues(region, signal),
-  staleTime: 60_000,
-});
+export const useQueues = (region?: string) =>
+  useQuery<{ data: QueueSummary[] }>({
+    queryKey: ['queues', region],
+    queryFn: ({ signal }) => api.fetchQueues(region, signal),
+    staleTime: 60_000,
+  });
 
 /**
  * Каталог областей з дзеркала (GET /api/v1/regions, контракт /tmp/API-CONTRACT-regions.md).
  * Кеш 5 хвилин (Cache-Control: public, max-age=300).
  */
-export const useRegions = () => useQuery<RegionListResponse>({
-  queryKey: ['regions'],
-  queryFn: ({ signal }) => api.fetchRegions(signal),
-  staleTime: 300_000,
-});
+export const useRegions = () =>
+  useQuery<RegionListResponse>({
+    queryKey: ['regions'],
+    queryFn: ({ signal }) => api.fetchRegions(signal),
+    staleTime: 300_000,
+  });
 
-export const useStreetSchedule = (street: string, date: string) => useQuery<{ data: StreetScheduleData }>({
-  queryKey: ['streetSchedule', street, date],
-  queryFn: () => api.fetchStreetSchedule(street, date),
-  enabled: street.trim().length >= 2,
-});
+export const useStreetSchedule = (street: string, date: string) =>
+  useQuery<{ data: StreetScheduleData }>({
+    queryKey: ['streetSchedule', street, date],
+    queryFn: () => api.fetchStreetSchedule(street, date),
+    enabled: street.trim().length >= 2,
+  });
 
 /**
  * График очереди на дату и область. Раньше страница «Головна» ходила в сеть своим fetch-ем — теперь
  * единственный путь (api/client.ts), а кэш общий с остальными экранами.
+ *
+ * Тип — конверт `{ data: ... }`, как у остальных хуков: fetcher() возвращает тело ответа целиком,
+ * а API отдаёт график внутри `data`. Без `.data` на экране была пустая главная.
  */
-export const useQueueSchedule = (queue: string | undefined, date: string, region?: string) => useQuery<{ data: QueueScheduleData }>({
-  queryKey: ['queueSchedule', queue, date, region],
-  queryFn: () => api.fetchQueueSchedule(queue as string, date, region),
-  enabled: Boolean(queue),
-  staleTime: 60_000,
-  refetchInterval: OUTAGE_POLL_MS,
-});
+export const useQueueSchedule = (queue: string | undefined, date: string, region?: string) =>
+  useQuery<{ data: QueueScheduleData }>({
+    queryKey: ['queueSchedule', queue, date, region],
+    queryFn: () => api.fetchQueueSchedule(queue as string, date, region),
+    enabled: Boolean(queue),
+    staleTime: 60_000,
+    refetchInterval: OUTAGE_POLL_MS,
+  });
 
 /**
  * Ручной запуск парсинга джерел оператора (нужен админ-токен). После успеха инвалидирует всё,
@@ -203,7 +223,13 @@ export const useImportTelegramSchedule = () => {
 const NEWS_STALE_MS = 5 * 60_000;
 const NEWS_POLL_MS = 10 * 60_000;
 
-export const useNews = (filters?: { region?: string; kind?: string; excludeKind?: string; ukraineWide?: boolean; limit?: number }) =>
+export const useNews = (filters?: {
+  region?: string;
+  kind?: string;
+  excludeKind?: string;
+  ukraineWide?: boolean;
+  limit?: number;
+}) =>
   useQuery<NewsListResponse>({
     queryKey: ['news', filters],
     staleTime: NEWS_STALE_MS,

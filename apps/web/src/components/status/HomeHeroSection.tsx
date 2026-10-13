@@ -1,15 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import {
-  CalendarDays,
-  FileQuestion,
-  PhoneCall,
-  RefreshCw,
-  Star,
-  Zap,
-  ZapOff,
-} from 'lucide-react';
+import { CalendarDays, FileQuestion, PhoneCall, RefreshCw, Star, Zap, ZapOff } from 'lucide-react';
 import { RegionPicker } from '../region/RegionPicker.js';
 import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
@@ -22,6 +14,7 @@ import { useQueueSchedule } from '../../api/queries.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
 import { formatMinutesUk, scheduleWindow } from '../../lib/scheduleWindow.js';
+import type { QueueScheduleData } from '@svitlo/shared';
 import { cn } from '../../lib/cn.js';
 
 /** Час у форматі HH:MM за Києвом для підписів. */
@@ -37,7 +30,8 @@ export const HomeHeroSection: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, currentRegionData, setRegion, isLoading: regionLoading } = useRegion();
   const { address } = useMyAddress();
-  const { bookmarks, primaryBookmark, addBookmark, removeBookmark, setPrimaryBookmark } = useBookmarks();
+  const { bookmarks, primaryBookmark, addBookmark, removeBookmark, setPrimaryBookmark } =
+    useBookmarks();
 
   // Вибір дати: сьогодні (0) або завтра (1) у київському часі
   const [selectedDayOffset, setSelectedDayOffset] = useState<0 | 1>(0);
@@ -68,12 +62,21 @@ export const HomeHeroSection: React.FC = () => {
     refetch: refetchSchedule,
   } = useQueueSchedule(selectedQueue ?? undefined, selectedDate, currentRegion);
 
-  const schedule = scheduleResponse?.data;
+  // API отдаёт конверт { data: { queue, date, intervals, source, lastImportedAt } }, а fetcher()
+  // (api/client.ts) возвращает res.json() целиком — поэтому график лежит в .data.
+  // Раньше здесь было `scheduleResponse` без .data: intervals/source становились undefined,
+  // hasRegionData — false, и главная показывала «Даних графіка немає» при непустом API-ответе.
+  const schedule: QueueScheduleData | undefined =
+    Array.isArray((scheduleResponse as { intervals?: unknown } | undefined)?.intervals)
+      ? (scheduleResponse as unknown as QueueScheduleData)
+      : scheduleResponse?.data;
   const intervals = schedule?.intervals ?? [];
-  const hasSchedule = schedule?.source != null;   // регион синхронизирован, дата есть в БД
+  const hasSchedule = schedule?.source != null; // регион синхронизирован, дата есть в БД
   const hasIntervals = intervals.length > 0;
   // Показываем hasRegionData true, если регион синхронизирован (даже если для этой очереди интервалов нет)
-  const hasRegionData = currentRegionData.slots > 0 || hasSchedule;
+  // или если по выбранной очереди реально пришли интервалы: пустой блок «Даних графіка немає»
+  // не должен показываться, когда API уже вернул график.
+  const hasRegionData = currentRegionData.slots > 0 || hasSchedule || hasIntervals;
 
   // Розрахунок вікна графіка на вибрану добу (що зараз, коли наступне, скільки без світла)
   const windowSummary = useMemo(() => {
@@ -81,7 +84,7 @@ export const HomeHeroSection: React.FC = () => {
   }, [hasIntervals, intervals, selectedDate]);
 
   const isOff = Boolean(windowSummary?.isOff);
-// (deleted_duplicate)
+  // (deleted_duplicate)
   // Формування підсумкового рядка-відліку
   const statusHeadline = useMemo(() => {
     if (!windowSummary || !hasIntervals) return '';
@@ -106,11 +109,18 @@ export const HomeHeroSection: React.FC = () => {
 
       {/* 1.5. Швидкі закладки: збережені області+черги з РІЗНИХ областей України */}
       {bookmarks.length > 0 && (
-        <div role="group" aria-label={t('home.bookmarks')} className="flex flex-wrap items-center gap-2">
+        <div
+          role="group"
+          aria-label={t('home.bookmarks')}
+          className="flex flex-wrap items-center gap-2"
+        >
           {bookmarks.map((bm) => {
             const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
             return (
-              <div key={bm.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5">
+              <div
+                key={bm.id}
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5"
+              >
                 <button
                   type="button"
                   onClick={() => {
@@ -118,14 +128,16 @@ export const HomeHeroSection: React.FC = () => {
                     applyBookmark(bm);
                   }}
                   aria-current={isActive ? 'true' : undefined}
-                  className={cn(
-                    'inline-flex min-h-[38px] items-center gap-1.5 rounded-full px-2 text-xs font-semibold transition-colors',
+className={cn(
+                    'inline-flex min-h-9.5 items-center gap-1.5 rounded-full px-2 text-xs font-semibold transition-colors',
                     isActive ? 'text-primary' : 'text-foreground hover:text-primary',
                   )}
                 >
                   <Star className={cn('h-3.5 w-3.5', isActive && 'fill-current')} aria-hidden />
-                  <span className="max-w-[10rem] truncate">{bm.label}</span>
-                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-muted-foreground">{bm.queue}</span>
+                  <span className="max-w-40 truncate">{bm.label}</span>
+                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                    {bm.queue}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -133,7 +145,9 @@ export const HomeHeroSection: React.FC = () => {
                   aria-label={`${t('common.delete')} ${bm.label}`}
                   className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive"
                 >
-                  <span aria-hidden className="text-base leading-none">×</span>
+                  <span aria-hidden className="text-base leading-none">
+                    ×
+                  </span>
                 </button>
               </div>
             );
@@ -165,41 +179,41 @@ export const HomeHeroSection: React.FC = () => {
             {t('home.addToBookmarks')}
           </Button>
 
-        {/* Перемикач дати: Сьогодні / Завтра */}
-        <div
-          role="tablist"
-          aria-label={t('outages.filterDate')}
-          className="inline-flex self-start rounded-xl border border-border bg-muted/50 p-1 text-xs font-semibold"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={selectedDayOffset === 0}
-            onClick={() => setSelectedDayOffset(0)}
-            className={cn(
-              'rounded-lg px-3 py-1.5 transition-all duration-150',
-              selectedDayOffset === 0
-                ? 'bg-card text-foreground shadow-xs font-bold'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
+          {/* Перемикач дати: Сьогодні / Завтра */}
+          <div
+            role="tablist"
+            aria-label={t('outages.filterDate')}
+            className="inline-flex self-start rounded-xl border border-border bg-muted/50 p-1 text-xs font-semibold"
           >
-            {t('outages.today')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={selectedDayOffset === 1}
-            onClick={() => setSelectedDayOffset(1)}
-            className={cn(
-              'rounded-lg px-3 py-1.5 transition-all duration-150',
-              selectedDayOffset === 1
-                ? 'bg-card text-foreground shadow-xs font-bold'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {t('outages.tomorrow')}
-          </button>
-        </div>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedDayOffset === 0}
+              onClick={() => setSelectedDayOffset(0)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 transition-all duration-150',
+                selectedDayOffset === 0
+                  ? 'bg-card text-foreground shadow-xs font-bold'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t('outages.today')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selectedDayOffset === 1}
+              onClick={() => setSelectedDayOffset(1)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 transition-all duration-150',
+                selectedDayOffset === 1
+                  ? 'bg-card text-foreground shadow-xs font-bold'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {t('outages.tomorrow')}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -215,12 +229,7 @@ export const HomeHeroSection: React.FC = () => {
         /* Стан помилки з можливістю повторити */
         <div className="flex flex-col items-start gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
           <p className="text-sm font-semibold text-destructive">{t('home.myScheduleError')}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetchSchedule()}
-            className="gap-2"
-          >
+          <Button variant="outline" size="sm" onClick={() => refetchSchedule()} className="gap-2">
             <RefreshCw className="h-3.5 w-3.5" aria-hidden />
             {t('common.retry')}
           </Button>
@@ -240,7 +249,7 @@ export const HomeHeroSection: React.FC = () => {
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <a
               href="tel:0800210310"
-              className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
             >
               <PhoneCall className="h-3.5 w-3.5" aria-hidden />
               {t('home.hotline')}
@@ -268,9 +277,7 @@ export const HomeHeroSection: React.FC = () => {
               )}
             </div>
             {address && (
-              <span className="truncate text-xs font-medium text-muted-foreground">
-                {address}
-              </span>
+              <span className="truncate text-xs font-medium text-muted-foreground">{address}</span>
             )}
           </div>
           {!hasSchedule && (
@@ -327,10 +334,7 @@ export const HomeHeroSection: React.FC = () => {
 
           {/* 24-годинний горизонтальний таймлайн із півгодинними комірками */}
           <div className="pt-1">
-            <Timeline24h
-              intervals={intervals}
-              date={selectedDate}
-            />
+            <Timeline24h intervals={intervals} date={selectedDate} />
           </div>
 
           {/* Швидкі дії */}
@@ -338,13 +342,13 @@ export const HomeHeroSection: React.FC = () => {
             <div className="flex flex-wrap gap-2">
               <Link
                 to="/my-address"
-                className="inline-flex min-h-[40px] items-center rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+                className="inline-flex min-h-10 items-center rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
               >
                 {t('nav.myAddress')}
               </Link>
               <a
                 href="tel:0800210310"
-                className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
               >
                 <PhoneCall className="h-3.5 w-3.5" aria-hidden />
                 {t('home.hotlineNumber')}

@@ -12,11 +12,16 @@ import { EmptyState } from '../components/common/EmptyState.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
 import { useBookmarks } from '../hooks/useBookmarks.js';
 import { useRegion } from '../hooks/useRegion.js';
-import { useQueueSchedule, useQueues, useRegions } from '../api/queries.js';
+import { useQueueSchedule, useQueues } from '../api/queries.js';
 import { isQueueCode, normalizeQueueCode } from '../lib/queue.js';
 
 function kyivDate(offsetDays = 0): string {
-  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
   const parts = formatter.formatToParts(new Date());
   const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value);
   const base = new Date(Date.UTC(pick('year'), pick('month') - 1, pick('day') + offsetDays));
@@ -32,7 +37,6 @@ export const QueueSchedulePage: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, currentRegionData } = useRegion();
   const { bookmarks, addBookmark, removeBookmark, setPrimaryBookmark } = useBookmarks();
-  const { data: regionsData } = useRegions();
   const { data: queuesData, isLoading: queuesLoading } = useQueues(currentRegion);
   const [street, setStreet] = useState(() => localStorage.getItem('myQueueStreet') || '');
   const [newQueue, setNewQueue] = useState('');
@@ -48,7 +52,9 @@ export const QueueSchedulePage: React.FC = () => {
     const parts: string[] = [];
     if (item.streets > 0) parts.push(t('queues.streetsCount', { n: item.streets }));
     if (item.lastDate) parts.push(t('queues.scheduleDate', { date: item.lastDate }));
-    return parts.length > 0 ? `${item.queue} — ${parts.join(' · ')}` : `${item.queue} — ${t('queues.noSchedule')}`;
+    return parts.length > 0
+      ? `${item.queue} — ${parts.join(' · ')}`
+      : `${item.queue} — ${t('queues.noSchedule')}`;
   }
 
   const handleAdd = () => {
@@ -56,7 +62,7 @@ export const QueueSchedulePage: React.FC = () => {
     localStorage.setItem('myQueueStreet', street.trim());
     // Закладка с текущей областью, вулицей и чергой.
     addBookmark({
-      label: street.trim().length > 0 ? street.trim() : (currentRegionData.nameUa || currentRegion),
+      label: street.trim().length > 0 ? street.trim() : currentRegionData.nameUa || currentRegion,
       regionCpu: currentRegion,
       settlementName: undefined,
       streetName: street.trim().length > 0 ? street.trim() : undefined,
@@ -68,9 +74,12 @@ export const QueueSchedulePage: React.FC = () => {
   return (
     <div className="mx-auto max-w-4xl space-y-5 pb-16 md:pb-6">
       <header className="space-y-0.5">
-        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('queues.title')}</h1>
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+          {t('queues.title')}
+        </h1>
         <p className="text-xs text-muted-foreground sm:text-sm">
-          {currentRegionData.nameUa ? `${currentRegionData.nameUa} · ` : ''}{t('queues.subtitle')}
+          {currentRegionData.nameUa ? `${currentRegionData.nameUa} · ` : ''}
+          {t('queues.subtitle')}
         </p>
       </header>
 
@@ -78,28 +87,39 @@ export const QueueSchedulePage: React.FC = () => {
         <CardContent className="space-y-3 p-4 sm:p-5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="queue-street" className="text-xs font-semibold text-foreground">{t('queues.streetLabel')}</label>
+              <label htmlFor="queue-street" className="text-xs font-semibold text-foreground">
+                {t('queues.streetLabel')}
+              </label>
               <AddressCombobox
                 id="queue-street"
                 value={street}
                 onChange={setStreet}
-                onSelect={(suggestion) => { setStreet(suggestion.name); localStorage.setItem('myQueueStreet', suggestion.name); }}
+                onSelect={(suggestion) => {
+                  setStreet(suggestion.name);
+                  localStorage.setItem('myQueueStreet', suggestion.name);
+                }}
                 placeholder={t('queues.streetPlaceholder')}
               />
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="queue-code" className="text-xs font-semibold text-foreground">{t('queues.queueLabel')}</label>
+              <label htmlFor="queue-code" className="text-xs font-semibold text-foreground">
+                {t('queues.queueLabel')}
+              </label>
               {/* Выпадающий список только реальных черг (GET /api/v1/queues) — без ручного ввода выдуманных кодов. */}
               <Select
                 id="queue-code"
                 value={newQueue}
-                onChange={(event: React.ChangeEvent<HTMLSelectElement>) => setNewQueue(event.target.value)}
+                onChange={(event: React.ChangeEvent<HTMLSelectElement>) =>
+                  setNewQueue(event.target.value)
+                }
                 disabled={knownQueues.length === 0}
                 className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{t('queues.selectQueue')}</option>
                 {knownQueues.map((item) => (
-                  <option key={item.queue} value={item.queue}>{queueOptionLabel(item)}</option>
+                  <option key={item.queue} value={item.queue}>
+                    {queueOptionLabel(item)}
+                  </option>
                 ))}
               </Select>
               <p className="text-xs text-muted-foreground" role="status">
@@ -110,7 +130,9 @@ export const QueueSchedulePage: React.FC = () => {
                     : t('regions.emptyQueues')}
               </p>
               {newQueue.trim().length > 0 && !codeValid && (
-                <p role="alert" className="text-xs text-destructive">{t('queues.invalidCode')}</p>
+                <p role="alert" className="text-xs text-destructive">
+                  {t('queues.invalidCode')}
+                </p>
               )}
             </div>
           </div>
@@ -121,12 +143,24 @@ export const QueueSchedulePage: React.FC = () => {
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('queues.chooseDate')}>
-        <Button variant={day === 0 ? 'default' : 'outline'} onClick={() => setDay(0)} className="gap-2">
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label={t('queues.chooseDate')}
+      >
+        <Button
+          variant={day === 0 ? 'default' : 'outline'}
+          onClick={() => setDay(0)}
+          className="gap-2"
+        >
           <CalendarDays className="h-4 w-4" aria-hidden />
           {t('queues.today')}
         </Button>
-        <Button variant={day === 1 ? 'default' : 'outline'} onClick={() => setDay(1)} className="gap-2">
+        <Button
+          variant={day === 1 ? 'default' : 'outline'}
+          onClick={() => setDay(1)}
+          className="gap-2"
+        >
           <CalendarDays className="h-4 w-4" aria-hidden />
           {t('queues.tomorrow')}
         </Button>
@@ -134,11 +168,24 @@ export const QueueSchedulePage: React.FC = () => {
       </div>
 
       {bookmarks.length === 0 ? (
-        <EmptyState icon={CalendarDays} title={t('queues.emptyTitle')} description={t('queues.emptyDesc')} />
+        <EmptyState
+          icon={CalendarDays}
+          title={t('queues.emptyTitle')}
+          description={t('queues.emptyDesc')}
+        />
       ) : (
         <div className="space-y-4">
           {bookmarks.map((bm) => (
-            <QueueScheduleCard key={bm.id} regionCpu={bm.regionCpu} queue={bm.queue} street={bm.streetName ?? bm.label} date={date} isPrimary={bm.isPrimary ?? false} onRemove={() => removeBookmark(bm.id)} onSetPrimary={() => setPrimaryBookmark(bm.id)} />
+            <QueueScheduleCard
+              key={bm.id}
+              regionCpu={bm.regionCpu}
+              queue={bm.queue}
+              street={bm.streetName ?? bm.label}
+              date={date}
+              isPrimary={bm.isPrimary ?? false}
+              onRemove={() => removeBookmark(bm.id)}
+              onSetPrimary={() => setPrimaryBookmark(bm.id)}
+            />
           ))}
         </div>
       )}
@@ -161,9 +208,22 @@ type QueueCardProps = {
  * глобальній поточній області — з-за этого черги різних областей показували хибні дані.
  * Теперь `regionCpu` берётся із закладки, і графік запитуется саме для єтої області.
  */
-const QueueScheduleCard: React.FC<QueueCardProps> = ({ regionCpu, queue, street, date, isPrimary, onRemove, onSetPrimary }) => {
+const QueueScheduleCard: React.FC<QueueCardProps> = ({
+  regionCpu,
+  queue,
+  street,
+  date,
+  isPrimary,
+  onRemove,
+  onSetPrimary,
+}) => {
   const { t } = useTranslation();
-  const { data, isLoading, isFetching, isError, refetch } = useQueueSchedule(queue, date, regionCpu);
+  const { data, isLoading, isFetching, isError, refetch } = useQueueSchedule(
+    queue,
+    date,
+    regionCpu,
+  );
+  // useQueueSchedule отдаёт конверт { data } — график лежит в .data.
   const intervals = data?.data.intervals ?? [];
 
   return (
@@ -171,31 +231,62 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({ regionCpu, queue, street,
       <CardContent className="space-y-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-sm font-semibold text-foreground sm:text-base">{street || t('queues.streetFallback')}</h2>
-            <Badge variant="info">{t('queues.queueLabel')} {queue}</Badge>
-            {isPrimary && <Badge variant="default" className="text-[11px]">{t('queues.primary')}</Badge>}
+            <h2 className="truncate text-sm font-semibold text-foreground sm:text-base">
+              {street || t('queues.streetFallback')}
+            </h2>
+            <Badge variant="info">
+              {t('queues.queueLabel')} {queue}
+            </Badge>
+            {isPrimary && (
+              <Badge variant="default" className="text-[11px]">
+                {t('queues.primary')}
+              </Badge>
+            )}
           </div>
           <div className="flex gap-2">
             {!isPrimary && (
-              <Button size="sm" variant="outline" onClick={onSetPrimary} aria-label={t('queues.setPrimary')} className="gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onSetPrimary}
+                aria-label={t('queues.setPrimary')}
+                className="gap-1.5"
+              >
                 <Star className="h-3.5 w-3.5" aria-hidden />
                 {t('queues.setPrimary')}
               </Button>
             )}
-            <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()} className="gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+              className="gap-1.5"
+            >
               <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden />
               {isFetching ? t('queues.loading') : t('queues.refresh')}
             </Button>
-            <Button size="sm" variant="outline" onClick={onRemove} aria-label={`${t('queues.delete')}: ${queue}`}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRemove}
+              aria-label={`${t('queues.delete')}: ${queue}`}
+            >
               <Trash2 className="h-4 w-4" aria-hidden />
             </Button>
           </div>
         </div>
         <p className="tabular text-xs text-muted-foreground">{date}</p>
-        {isLoading
-          ? <Skeleton className="h-24 w-full rounded-xl" />
-          : <QueueScheduleBar intervals={intervals} date={date} />}
-        {isError && <p role="alert" className="text-xs text-destructive">{t('queues.error')}</p>}
+        {isLoading ? (
+          <Skeleton className="h-24 w-full rounded-xl" />
+        ) : (
+          <QueueScheduleBar intervals={intervals} date={date} />
+        )}
+        {isError && (
+          <p role="alert" className="text-xs text-destructive">
+            {t('queues.error')}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
