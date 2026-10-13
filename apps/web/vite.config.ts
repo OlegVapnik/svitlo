@@ -36,18 +36,10 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-responses',
-              networkTimeoutSeconds: 5,
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 },
-              cacheableResponse: { statuses: [0, 200] }
-            }
-          }
-        ]
+        // API намеренно НЕ кэшируется Service Worker'ом: кэш api-responses отдавал устаревший
+        // (в том числе пустой) ответ графика, и главная показывала «Даних графіка немає», хотя
+        // бэкенд отдавал интервалы. График очереди должен приходить только из сети.
+        runtimeCaching: []
       }
     })
   ],
