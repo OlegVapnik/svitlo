@@ -34,15 +34,18 @@
 
 ### 0.2. Что ОСТАЛОСЬ з P0/P1 (актуальний список на 2026-10-13)
 
-| № | Проблема | Ступінь | Куди дивитися |
+> Оновлено 13.10.2026 (комміт `0dfa737`): пункти 2–4 закрито, незакомічений пласт (5) закомічено.
+> Залишилися лише HTTPS (P0), CI і легасі-шар. Таблицю нижче оновлено відповідно.
+
+| № | Проблема | Ступінь | Статус / Куди дивитися |
 |---|---|---|---|
-| 1 | **Немає HTTPS** (nginx слухає тільки 80, TLS ніде). Для PWA/service worker критично (secure context). | P0 | `docker/nginx.conf`, `docker-compose.yml` web |
-| 2 | `ADMIN_TOKEN` дефолт у config — `'development-admin-token'`. Compose підстраховано `${ADMIN_TOKEN:?}`, але дефолт слабкий для локального/тест запуску. | P0 | `config.ts:7` |
-| 3 | `auth.ts` порівнює токен через `!==` (не constant-time) і типи `any`. | P1 | `plugins/auth.ts` |
-| 4 | CORS `origin: '*'` у публічного API з адресами/вулицями. | P1 | `plugins/cors.ts` |
-| 5 | Великий **незакомічений пласт** у гілці `ai/multi-region` (міграції 0014–0016, новини, провайдери, settlements, routes/services) — ризик втрати/змішання. | P1 | `git status` |
-| 6 | Немає CI, немає HTTPS-сховища/бекенду біля API. | P2 | — |
-| 7 | Широкі старі таблиці + «4 розрахунки» лишилися в легасі-шарі (новий `outage_events` є, але міграція переходу/backfill треба перевірити). | P1 | `db/backfill-outage-events.ts` |
+| 1 | **Немає HTTPS** (nginx слухає тільки 80, TLS ніде). Для PWA/service worker критично (secure context). | P0 | **відкрито** — `docker/nginx.conf`, `docker-compose.yml` web; потрібен TLS-termination (Caddy/nginx + сертифікат). |
+| 2 | `ADMIN_TOKEN` дефолт слабкий | P0 | ✅ **закрито** — `config.ts`: у production помилка на старті, якщо токен дефолтний/короткий (<16). |
+| 3 | `auth.ts` порівнював токен через `!==` | P1 | ✅ **закрито** — `utils/timing-safe.ts` (SHA-256 + `timingSafeEqual`), без `any`. |
+| 4 | CORS `origin: '*'` | P1 | ✅ **закрито** — за замовчуванням CORS вимкнено; дозвіл через `CORS_ORIGINS` (development). |
+| 5 | Незакомічений пласт у гілці | P1 | ✅ **закрито** — все закомічено (новини, settlements, провайдери, i18n-перехід, docs, gemini-assist). Робоче дерево чисте. |
+| 6 | Немає CI | P2 | відкрито — GitHub Actions (tsc → lint → tests → build). |
+| 7 | Легасі-шар («широкий» `outages`, «4 розрахунки») | P1 | відкрито — новий `outage_events` є; міграція переходу/backfill — на черзі (див. HANDOFF). |
 
 ### 0.3. Чи компілюється
 
