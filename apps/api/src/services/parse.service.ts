@@ -313,13 +313,17 @@ export async function runParse(sourceId: string) {
   // оставался в состоянии «не відвечает» (consecutiveParseFailures рос), хотя оператор тут ни при
   // чём — его просто не спрашивают. Теперь прогон не запускается вовсе, а прошлая ошибка снимается,
   // иначе главная продолжала бы показывать баннер «Джерело даних не відповідає».
-  if (!env.CHERNIHIV_WEB_ENABLED) {
-    logger.info({ sourceId }, 'Outage collection disabled (CHERNIHIV_WEB_ENABLED=false); skipping parse run');
+  const collectOutages = env.CHERNIHIV_WEB_ENABLED;
+  if (!collectOutages) {
+    // Важно: отключается ТОЛЬКО сбор аварийных. Графики ГПВ приходят из зеркала и Telegram и
+    // импортируются в этом же прогоне, поэтому ранний return останавливал бы и их — слоты
+    // переставали обновляться (в приложении это выглядело как «данные 1 час назад» и пустая
+    // статистика). Поэтому прогон идёт целиком, а отключение учитывается флагом collectOutages.
+    logger.info({ sourceId }, 'Outage collection disabled (CHERNIHIV_WEB_ENABLED=false); schedules still refresh');
     await db
       .update(sources)
       .set({ lastError: null, consecutiveFailures: 0 })
       .where(eq(sources.id, sourceId));
-    return null;
   }
 
   const [run] = await db
@@ -346,7 +350,12 @@ export async function runParse(sourceId: string) {
     let primaryData: ParseResult;
     let primaryError: Error | null = null;
     try {
-      primaryData = await adapter.fetch();
+      primaryData = collectOutages
+        ? await adapter.fetch()
+        : // Збір вимкнено: підставляємо порожній результат, щоб решта прогону (графіки ГПВ із
+          // дзеркала, Telegram) відпрацювала як завжди. Сітку не чіпаємо — без аварійного
+          // збору нам нічого про неї сказати.
+          { outages: [], incidents: [], complete: true, completeScopeKeys: [], rawSnapshot: '', gridLevel: 'stable' as const, gridMessage: '' };
     } catch (error) {
       primaryError = error instanceof Error ? error : new Error(String(error));
       // Circuit breaker: блокування чи таймаут — це сигнал джерела, а не наш баг. У цьому прогоні
@@ -560,7 +569,13 @@ export async function runParse(sourceId: string) {
     //    (status='success' и records_found > 0). Обрыв основной ленты, частичный ответ оператора
     //    и легитимно пустой (но полный) фид оставляют прежнюю метку — «данные не обновлялись»
     //    должно быть видно в /status, а не маскироваться свежим last_success_at.
-    const runStatus = fullOutageFeed && effectiveData.outages.length > 0 ? 'success' : 'partial';
+    // Успіх прогону визначається тим, що прогін реально робив. Коли збір аварійних вимкнено
+    // (CHERNIHIV_WEB_ENABLED=false), «нуль відключень» — це не збій і не частковий фід: аварій
+    // ми не збираємо за розпорядженням, а графіки ГПВ при цьому імпортуються. Інакше прогін
+    // назавжди лишався б 'partial', і в /status та в баннері джерел це читалося як проблема.
+    const runStatus = collectOutages
+      ? (fullOutageFeed && effectiveData.outages.length > 0 ? 'success' : 'partial')
+      : 'success';
     if (runStatus === 'success') {
       // Успіх скидає і серию невдач, і паузу circuit breaker.
       await recordSourceSuccess(sourceId, now);

@@ -1,3 +1,5 @@
+import { noteServedFromCache, noteServedOnline, readCache, writeCache } from './offline-cache.js';
+
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] || '/api/v1';
 
 /**
@@ -35,7 +37,26 @@ async function fetcher(endpoint: string, options?: RequestInit) {
   // cache в браузере отдавал по /api/v1/schedules устаревший (в том числе пустой) ответ: главная
   // показывала «Даних графіка немає», хотя бэкенд отдавал интервалы. Кэширование данных решает
   // React Query (staleTime/refetchInterval), дублировать его в HTTP-кэше бессмысленно.
-  const res = await fetch(`${API_BASE}${endpoint}`, { cache: 'no-store', ...options });
+  //
+  // Свой кеш в localStorage (offline-cache.ts) тут другой: он переживает пропажу сети, и при
+  // недоступности сервера мы отдаём последний известный ответ, а не пустой экран.
+  const isRead = (options?.method ?? 'GET').toUpperCase() === 'GET';
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${endpoint}`, { cache: 'no-store', ...options });
+  } catch (error) {
+    // Сеть недоступна — отдаём последний успешный ответ по этому эндпоинту, если он есть.
+    // Это ровно тот случай, когда в районе без связи человек должен видеть график отключений.
+    if (isRead) {
+      const cached = readCache(endpoint);
+      if (cached) {
+        noteServedFromCache(cached);
+        return cached.data;
+      }
+    }
+    throw error;
+  }
+
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as
       | { error?: { code?: string; message?: string; details?: Array<{ path: string; message: string }> } }
@@ -43,7 +64,12 @@ async function fetcher(endpoint: string, options?: RequestInit) {
     const error = body?.error;
     throw new ApiError(res.status, error?.code ?? 'HTTP_ERROR', error?.message ?? res.statusText, error?.details);
   }
-  return res.json();
+
+  const data = await res.json();
+  // Сеть снова доступна — снимаем баннер офлайна и обновляем кеш свежим ответом.
+  noteServedOnline();
+  if (isRead) writeCache(endpoint, data);
+  return data;
 }
 
 export const api = {

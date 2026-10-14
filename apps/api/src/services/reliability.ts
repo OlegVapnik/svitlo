@@ -42,7 +42,63 @@ function labelDay(at: Date): string {
   return dayFormatter.format(at);
 }
 
-function bucket(key: string, label: string, start: Date, end: Date, rows: OutageRow[]): ReliabilityBucket {
+/**
+ * Рядок статистики для окна.
+ *
+ * `byQueue` — интервалы, сгруппированные по группам. Когда он передан, считается СРЕДНЕЕ по
+ * группам, а не сумма: группы отключаются по очереди и их окна разнесены по часам, поэтому сумма
+ * дала бы «20 часов без света из 24», хотя в каждый момент света нет лишь у части людей.
+ * Среднее отвечает на вопрос конкретного человека: сколько часов без света у его группы.
+ */
+function bucket(
+  key: string,
+  label: string,
+  start: Date,
+  end: Date,
+  rows: OutageRow[],
+  byQueue?: Map<string, OutageRow[]>,
+): ReliabilityBucket {
+  if (byQueue) {
+    const perQueue: number[] = [];
+    for (const queueRows of byQueue.values()) {
+      const overlapping = queueRows.filter(
+        (row) => row.startsAt.getTime() <= end.getTime() && row.endsAt.getTime() >= start.getTime(),
+      );
+      if (overlapping.length === 0) continue;
+      const summary = computeWindowSummary(label, start, end, overlapping);
+      if (summary.outageMinutes > 0) perQueue.push(summary.outageMinutes);
+    }
+    const windowMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+    if (perQueue.length === 0) {
+      return {
+        key,
+        label,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        windowMinutes,
+        outageMinutes: 0,
+        poweredMinutes: windowMinutes,
+        reliabilityPct: 100,
+        outageCount: 0,
+        hasData: false,
+      };
+    }
+    const outageMinutes = Math.round(perQueue.reduce((sum, value) => sum + value, 0) / perQueue.length);
+    const poweredMinutes = Math.max(0, windowMinutes - outageMinutes);
+    return {
+      key,
+      label,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      windowMinutes,
+      outageMinutes,
+      poweredMinutes,
+      reliabilityPct: windowMinutes > 0 ? Math.round((poweredMinutes / windowMinutes) * 1000) / 10 : 100,
+      outageCount: perQueue.length,
+      hasData: true,
+    };
+  }
+
   const overlapping = rows.filter((row) => row.startsAt.getTime() <= end.getTime() && row.endsAt.getTime() >= start.getTime());
   const summary = computeWindowSummary(label, start, end, overlapping);
   return {
@@ -64,7 +120,11 @@ function bucket(key: string, label: string, start: Date, end: Date, rows: Outage
  * місяця (київського). Рахуємо лише фактичні, вже минулі інтервали — у майбутнє
  * не заглядаємо (для цього є графіки відключень).
  */
-export function buildReliabilityReport(now: Date, rows: OutageRow[]): ReliabilityReport {
+export function buildReliabilityReport(
+  now: Date,
+  rows: OutageRow[],
+  byQueue?: Map<string, OutageRow[]>,
+): ReliabilityReport {
   const monthStart = kyivMonthStart(now);
   const dayStarts = kyivDayStarts(monthStart, now);
 
@@ -73,7 +133,7 @@ export function buildReliabilityReport(now: Date, rows: OutageRow[]): Reliabilit
       ? dayStarts[index + 1]!
       : kyivDayStart(new Date(start.getTime() + 24 * 3_600_000));
     const end = new Date(Math.min(nextStart.getTime(), now.getTime()));
-    return bucket(`day:${dayKeyFormatter.format(start)}`, labelDay(start), start, end, rows);
+    return bucket(`day:${dayKeyFormatter.format(start)}`, labelDay(start), start, end, rows, byQueue);
   });
 
   const weekRanges = new Map<string, { start: Date; end: Date }>();
@@ -91,7 +151,7 @@ export function buildReliabilityReport(now: Date, rows: OutageRow[]): Reliabilit
     }
   }
   const weeks: ReliabilityBucket[] = Array.from(weekRanges.entries()).map(([weekKey, range]) =>
-    bucket(`week:${weekKey}`, `${labelDay(range.start)} – ${labelDay(range.end)}`, range.start, range.end, rows),
+    bucket(`week:${weekKey}`, `${labelDay(range.start)} – ${labelDay(range.end)}`, range.start, range.end, rows, byQueue),
   );
 
   const monthRanges = new Map<string, { start: Date; end: Date }>();
@@ -108,7 +168,7 @@ export function buildReliabilityReport(now: Date, rows: OutageRow[]): Reliabilit
     }
   }
   const months: ReliabilityBucket[] = Array.from(monthRanges.entries()).map(([monthKey, range]) =>
-    bucket(`month:${monthKey}`, monthFormatter.format(range.start), range.start, range.end, rows),
+    bucket(`month:${monthKey}`, monthFormatter.format(range.start), range.start, range.end, rows, byQueue),
   );
 
   return {
