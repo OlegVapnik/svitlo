@@ -461,6 +461,17 @@ export interface NewsListResponse {
   meta: NewsListMeta;
 }
 
+/**
+ * Чейджлог приложения (GET /api/v1/changelog).
+ *
+ * Отдельный тип живёт здесь, потому что список приходит с сервера: серверный фикс должен быть
+ * виден в уже установленном приложении без пересборки APK.
+ */
+export interface ChangelogFile {
+  generatedAt: string | null;
+  entries: Array<{ hash: string; date: string; kind: 'new' | 'fix'; label: string; text: string }>;
+}
+
 export interface NewsSourcesResponse {
   data: NewsSource[];
 }

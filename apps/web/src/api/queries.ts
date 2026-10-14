@@ -15,6 +15,7 @@ import type {
   StreetScheduleData,
   NewsListResponse,
   NewsSourcesResponse,
+  ChangelogFile,
 } from '@svitlo/shared';
 import type { RegionListResponse } from '../lib/region.js';
 import { api } from './client';
@@ -270,6 +271,22 @@ export const useNews = (filters?: {
       if (filters?.limit) params.limit = String(filters.limit);
       return api.fetchNews(Object.keys(params).length > 0 ? params : undefined);
     },
+  });
+
+/**
+ * Чейджлог приложения с сервера.
+ *
+ * Раньше список жил внутри бандла, поэтому о серверных фиксах пользователь узнавал только
+ * после следующей пересборки APK. Теперь он приходит по сети; при обрыве связи сработает
+ * общий офлайн-кеш (api/offline-cache.ts), а если кеша нет — встроенная копия из бандла.
+ */
+export const useChangelog = () =>
+  useQuery<{ data: ChangelogFile }>({
+    queryKey: ['changelog'],
+    queryFn: ({ signal }) => api.fetchChangelog(signal),
+    staleTime: 10 * 60_000,
+    refetchInterval: 30 * 60_000,
+    retry: 1,
   });
 
 /** Джерела збору новин: скільки їх і чи не сиплються (lastError видно в UI). */

@@ -1,7 +1,14 @@
 {
- "generatedAt": "2026-10-14T04:13:53.191Z",
+ "generatedAt": "2026-10-14T04:22:56.886Z",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "entries": [
+  {
+   "hash": "b0a0dbb",
+   "date": "2026-10-14",
+   "kind": "new",
+   "label": "Нове",
+   "text": "Версия X.Y.Z показывается внизу главной рядом с меткой сборки и дублируется в versionName"
+  },
   {
    "hash": "bd66237",
    "date": "2026-10-14",
@@ -134,13 +141,6 @@
    "kind": "fix",
    "label": "Виправлено",
    "text": "- auth.ts: замість `!==` тепер SHA-256 + timingSafeEqual (utils/timing-safe.ts) — без timing-атаки"
-  },
-  {
-   "hash": "662539e",
-   "date": "2026-10-13",
-   "kind": "new",
-   "label": "Нове",
-   "text": "- news: міграції 0014/0016, services/news (collector, RSS, Telegram, classifier, dedup), routes/news, NewsPage + фікстури й тести парсерів"
   }
  ]
 }

@@ -2,9 +2,11 @@
 /**
  * Генерация чейджлога приложения из истории git.
  *
- * Зачем отдельный шаг, если есть `git log`: сборка идёт в Docker, где репозитория нет,
- * а в PWA/Android-бандле история коммитов не нужна целиком. Поэтому чейджлог — это маленький
- * JSON рядом с исходниками, который коммитится и едет в бандл.
+ * Зачем отдельный шаг, если есть `git log`: сборка идёт в Docker, где репозитория нет, а в
+ * PWA/Android-бандле история коммитов не нужна целиком. Поэтому чейджлог — маленький JSON,
+ * который коммитится и раздаётся по сети (GET /api/v1/changelog). Благодаря этому фикс,
+ * задеплоенный на сервере, виден в уже установленном приложении без пересборки APK.
+ * Копия в apps/web/src/data используется только как офлайн-фолбэк.
  *
  * Что попадает в выдачу:
  *  - только пользовательские типы (feat/fix/security). Служебные chore/docs/misc в приложении
@@ -22,7 +24,11 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
-const outPath = path.join(repoRoot, 'apps/web/src/data/changelog.json');
+// Канонический источник — API: чейджлог отдаётся по сети, поэтому фикс, задеплоенный на
+// сервере, виден в уже установленном приложении без пересборки APK.
+// Копия в web — офлайн-фолбэк на случай, когда сети нет (её же подхватывает кеш ответов).
+const outPath = path.join(repoRoot, 'apps/api/src/data/changelog.json');
+const webFallbackPath = path.join(repoRoot, 'apps/web/src/data/changelog.json');
 
 const limitArgIndex = process.argv.indexOf('--limit');
 const limit = limitArgIndex > -1 ? Number(process.argv[limitArgIndex + 1]) : 30;
@@ -92,10 +98,15 @@ const payload = {
   entries,
 };
 
+const serialized = JSON.stringify(payload, null, 1) + '\n';
 mkdirSync(path.dirname(outPath), { recursive: true });
-writeFileSync(outPath, JSON.stringify(payload, null, 1) + '\n', 'utf8');
+writeFileSync(outPath, serialized, 'utf8');
+mkdirSync(path.dirname(webFallbackPath), { recursive: true });
+writeFileSync(webFallbackPath, serialized, 'utf8');
 
-console.log(`Записано ${entries.length} записів у ${path.relative(repoRoot, outPath)}`);
+console.log(`Записано ${entries.length} записей:`);
+console.log(`  канон (API):  ${path.relative(repoRoot, outPath)}`);
+console.log(`  фолбэк (web): ${path.relative(repoRoot, webFallbackPath)}`);
 for (const entry of entries.slice(0, 5)) {
   console.log(`  ${entry.date} [${entry.label}] ${entry.text.slice(0, 78)}`);
 }

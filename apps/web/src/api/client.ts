@@ -126,6 +126,8 @@ export const api = {
     return fetcher(`/news${q}`, { signal });
   },
   /** Джерела новин і стан збору (GET /api/v1/news/sources) — щоб було видно, кого саме читаємо. */
+  /** Чейджлог с сервера: серверный фикс виден без пересборки приложения. */
+  fetchChangelog: (signal?: AbortSignal) => fetcher('/changelog', { signal }),
   fetchNewsSources: (signal?: AbortSignal) => fetcher('/news/sources', { signal }),
   /**
    * Перевірка за особовим рахунком: повертає вулицю та чергу з довідника (GET /places/:account).

@@ -1,7 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sparkles, Wrench, ChevronDown } from 'lucide-react';
-import changelog from '../../data/changelog.json';
+import bundledChangelog from '../../data/changelog.json';
+import { useChangelog } from '../../api/queries.js';
 import { cn } from '../../lib/cn.js';
 
 type ChangelogEntry = {
@@ -12,7 +13,14 @@ type ChangelogEntry = {
   text: string;
 };
 
-const ENTRIES = changelog.entries as ChangelogEntry[];
+/**
+ * Встроенная копия чейджлога — только офлайн-фолбэк.
+ *
+ * Основной источник — сервер: задеплоенный фикс должен быть виден в уже установленном
+ * приложении без пересборки APK. Если сети нет и кеша тоже, показываем то, что лежит в бандле,
+ * — лучше чуть устаревший список, чем пустой раздел.
+ */
+const BUNDLED_ENTRIES = bundledChangelog.entries as ChangelogEntry[];
 
 /**
  * Блок «Що нового» на головній.
@@ -26,8 +34,10 @@ const ENTRIES = changelog.entries as ChangelogEntry[];
  */
 export const ChangelogCard: React.FC = () => {
   const { t } = useTranslation();
-  // Данных пока нет только если генератор ещё не запускался — тогда блок просто не рисуем.
-  if (ENTRIES.length === 0) return null;
+  const { data } = useChangelog();
+  const entries = (data?.data?.entries as ChangelogEntry[] | undefined) ?? BUNDLED_ENTRIES;
+  // Данных нет только если генератор ещё не запускался — тогда блок просто не рисуем.
+  if (entries.length === 0) return null;
 
   return (
     <details className="group/change rounded-2xl border border-border bg-card p-4 shadow-xs">
@@ -37,13 +47,13 @@ export const ChangelogCard: React.FC = () => {
           {t('home.whatsNew')}
         </span>
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
-          {ENTRIES.length} {t('changelog.entries')}
+          {entries.length} {t('changelog.entries')}
           <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/change:rotate-180" aria-hidden />
         </span>
       </summary>
 
       <ul className="mt-3 space-y-2">
-        {ENTRIES.slice(0, 5).map((entry) => (
+        {entries.slice(0, 5).map((entry) => (
           <li key={entry.hash} className="flex gap-2.5">
             <span
               className={cn(
