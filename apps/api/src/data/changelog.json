@@ -1,7 +1,14 @@
 {
- "generatedAt": "2026-10-14T04:22:56.886Z",
+ "generatedAt": "2026-10-14T04:24:14.275Z",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "entries": [
+  {
+   "hash": "f7559ca",
+   "date": "2026-10-14",
+   "kind": "new",
+   "label": "Нове",
+   "text": "Чейджлог жил внутри бандла, поэтому о серверных фиксах пользователь узнавал только после"
+  },
   {
    "hash": "b0a0dbb",
    "date": "2026-10-14",
@@ -134,13 +141,6 @@
    "kind": "new",
    "label": "Нове",
    "text": "all-ukraine providers, canonical outage_events readers, multi-region bookmarks"
-  },
-  {
-   "hash": "0dfa737",
-   "date": "2026-10-13",
-   "kind": "fix",
-   "label": "Виправлено",
-   "text": "- auth.ts: замість `!==` тепер SHA-256 + timingSafeEqual (utils/timing-safe.ts) — без timing-атаки"
   }
  ]
 }
