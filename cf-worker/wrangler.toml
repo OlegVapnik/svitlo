@@ -20,14 +20,15 @@ workers_dev = true
 crons = ["*/20 * * * *"]
 
 # Зеркало графиков ДТЕК — единственный источник расписания. Заменяет Node-бэкенд.
-[[vars]]
+# Именно [vars], а не [[vars]]: в форме массива wrangler не привязывает переменные, и
+# MIRROR_SCHEDULE_URL приходит в коде как undefined — график молча остаётся пустым.
+[vars]
 MIRROR_SCHEDULE_URL = "https://dtek-api.svitlo-proxy.workers.dev/"
 
 # Публичные Telegram-веб-страницы операторов (не API: токен бота не нужен, парсится /s/<канал>).
-[[vars]]
 NEWS_CHANNELS = "chernigivoblenergo,ukrenergo,dtek_ua"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "svitlo"
-database_id = "ЗАМЕНИТЕ_НА_DATABASE_ID"
+database_id = "e3613ade-704e-480c-924a-c765745ea59c"

@@ -28,8 +28,16 @@ export async function normalizeAddress(input: string): Promise<string> {
  * как есть: она уже лежит в базе (значит, пришла из источника), и молча выбрасывать её нельзя.
  * Но и «придумывать» код нельзя, поэтому подстановки тут нет.
  */
-function canonicalQueue(raw: string): string {
+export function canonicalQueue(raw: string): string {
   return normalizeQueueCode(raw) ?? String(raw ?? '').trim();
+}
+
+/**
+ * Годится ли строка как код группы («1/1», «6/2», «3»). Му��ор в базу не пускаем: иначе один
+ * опечатанный ввод отравил бы подсказки всем соседям, а не только автору.
+ */
+export function isQueueCode(value: string): boolean {
+  return /^\d{1,2}(?:\/\d{1,2})?$/u.test(String(value ?? '').trim());
 }
 
 export { matchHouseNumber };

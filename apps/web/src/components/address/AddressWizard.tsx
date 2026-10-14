@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { MapPin, Search, Star } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
-import { useAddressLookup } from '../../api/queries.js';
+import { useAddressLookup, useContributeAddress } from '../../api/queries.js';
 import { QueueScheduleBar } from '../schedule/QueueScheduleBar.js';
 import { Button } from '../ui/Button.js';
 import { Skeleton } from '../ui/Skeleton.js';
@@ -169,6 +169,25 @@ export const AddressWizard: React.FC = () => {
               </div>
             </div>
           )}
+
+          <ContributeBlock
+            region={currentRegion}
+            settlement={settlement.trim()}
+            street={street.trim()}
+            house={house.trim()}
+            onContributed={(contributedQueue) => {
+              addBookmark({
+                label: [settlement, street, house].filter(Boolean).join(', '),
+                regionCpu: currentRegion,
+                settlementName: settlement.trim(),
+                streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
+                queue: contributedQueue,
+              });
+              // Сразу перезапрашиваем адрес: привязка уже в базе, и человек видит свой график,
+              // а не пустое поле «черга не зафиксирована».
+              void submit();
+            }}
+          />
         </div>
       )}
 
@@ -239,3 +258,74 @@ const StepField: React.FC<{
     {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
   </div>
 );
+/** Групи, которые воркер/бэкенд принимают к записи. Ровно те, что встречаются в графике ДТЕК. */
+const CONTRIBUTE_QUEUES = ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2', '4/1', '4/2', '5/1', '5/2', '6/1', '6/2'];
+
+/**
+ * Народная привязка: если своей очереди в базе нет, человек может назвать её сам.
+ *
+ * Зачем это нужно. Привязки «адрес → очередь» невозможно вывести из графика оператора: в нём
+ * есть группы, но нет того, какая улица к какой относится. Без ручного ввода база оставалась бы
+ * пустой навсегда, и поиск по адресу не работал бы ни у кого. Пользователь знает свой номер
+ * группы (он написан на квитанции и в приложении оператора), поэтому самый честный источник
+ * этих данных — он сам.
+ *
+ * Имя и телефон не спрашиваем намеренно: для привязки они не нужны, а личные данные собирать
+ * не должны.
+ */
+const ContributeBlock: React.FC<{
+  region: string;
+  settlement: string;
+  street: string;
+  house: string;
+  onContributed: (queue: string) => void;
+}> = ({ region, settlement, street, house, onContributed }) => {
+  const { t } = useTranslation();
+  const [queue, setQueue] = useState('');
+  const contribute = useContributeAddress();
+
+  return (
+    <div className="mt-4 space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+      <p className="text-xs text-muted-foreground">{t('addressWizard.contributeHint')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor="address-contribute-queue" className="sr-only">
+          {t('addressWizard.contributeQueueLabel')}
+        </label>
+        <select
+          id="address-contribute-queue"
+          value={queue}
+          onChange={(event) => setQueue(event.target.value)}
+          className="h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="">{t('addressWizard.contributeQueuePlaceholder')}</option>
+          {CONTRIBUTE_QUEUES.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <Button
+          size="sm"
+          disabled={!queue || contribute.isPending}
+          onClick={() => {
+            void contribute
+              .mutateAsync({ region, settlement, street: street || undefined, house: house || undefined, queue })
+              .then((saved) => {
+                if (saved) onContributed(saved);
+              });
+          }}
+        >
+          {contribute.isPending ? t('addressWizard.contributing') : t('addressWizard.contributeSubmit')}
+        </Button>
+      </div>
+      {contribute.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {t('addressWizard.contributeFailed')}
+        </p>
+      )}
+      {contribute.isSuccess && (
+        <p className="text-xs font-semibold text-success">{t('addressWizard.contributeDone')}</p>
+      )}
+    </div>
+  );
+};

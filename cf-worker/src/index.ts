@@ -10,6 +10,8 @@
  * а фронтенд показывает EmptyState. Подставлять «похожий» график хуже, чем не показать ничего.
  */
 
+import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeQueue } from './address.js';
+
 export interface Env {
   DB: D1Database;
   MIRROR_SCHEDULE_URL: string;
@@ -310,13 +312,22 @@ async function fetchMirror(env: Env): Promise<{ payload: Record<string, unknown>
     const response = await fetch(env.MIRROR_SCHEDULE_URL, {
       headers: { 'user-agent': 'svitlo-cf-worker', accept: 'application/json' },
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn(`mirror: HTTP ${response.status} на ${env.MIRROR_SCHEDULE_URL}`);
+      return null;
+    }
     const raw: unknown = await response.json();
     const payload = unwrapMirrorPayload(raw);
-    if (!payload) return null;
+    if (!payload) {
+      console.warn('mirror: неожиданный формат ответа (не читается regions/body)');
+      return null;
+    }
     const timestamp = isJsonObject(raw) && typeof raw['timestamp'] === 'string' ? raw['timestamp'] : null;
     return { payload, timestamp };
-  } catch {
+  } catch (error) {
+    // Логируем причину: молча проглоченная ошибка сети выглядит как «у оператора нет графика»,
+    // и это стоило бы нам недель тишины в проде вместо одного сообщения в логах.
+    console.warn(`mirror: сеть недоступна (${error instanceof Error ? error.message : 'unknown'})`);
     return null;
   }
 }
@@ -464,6 +475,15 @@ async function ensureSchema(env: Env): Promise<void> {
   }
 }
 
+/**
+ * Лимит D1 на число связанных переменных в одном prepared-запросе (SQLITE_MAX_VARIABLE_NUMBER).
+ * Не «размер запроса» и не «число строк»: превышение даёт «too many SQL variables».
+ */
+const MAX_VARIABLES = 100;
+
+/** Колонок в строке schedule_slots — от этого зависит размер пачки вставки. */
+const COLUMNS = 6;
+
 /** Записывает слоты, заменяя данные только для затронутых областей и дат. */
 async function saveSlots(env: Env, slots: Slot[]): Promise<void> {
   if (slots.length === 0) return;
@@ -477,8 +497,9 @@ async function saveSlots(env: Env, slots: Slot[]): Promise<void> {
     await env.DB.prepare(`DELETE FROM schedule_slots WHERE region = ? AND date = ?`).bind(region, date).run();
   }
 
-  // Пачкой по 90 строк: у D1 лимит на размер одного prepared-запроса.
-  const CHUNK = 90;
+  // Пачка = MAX_VARIABLES / COLUMNS. Раньше было 90 строк (540 переменных), и любая запись
+  // падала с «too many SQL variables»: лимит D1 — это число связанных переменных, а не байт.
+  const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / COLUMNS));
   for (let start = 0; start < slots.length; start += CHUNK) {
     const chunk = slots.slice(start, start + CHUNK);
     const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
@@ -494,7 +515,8 @@ async function saveSlots(env: Env, slots: Slot[]): Promise<void> {
 async function saveNews(env: Env, items: Array<Omit<NewsRow, 'first_seen_at'>>): Promise<void> {
   if (items.length === 0) return;
   const now = new Date().toISOString();
-  const CHUNK = 40;
+  // 7 колонок на публикацию — тот же лимит в 100 переменных: 100/7 = 14 строк.
+  const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / 7));
   for (let start = 0; start < items.length; start += CHUNK) {
     const chunk = items.slice(start, start + CHUNK);
     const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
@@ -562,6 +584,107 @@ async function cacheApiRefresh(): Promise<void> {
   return Promise.resolve();
 }
 
+// ───────────────────────────── Справочники и поиск по адресу ─────────────────────────────
+
+/** Откуда пришла подсказка: наш справочник, привязка из базы или открытый гео-справочник OSM. */
+type PlaceSource = 'curated' | 'address_queues' | 'osm';
+
+interface AddressQueueRow {
+  region: string;
+  settlement_name: string;
+  settlement_normalized: string;
+  street_name: string;
+  street_normalized: string;
+  house_pattern: string;
+  queue: string;
+  source: string;
+  updated_at: string;
+}
+
+/**
+ * Спрашивает Nominatim OpenStreetMap.
+ *
+ * Это открытый географический справочник: в нём есть реальные города, сёла и улицы Украины,
+ * которых нет в нашей базе. Без него подсказки ограничивались бы теми несколькими населёнными
+ * пунктами, что мы внесли вручную. Лимиты Nominatim — 1 запрос в секунду на приложение,
+ * поэтому ответы складываются в Cache API на сутки, а адреса из D1 всегда спрашиваются первыми.
+ *
+ * User-Agent обязателен по правилам Nominatim, поэтому передаём свой, а не браузерный.
+ */
+async function nominatim(
+  params: Record<string, string>,
+  allowedAddressTypes: string[],
+): Promise<unknown[]> {
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('countrycodes', 'ua');
+  url.searchParams.set('Accept-Language', 'uk');
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { 'user-agent': 'SvitloUA/2.2', accept: 'application/json' },
+    });
+    if (!response.ok) return [];
+    const parsed: unknown = await response.json();
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => {
+      if (typeof item !== 'object' || item === null) return false;
+      const kind = (item as Record<string, unknown>)['addresstype'];
+      return typeof kind === 'string' && allowedAddressTypes.includes(kind);
+    });
+  } catch {
+    // Справочник недоступен — возвращаем то, что есть в D1, а не ошибку: поиск по адресу
+    // не должен ломаться из-за внешнего сервиса.
+    return [];
+  }
+}
+
+/**
+ * `addresstype` объектов OSM, которые считаем населённым пунктом. Всё остальное (музеи, больницы,
+ * магазины) отбрасываем: в подсказке населённых пунктов «Центральна районна лікарня» — это шум.
+ */
+const SETTLEMENT_ADDRESS_TYPES = [
+  'city', 'town', 'village', 'hamlet', 'municipality', 'suburb', 'county', 'state', 'region', 'borough',
+];
+
+/** Типы OSM, которые считаем улицей. */
+const STREET_ADDRESS_TYPES = ['street', 'road', 'residential', 'pedestrian', 'primary', 'secondary', 'tertiary'];
+
+/** Приводит объект Nominatim к `{ name, normalized, lat, lon, source }`. */
+function nominatimToPlace(item: unknown, source: 'osm'): {
+  name: string;
+  normalized: string;
+  lat: number | null;
+  lon: number | null;
+  source: 'osm';
+} | null {
+  if (typeof item !== 'object' || item === null) return null;
+  const record = item as Record<string, unknown>;
+  const name = typeof record['name'] === 'string' ? record['name'] : String(record['display_name'] ?? '').split(',')[0] ?? '';
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  return {
+    name: trimmed,
+    normalized: normalizeAddress(trimmed),
+    lat: typeof record['lat'] === 'string' ? Number(record['lat']) : null,
+    lon: typeof record['lon'] === 'string' ? Number(record['lon']) : null,
+    source,
+  };
+}
+
+/** Убирает дубли по нормализованному имени, сохраняя порядок (сначала наши данные). */
+function dedupePlaces<T extends { normalized: string }>(places: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const place of places) {
+    if (!place.normalized || seen.has(place.normalized)) continue;
+    seen.add(place.normalized);
+    result.push(place);
+  }
+  return result;
+}
+
 // ───────────────────────────── HTTP-часть ─────────────────────────────
 
 /** Конверт ответа совпадает с бэкендом: `{ data: … }`. Фронтенд читает именно его. */
@@ -595,11 +718,6 @@ function addDays(date: string, offset: number): string {
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + offset);
   return next.toISOString().slice(0, 10);
-}
-
-/** Приводит код группы к каноническому виду: «2.2», « 2 / 2 » → «2/2». */
-function normalizeQueue(value: string): string {
-  return value.trim().replace(/[.\s]+/gu, '/');
 }
 
 interface SlotRow {
@@ -694,12 +812,178 @@ async function ensureSchedule(env: Env): Promise<void> {
     const cpu = item['cpu'];
     if (typeof cpu === 'string' && cpu) raw.push(...extractSlots(mirror.payload, cpu));
   }
+  console.log(`ensureSchedule: зеркало дало ${raw.length} слотов по ${regionsOf(mirror.payload)?.length ?? 0} областям`);
   await ensureSchema(env);
   await saveSlots(env, mergeSlots(raw));
+  const written = await env.DB.prepare(`SELECT COUNT(*) AS n FROM schedule_slots`).first<{ n: number }>();
+  console.log(`ensureSchedule: в D1 теперь ${written?.n ?? 0} слотов`);
 }
 
 /** Обрабатывает один GET-запрос `/api/v1/*`. */
-async function handleApi(env: Env, url: URL): Promise<Response> {
+
+
+
+/** Похоже ли название на улицу: OSM в ответе на запрос «улица, село» отдаёт и дома с номерами. */
+function isStreetLike(name: string): boolean {
+  const value = name.trim();
+  if (!value) return false;
+  if (/\d+/u.test(value)) return false;
+  return /^(вул\.|вулиця|просп\.|проспект|пров\.|провулок|переулок|пер\.|шосе|бульвар|б\.|пл\.|площа|узв\.|ім\.|наб\.|набережна)/iu.test(value);
+}
+
+/**
+ * Ищет очередь по адресу: сначала конкретный дом, затем вся улица, затем всё село.
+ *
+ * Порядок именно от точного к общему: чем уже совпадение, тем надёжнее номер группы. Если на
+ * улице несколько групп, а дом не указан, номер НЕ угадывается — возвращаются варианты
+ * диапазонов, чтобы человек выбрал нужный сам.
+ */
+async function resolveAddress(
+  env: Env,
+  input: { region: string; settlement: string; street: string; house: string },
+): Promise<{
+  queue: string | null;
+  reason: 'exact-house' | 'whole-street' | 'whole-settlement' | 'not-found';
+  source: string | null;
+  options: Array<{ housePattern: string; queue: string }>;
+}> {
+  const settlementNormalized = normalizeAddress(input.settlement);
+  const rows = await env.DB.prepare(
+    `SELECT region, settlement_name, settlement_normalized, street_name, street_normalized,
+            house_pattern, queue, source, updated_at
+     FROM address_queues WHERE region = ? AND settlement_normalized = ?`,
+  ).bind(input.region, settlementNormalized).all<AddressQueueRow>();
+  const entries = rows.results ?? [];
+  if (entries.length === 0) {
+    return { queue: null, reason: 'not-found', source: null, options: [] };
+  }
+
+  const streetNormalized = normalizeAddress(input.street);
+  const wholeSettlement = entries.filter((row) => !row.street_normalized);
+
+  // Уровень 1: конкретный дом на конкретной улице.
+  const streetEntries = streetNormalized
+    ? entries.filter((row) => row.street_normalized === streetNormalized)
+    : [];
+  if (streetNormalized && input.house) {
+    const exact = streetEntries.find((row) => matchHouseNumber(input.house, row.house_pattern));
+    if (exact) {
+      return { queue: normalizeQueue(exact.queue), reason: 'exact-house', source: exact.source, options: [] };
+    }
+  }
+
+  // Уровень 2: вся улица одним номером группы.
+  if (streetEntries.length > 0) {
+    const distinct = [...new Set(streetEntries.map((row) => normalizeQueue(row.queue)))];
+    if (distinct.length === 1) {
+      return { queue: distinct[0]!, reason: 'whole-street', source: streetEntries[0]!.source, options: [] };
+    }
+    // Групп несколько, а дом не указан или в шаблоны не попал — показываем варианты по диапазонам.
+    return {
+      queue: null,
+      reason: 'not-found',
+      source: null,
+      options: dedupeQueues(streetEntries.map((row) => ({
+        housePattern: row.house_pattern === '*' ? row.street_name : `${row.street_name} (${row.house_pattern})`,
+        queue: normalizeQueue(row.queue),
+      }))),
+    };
+  }
+
+  // Уровень 3: весь населённый пункт.
+  const distinctSettlement = [...new Set(wholeSettlement.map((row) => normalizeQueue(row.queue)))];
+  if (distinctSettlement.length === 1) {
+    return {
+      queue: distinctSettlement[0]!,
+      reason: 'whole-settlement',
+      source: wholeSettlement[0]!.source,
+      options: [],
+    };
+  }
+
+  return {
+    queue: null,
+    reason: 'not-found',
+    source: null,
+    options: dedupeQueues(wholeSettlement.map((row) => ({
+      housePattern: row.settlement_name,
+      queue: normalizeQueue(row.queue),
+    }))),
+  };
+}
+
+/** Убирает повторы вариантов «дома → очередь», сохраняя порядок. */
+function dedupeQueues(options: Array<{ housePattern: string; queue: string }>): Array<{ housePattern: string; queue: string }> {
+  const seen = new Set<string>();
+  const result: Array<{ housePattern: string; queue: string }> = [];
+  for (const option of options) {
+    const key = `${option.housePattern}|${option.queue}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(option);
+  }
+  return result;
+}
+
+/**
+ * Народная привязка: человек сам называет очередь своего адреса, если её ещё нет в базе.
+ *
+ * Ограничения на публикацию сознательные:
+ *   - очередь должна быть настоящим кодом (1/1…6/2), иначе в базу попадёт мусор;
+ *   - сохраняется ОДИН адрес за раз, без имени и телефона — персональных данных не собираем;
+ *   - источник помечается `community`, поэтому в интерфейсе видно, что привязка народная,
+ *     и её можно перепроверить, а не выдать за выгрузку оператора.
+ */
+async function handleContribute(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується JSON' } }, 400);
+  }
+  if (typeof body !== 'object' || body === null) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується об’єкт' } }, 400);
+  }
+
+  const payload = body as Record<string, unknown>;
+  const region = String(payload['region'] ?? '').trim();
+  const settlement = String(payload['settlement'] ?? '').trim();
+  const street = String(payload['street'] ?? '').trim();
+  const house = String(payload['house'] ?? '').trim();
+  const queue = normalizeQueue(String(payload['queue'] ?? ''));
+
+  if (!region || settlement.length < 2) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'region і settlement обовʼязкові' } }, 400);
+  }
+  if (!isQueueCode(queue)) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: `Невірний код черги «${queue}»` } }, 400);
+  }
+
+  const housePattern = house || '*';
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO address_queues
+       (region, settlement_name, settlement_normalized, street_name, street_normalized,
+        house_pattern, queue, source, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'community', ?)`,
+  )
+    .bind(
+      region,
+      settlement,
+      normalizeAddress(settlement),
+      street,
+      normalizeAddress(street),
+      housePattern,
+      queue,
+      new Date().toISOString(),
+    )
+    .run();
+
+  return json({
+    data: { saved: true, queue, source: 'community', housePattern },
+  }, 201);
+}
+
+async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/^\/api\/v1/u, '').replace(/\/+$/u, '') || '/';
   const region = url.searchParams.get('region') ?? '';
   const today = kyivToday();
@@ -826,11 +1110,171 @@ async function handleApi(env: Env, url: URL): Promise<Response> {
     return json({ data: items, meta: { count: items.length, limit, stale } });
   }
 
+  if (path === '/contacts') {
+    // Контакты приходят из справочника в D1 (см. schema.sql) — это те же публичные каналы
+    // связи, что и в Node-бэкенде: колл-центр, телефоны, боты и приём обращений.
+    const rows = await env.DB.prepare(
+      `SELECT id, type, label, value, region FROM contacts ORDER BY type, label`,
+    ).all<{ id: string; type: string; label: string; value: string; region: string | null }>();
+    const data = (rows.results ?? []).map((row) => ({
+      id: row.id,
+      type: row.type,
+      label: row.label,
+      value: row.value,
+      region: row.region ?? null,
+    }));
+    return json({ data });
+  }
+
+  if (path === '/addresses/settlements') {
+    const query = (url.searchParams.get('q') ?? '').trim();
+    if (query.length < 2) return json({ data: [] });
+    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 10) || 10));
+    const needle = normalizeAddress(query);
+
+    // Сначала наши данные: они проверены и размечены своим источником.
+    const ours = await env.DB.prepare(
+      `SELECT d.name AS name, d.normalized AS normalized, 'curated' AS source
+       FROM directory_settlements d WHERE d.region = ? AND d.normalized LIKE ?`,
+    ).bind(region, `%${needle}%`).all<{ name: string; normalized: string; source: 'curated' }>();
+
+    // Тип аннотирован явно: без него TypeScript сужает `source` до литерала 'curated'
+    // и не даёт потом положить рядом подсказки из OSM.
+    let places: Array<{ name: string; normalized: string; lat: number | null; lon: number | null; source: PlaceSource }> =
+      (ours.results ?? []).map((row) => ({
+        name: row.name,
+        normalized: row.normalized,
+        lat: null,
+        lon: null,
+        source: 'curated',
+      }));
+
+    // Если в базе мало совпадений — допрашиваем открытый гео-справочник OSM.
+    if (places.length < limit) {
+      const osm = await nominatim(
+        {
+          featuretype: 'settlement',
+          // Область в запрос НЕ подставляем: проверено на живых ответах Nominatim, что
+          // «Чернігівська область» в запросе ломает поиск («Чернігів, Чернігівська область» —
+          // 0 результатов, а «Чернігів» — город). Ограничение страны делает countrycodes=ua,
+          // а область сужаем уже фильтром по каталогу регионов на фронтенде.
+          q: query,
+          // Запас ×3: часть строк отсеется по addresstype (реки, парки, магазины с тем же
+          // именем), и без запаса подсказка выходила бы пустой при непустом ответе OSM.
+          limit: String(limit * 3),
+        },
+        SETTLEMENT_ADDRESS_TYPES,
+      );
+      for (const item of osm) {
+        const place = nominatimToPlace(item, 'osm');
+        if (place) places.push(place);
+      }
+    }
+    return json({ data: dedupePlaces(places).slice(0, limit) });
+  }
+
+  if (path === '/addresses/streets') {
+    const settlement = (url.searchParams.get('settlement') ?? '').trim();
+    const query = (url.searchParams.get('q') ?? '').trim();
+    if (settlement.length < 2) return json({ data: [], wholeSettlementQueue: null });
+    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 10) || 10));
+    const settlementNormalized = normalizeAddress(settlement);
+    const needle = normalizeAddress(query);
+
+    // Улицы берём из двух мест: справочник (знаем улицу, но не её очередь) и привязки
+    // (знаем и улицу, и очередь). Показываем оба — очереди может ещё не быть, и это честно.
+    const known = await env.DB.prepare(
+      `SELECT name, normalized FROM directory_streets
+       WHERE region = ? AND settlement_normalized = ? AND normalized LIKE ?`,
+    ).bind(region, settlementNormalized, `%${needle}%`)
+      .all<{ name: string; normalized: string }>();
+
+    const bound = await env.DB.prepare(
+      `SELECT DISTINCT street_name AS name, street_normalized AS normalized FROM address_queues
+       WHERE region = ? AND settlement_normalized = ? AND street_normalized <> '' AND street_normalized LIKE ?`,
+    ).bind(region, settlementNormalized, `%${needle}%`)
+      .all<{ name: string; normalized: string }>();
+
+    const streets: Array<{ name: string; normalized: string; source: PlaceSource }> = [
+      ...(bound.results ?? []).map((row) => ({ name: row.name, normalized: row.normalized, source: 'address_queues' as const })),
+      ...(known.results ?? []).map((row) => ({ name: row.name, normalized: row.normalized, source: 'curated' as const })),
+    ];
+
+    let places: Array<{ name: string; normalized: string; source: PlaceSource }> = dedupePlaces(streets);
+
+    // Если в нашем справочнике ничего нет (а это большинство сёл) — берём улицы из OSM.
+    if (places.length === 0 && query.length >= 2) {
+      const osm = await nominatim(
+        { q: `${query}, ${settlement}`, limit: String(limit * 3) },
+        STREET_ADDRESS_TYPES,
+      );
+      const mapped: Array<{ name: string; normalized: string; source: PlaceSource }> = [];
+      for (const item of osm) {
+        const place = nominatimToPlace(item, 'osm');
+        // OSM отдаёт и дома, и проезды — оставляем только то, что похоже на улицу.
+        if (place && isStreetLike(place.name)) {
+          mapped.push({ name: place.name, normalized: place.normalized, source: 'osm' });
+        }
+      }
+      places = dedupePlaces(mapped).slice(0, limit);
+    }
+
+    // Если на всё село известна одна очередь — отдаём её, чтобы мастер сразу показал ответ.
+    const whole = await env.DB.prepare(
+      `SELECT DISTINCT queue FROM address_queues
+       WHERE region = ? AND settlement_normalized = ? AND street_normalized = ''`,
+    ).bind(region, settlementNormalized).all<{ queue: string }>();
+    const queues = [...new Set((whole.results ?? []).map((row) => normalizeQueue(row.queue)))];
+
+    return json({
+      data: places,
+      wholeSettlementQueue: queues.length === 1 ? queues[0] : null,
+      region,
+    });
+  }
+
+  if (path === '/addresses/resolve') {
+    const settlement = (url.searchParams.get('settlement') ?? '').trim();
+    if (settlement.length < 2) {
+      return json({ error: { code: 'VALIDATION_ERROR', message: 'settlement обовʼязковий' } }, 400);
+    }
+    const street = (url.searchParams.get('street') ?? '').trim();
+    const house = (url.searchParams.get('house') ?? '').trim();
+
+    const resolved = await resolveAddress(env, { region, settlement, street, house });
+    if (!resolved.queue) {
+      return json({
+        data: { queue: null, options: resolved.options, reason: 'not-found', source: null, schedule: null },
+      });
+    }
+
+    // Расписание найденной группы на сегодня отдаём сразу: человек узнал номер группы и
+    // заодно видит, есть ли сейчас свет, не делая второй запрос.
+    const rows = await loadSlots(env, region, today);
+    const intervals = toIntervals(rows, resolved.queue, today);
+    return json({
+      data: {
+        queue: resolved.queue,
+        options: resolved.options,
+        reason: resolved.reason,
+        source: resolved.source,
+        schedule: {
+          queue: resolved.queue,
+          date: today,
+          intervals,
+          source: intervals.length > 0 ? 'mirror' : null,
+          lastImportedAt: await lastImportedAt(env),
+        },
+      },
+    });
+  }
+
+  if (path === '/addresses/contribute') return handleContribute(request, env);
+
   // Остальные разделы зеркало не отдаёт, и выдумывать их нельзя. Честная пустая выдача:
   // фронтенд на ней показывает свой EmptyState, а не рисует вымышленные отключения.
   if (path === '/outages' || path === '/outages/stats') return json({ data: [], meta: { count: 0 } });
   if (path === '/incidents') return json({ data: [] });
-  if (path === '/contacts') return json({ data: [] });
   if (path === '/reliability') {
     return json({ data: { groups: [], byBucket: [], generatedAt: new Date().toISOString() } });
   }
@@ -871,7 +1315,7 @@ export default {
     }
 
     try {
-      return await handleApi(env, url);
+      return await handleApi(request, env, url);
     } catch (error) {
       // Отвечаем 500 с внятным телом, но без стектрейса наружу: он бесполезен пользователю
       // и может засветить внутренние детали воркера.

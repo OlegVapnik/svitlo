@@ -351,3 +351,23 @@ export const useAddressLookup = () => {
     },
   });
 };
+
+/**
+ * Народная привязка очереди к адресу (POST /api/v1/addresses/contribute).
+ *
+ * После успеха инвалидируем `upcomingSchedules`, чтобы график новой группы подтянулся в офлайн-
+ * снимок: человек только что помог соседям, и его вклад должен работать и без сети.
+ */
+export const useContributeAddress = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { region: string; settlement: string; street?: string; house?: string; queue: string }) =>
+      api.contributeAddressQueue(params),
+    onSuccess: (queue) => {
+      if (!queue) return;
+      void queryClient.invalidateQueries({ queryKey: ['upcomingGroupOutages'] });
+      void queryClient.invalidateQueries({ queryKey: ['upcomingSchedules'] });
+      void queryClient.invalidateQueries({ queryKey: ['queueSchedule'] });
+    },
+  });
+};

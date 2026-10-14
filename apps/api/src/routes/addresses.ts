@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import { suggestAddresses } from '../services/addresses.service.js';
 import {
+  canonicalQueue as canonicalQueueCode,
   importAddressQueuesBatch,
+  isQueueCode,
   liveLookupFromProvider,
   resolveQueueByAddress,
   suggestSettlements,
@@ -143,6 +145,38 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
         },
       },
     };
+  });
+
+  /**
+   * Народна привязка: человек сам називає свою чергу, якщо для його адреси її ще немає.
+   *
+   * Обмеження свідомі: код черги має бути справжнім (1/1…6/2), інакше в базу потрапить сміття;
+   * зберігається ОДИН адреса за раз, без імені та телефону — персональних даних не збираємо;
+   * джерело позначається 'community', щоб в інтерфейсі було видно, що прив'язка народна, і її
+   * можна було перевірити, а не видавати за вивантаження оператора.
+   */
+  fastify.post('/api/v1/addresses/contribute', async (request, reply) => {
+    // `house` в теле вкладаем в housePattern: отдельного поля в типе импорта нет, а человеку
+    // в форме удобнее вводить именно «номер дома».
+    const body = request.body as (Partial<ImportRow> & { house?: string }) | undefined;
+    const region = String(body?.region ?? '').trim();
+    const settlement = String(body?.settlement ?? '').trim();
+    const street = String(body?.street ?? '').trim();
+    const house = String(body?.house ?? '').trim();
+    const queue = canonicalQueueCode(String(body?.queue ?? ''));
+
+    if (!region || settlement.length < 2) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'Потрібні region і settlement');
+    }
+    if (!isQueueCode(queue)) {
+      throw new AppError(400, 'VALIDATION_ERROR', `Невірний код черги «${queue}»`);
+    }
+
+    const result = await importAddressQueuesBatch(
+      [{ region, settlement, street, housePattern: house || '*', queue }],
+      'community',
+    );
+    return reply.status(201).send({ data: { saved: result.imported > 0, queue, source: 'community' } });
   });
 
   /**

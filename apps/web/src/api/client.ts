@@ -103,6 +103,29 @@ export const api = {
    * Пустые street/house не отправляем: бэкенд трактует их как «уточните адрес» и отвечает
    * либо группой на всё село, либо списком вариантов по улице.
    */
+  /**
+   * Народная привязка: человек называет очередь своего адреса, если её нет в базе.
+   *
+   * Имя и телефон не передаём — для привязки они не нужны, а личные данные собирать не должны.
+   */
+  contributeAddressQueue: async (
+    params: { region: string; settlement: string; street?: string; house?: string; queue: string },
+  ): Promise<string | null> => {
+    const body: Record<string, string> = {
+      region: params.region,
+      settlement: params.settlement,
+      queue: params.queue,
+    };
+    if (params.street?.trim()) body['street'] = params.street.trim();
+    if (params.house?.trim()) body['house'] = params.house.trim();
+    const res = (await fetcher('/addresses/contribute', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })) as { data: { saved: boolean; queue: string } | null };
+    return res.data?.saved ? res.data.queue : null;
+  },
+
   resolveAddressQueue: async (
     params: { region: string; settlement: string; street?: string; house?: string },
     signal?: AbortSignal,
