@@ -1,0 +1,19 @@
+{
+  "name": "svitlo-cf-worker",
+  "version": "2.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker: раздача графиков ГПВ по HTTPS 24/7 без GitHub и без включённого ноутбука",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy --config wrangler.toml",
+    "dev": "wrangler dev --config wrangler.toml",
+    "tail": "wrangler tail --config wrangler.toml",
+    "d1:init": "wrangler d1 execute svitlo --config wrangler.toml --file=./schema.sql"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.99.0"
+  }
+}

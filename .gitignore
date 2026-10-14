@@ -35,3 +35,8 @@ ALL_IN_ONE.md
 /apps/web/android-apk/
 # Кэш gradle (общий для всех локальных сборок Android)
 .cache/
+
+# Cloudflare Worker: зависимости и локальные состояния wrangler
+cf-worker/node_modules/
+cf-worker/.wrangler/
+.wrangler/

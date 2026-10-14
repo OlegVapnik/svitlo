@@ -9,7 +9,7 @@ import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useRegionQueue } from '../../hooks/useRegionQueue.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
-import { useQueues, useQueueSchedule } from '../../api/queries.js';
+import { useQueues, useQueueSchedule, useUpcomingGroupOutages } from '../../api/queries.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
@@ -60,7 +60,13 @@ export const HomeHeroSection: React.FC = () => {
     isLoading: scheduleLoading,
     isError: scheduleError,
     refetch: refetchSchedule,
+    isFallback: scheduleFromSnapshot,
   } = useQueueSchedule(selectedQueue ?? undefined, selectedDate, currentRegion);
+
+  // Завантажуємо зріз по ВСІМ групах області: з нього береться офлайн-снимок, завдяки якому в
+  // офлайні працюють усі кнопки груп, а не лише та, що її натиснули востаннє. Запит один на
+  // область, тому окремо для кожної кнопки додаткових запитів не робимо.
+  useUpcomingGroupOutages(currentRegion, 2);
 
   // Список групп области: он же несёт привязку «населённые пункты / улицы → группа».
   const { data: queuesResponse } = useQueues(currentRegion);
@@ -348,6 +354,12 @@ className={cn(
           <div className="pt-1">
             <Timeline24h intervals={intervals} date={selectedDate} />
           </div>
+
+          {/* Графік узято з офлайн-снимка, а не зі свіжої відповіді оператора. Кажемо про це
+              явно: без підписки людина прийняла б вчорашні дані за сьогоднішні. */}
+          {scheduleFromSnapshot && (
+            <p className="text-[11px] text-muted-foreground/80">{t('home.scheduleFromSnapshot')}</p>
+          )}
 
           {/* Швидкі дії */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">

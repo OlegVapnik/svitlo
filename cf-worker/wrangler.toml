@@ -1,0 +1,33 @@
+name = "svitlo-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-06"
+
+# Автономный Worker: раздаёт данные по HTTPS 24/7, раз в 20 минут сам забирает график
+# оператора и новости. Никаких Node-зависимостей — только стандартный Web Fetch API,
+# D1 (постоянное хранилище) и Cache API.
+#
+# Хранилище: D1 `svitlo` — снимок графиков и новостей; дополнительно тот же снимок кладётся
+# в Cache API, поэтому повторные чтения не бьют по D1 (бесплатный план жёстко лимитирует).
+workers_dev = true
+
+# Хранилище для графиков и новостей. Создаётся один раз:
+#   npx wrangler d1 create svitlo
+# → вставьте полученный database_id в [[d1_databases]] ниже.
+
+# Дедлайн крона: */20 — график оператора меняется по полчаса, чаще не нужно,
+# а лимиты бесплатного плана расходуются на каждый запуск.
+[triggers]
+crons = ["*/20 * * * *"]
+
+# Зеркало графиков ДТЕК — единственный источник расписания. Заменяет Node-бэкенд.
+[[vars]]
+MIRROR_SCHEDULE_URL = "https://dtek-api.svitlo-proxy.workers.dev/"
+
+# Публичные Telegram-веб-страницы операторов (не API: токен бота не нужен, парсится /s/<канал>).
+[[vars]]
+NEWS_CHANNELS = "chernigivoblenergo,ukrenergo,dtek_ua"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "svitlo"
+database_id = "ЗАМЕНИТЕ_НА_DATABASE_ID"

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ContactListResponse,
@@ -20,6 +21,7 @@ import type {
 } from '@svitlo/shared';
 import type { RegionListResponse } from '../lib/region.js';
 import { api } from './client';
+import { pickRegionSchedule, writeRegionScheduleSnapshot } from './offline-region-schedules.js';
 
 type OutageFilters = {
   query?: string;
@@ -143,11 +145,23 @@ export const useQueues = (region?: string) =>
  *
  * Джерело — `schedule_slots` оператора, а не `outage_events`: останні містять лише точкові
  * ремонтні записи одного села й не відповідають на запитання «які групи гасять сьогодні».
+ *
+ * Тут же відповідь пишеться в офлайн-снимок области (offline-region-schedules.ts). Снимок
+ * приходить одним запитом на область, тому достатньо одного візиту зі зв'язкою, щоб в офлайні
+ * працювали ВСІ кнопки груп (1/1…6/2), а не лише та, яку натиснули востаннє.
  */
 export const useUpcomingGroupOutages = (region?: string, days = 2) =>
   useQuery<{ data: GroupOutageSummary[] }>({
     queryKey: ['upcomingGroupOutages', region, days],
-    queryFn: ({ signal }) => api.fetchUpcomingGroupOutages(region, days, signal),
+    queryFn: async ({ signal }) => {
+      const response = await api.fetchUpcomingGroupOutages(region, days, signal);
+      // Пишемо лише успішну відповідь: невдача чи порожня відповідь не мають затерти вчорашній
+      // робочий графік, бо інакше після однієї помилки офлайн стане порожнім назавжди.
+      if (region && Array.isArray(response?.data)) {
+        writeRegionScheduleSnapshot(region, response.data);
+      }
+      return response;
+    },
     enabled: Boolean(region),
     staleTime: 60_000,
     refetchInterval: OUTAGE_POLL_MS,
@@ -177,15 +191,36 @@ export const useStreetSchedule = (street: string, date: string) =>
  *
  * Тип — конверт `{ data: ... }`, как у остальных хуков: fetcher() возвращает тело ответа целиком,
  * а API отдаёт график внутри `data`. Без `.data` на экране была пустая главная.
+ *
+ * ОФЛАЙН-ФОЛБЭК. Пока идёт запрос, при ошибке и при отсутствии сети берём интервалы этой группы
+ * из снимка области (useUpcomingGroupOutages). Без этого каждая кнопка группы в офлайне работала
+ * бы только после нажатия со связью — то есть на телефоне почти никогда.
  */
-export const useQueueSchedule = (queue: string | undefined, date: string, region?: string) =>
-  useQuery<{ data: QueueScheduleData }>({
+export const useQueueSchedule = (queue: string | undefined, date: string, region?: string) => {
+  const query = useQuery<{ data: QueueScheduleData }>({
     queryKey: ['queueSchedule', queue, date, region],
     queryFn: () => api.fetchQueueSchedule(queue as string, date, region),
     enabled: Boolean(queue),
     staleTime: 60_000,
     refetchInterval: OUTAGE_POLL_MS,
   });
+
+  // Снимок берём только когда реального ответа нет: успешный сетевой ответ всегда важнее
+  // вчерашнего офлайна, иначе приложение застряло бы на старом графике.
+  const fallback = useMemo(() => {
+    if (query.isSuccess || !region) return null;
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    if (!offline && !query.isError && !query.isLoading) return null;
+    return pickRegionSchedule(region, queue, date);
+  }, [query.isSuccess, query.isError, query.isLoading, region, queue, date]);
+
+  // Ошибку сети при этом НЕ маскируем: query.isError остаётся, и человек видит баннер офлайна.
+  // `isFallback` добавлен, чтобы экран мог показать, что график взят из снимка, а не свежий.
+  if (fallback && !query.isSuccess) {
+    return { ...query, data: { data: fallback }, isFallback: true };
+  }
+  return { ...query, isFallback: false };
+};
 
 /**
  * Ручной запуск парсинга джерел оператора (нужен админ-токен). После успеха инвалидирует всё,

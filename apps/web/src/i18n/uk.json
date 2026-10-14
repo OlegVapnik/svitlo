@@ -79,7 +79,8 @@
     "pointOutagesCount": "відключень: {{n}}",
     "unknownPlace": "Невідоме місце",
     "whatsNew": "Що нового",
-    "statGroupsHint": "груп за графіком ГПВ"
+    "statGroupsHint": "груп за графіком ГПВ",
+    "scheduleFromSnapshot": "Графік збережено офлайн — це останні дані, які вдалося завантажити."
   },
   "outages": {
     "title": "Відключення",
