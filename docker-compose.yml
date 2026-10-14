@@ -32,10 +32,13 @@ x-api-env: &api-env
   # Перелік НП за КОАТУУ. Порожньо = беремо довідник (1509 НП Чернігівщини) і обходимо
   # його порціями, містами вперед; курсор обходу сіл живе між прогонами.
   CHERNIHIV_CITY_IDS: ${CHERNIHIV_CITY_IDS:-}
-  CHERNIHIV_MAX_CITIES_PER_RUN: ${CHERNIHIV_MAX_CITIES_PER_RUN:-30}
+  # 12, а не 30: 90 запросов подряд WAF не витримує і рве з'єднання в кінці прогону
+  # («fetch failed», джерело гасне). 12 НП ≈ 36 запитів ≈ 1.5 хв — заходить стабільно.
+  CHERNIHIV_MAX_CITIES_PER_RUN: ${CHERNIHIV_MAX_CITIES_PER_RUN:-12}
   CHERNIHIV_OUTAGE_TYPES: ${CHERNIHIV_OUTAGE_TYPES:-1,2,6}
   # Пауза між запитами до оператора + прогрів сесії (GET /power_outages) — щоб не тригерити WAF.
-  CHERNIHIV_REQUEST_DELAY_MS: ${CHERNIHIV_REQUEST_DELAY_MS:-1000}
+  # Пауза між запитами: 1000 мс при 90 запитах підряд уже не вистачало оператору.
+  CHERNIHIV_REQUEST_DELAY_MS: ${CHERNIHIV_REQUEST_DELAY_MS:-1500}
   # Повтори однієї порції: оператор віддає 400 ESOCKETTIMEDOUT на великих містах (Чернігів),
   # наступний запит зазвичай успішний. Без повторів місто випадало з вибірки цілком.
   CHERNIHIV_RETRIES: ${CHERNIHIV_RETRIES:-2}
