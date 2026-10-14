@@ -81,6 +81,29 @@ NODE
 echo ">>> Генерация иконок"
 node apps/web/scripts/generate-android-icons.mjs >/dev/null
 
+# Версию поднимаем на единицу при каждой сборке.
+#
+# Зачем: пока versionCode оставался равным 1, установщик на телефоне получал APK с тем же
+# кодом версии и не мог отличить новую сборку от старой — а нам нужно было проверить, какая
+# именно версия установлена. Плюс по versionCode видно, обновилось ли приложение вообще.
+BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+# Видимую версию (X.Y.Z) дублируем в versionName Android, чтобы в диспетчере устройств
+# и в информации о приложении была та же цифра, что на главном экране.
+APP_VERSION="$(grep -oP "APP_VERSION = '\K[0-9]+\.[0-9]+\.[0-9]+" apps/web/src/version.ts)"
+python3 - "$BUILD_NUMBER" "$APP_VERSION" <<'PY'
+import pathlib
+import re
+import sys
+
+number, version = sys.argv[1], sys.argv[2]
+path = pathlib.Path('apps/web/android/app/build.gradle')
+text = path.read_text(encoding='utf-8')
+text = re.sub(r'versionCode \d+', f'versionCode {number}', text)
+text = re.sub(r'versionName "[^"]*"', f'versionName "{version}"', text)
+path.write_text(text, encoding='utf-8')
+print(f"    versionCode = {number}, versionName = {version}")
+PY
+
 echo ">>> Синхронизация в нативный проект Capacitor"
 (cd apps/web && npx cap sync android >/dev/null)
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CloudOff } from 'lucide-react';
+import { appVersionLabel } from '../../version.js';
 import {
   isOfflineServed,
   offlineServedAt,
@@ -14,6 +15,22 @@ import {
  * показывать устаревший график молча было бы хуже, чем показать пустой экран. Когда сеть
  * возвращается, баннер исчезает сам — первый успешный ответ снимает флаг.
  */
+/**
+ * Метка сборки.
+ *
+ * Показывается ВСЕГДА и мелко, чтобы была видна сразу на открытом экране: по ней видно,
+ * какая версия приложения стоит на телефоне. Раньше метка пряталась в меню, куда нужно было
+ * долистать, — при разборе «не работает» это первое, что нужно проверить.
+ */
+export const BuildStamp: React.FC = () => (
+  <span
+    className="select-none text-center font-mono text-[10px] text-muted-foreground/50"
+    aria-label={appVersionLabel(__BUILD_ID__)}
+  >
+    {appVersionLabel(__BUILD_ID__)}
+  </span>
+);
+
 export const OfflineBanner: React.FC = () => {
   const { t } = useTranslation();
   const [active, setActive] = useState(isOfflineServed());
