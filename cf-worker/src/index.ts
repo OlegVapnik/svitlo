@@ -672,6 +672,88 @@ function mergedMinutes(intervals: Array<{ startsAt: string; endsAt: string }>): 
   return Math.round(total / 60_000);
 }
 
+/**
+ * Сводка по окну времени: сколько минут без света, сколько со светом и какой процент.
+ *
+ * Считается СРЕДНИМ по группам, а не суммой: отключения разных групп идут параллельно,
+ * и сумма за месяц легко превысила бы длину окна в несколько раз, дав надёжность ниже нуля.
+ * У конкретного человека одна группа — значит, среднее и есть его «сколько часов без света».
+ *
+ * hasData=false, когда по окну нет ни одного слота: это «нет данных», а не «100% надёжности».
+ */
+async function reliabilityForRange(
+  env: Env,
+  region: string,
+  fromMs: number,
+  toMs: number,
+  windowMinutes: number,
+): Promise<{
+  windowMinutes: number;
+  outageMinutes: number;
+  poweredMinutes: number;
+  reliabilityPct: number;
+  hasData: boolean;
+  outageCount: number;
+}> {
+  const rows = await env.DB.prepare(
+    region
+      ? `SELECT queue, date, time_from, time_to FROM schedule_slots WHERE region = ? AND date >= ? AND date <= ?`
+      : `SELECT queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
+  )
+    .bind(...(region ? [region, isoDate(fromMs), isoDate(toMs)] : [isoDate(fromMs), isoDate(toMs)]))
+    .all<{ queue: string; date: string; time_from: string; time_to: string }>();
+
+  const list = rows.results ?? [];
+  if (list.length === 0) {
+    return {
+      windowMinutes,
+      outageMinutes: 0,
+      poweredMinutes: 0,
+      reliabilityPct: 0,
+      hasData: false,
+      outageCount: 0,
+    };
+  }
+
+  // Знаменатель — только дни, по которым слоты ЕСТЬ. Иначе месячное окно в 31 день с
+  // данными за одни сутки давало «99,3% надійності» — цифра выглядит отличной, но
+  // посчитана по 30 дням, о которых мы ничего не знаем. Это ровно тот случай, где
+  // «нет данных» не должно выглядеть как «почти идеально».
+  const daysWithData = new Set(list.map((row) => row.date)).size;
+  const effectiveWindow = Math.max(24 * 60, Math.min(windowMinutes, daysWithData * 24 * 60));
+
+  const byQueue = new Map<string, Array<{ startsAt: string; endsAt: string }>>();
+  for (const row of list) {
+    const queue = normalizeQueue(row.queue);
+    const intervals = byQueue.get(queue) ?? [];
+    intervals.push({
+      startsAt: localSlotToUtc(row.date, row.time_from, false),
+      endsAt: localSlotToUtc(row.date, row.time_to, true),
+    });
+    byQueue.set(queue, intervals);
+  }
+
+  let sum = 0;
+  for (const intervals of byQueue.values()) sum += mergedMinutes(intervals);
+  const average = Math.round(sum / byQueue.size);
+  // Окно не может быть «переполнено»: если расчёт дал больше, данные противоречивы и
+  // показывать их — значит соврать. Тогда честно отдаём полное отключение без нуля.
+  const counted = Math.min(effectiveWindow, average);
+  return {
+    windowMinutes: effectiveWindow,
+    outageMinutes: counted,
+    poweredMinutes: Math.max(0, effectiveWindow - counted),
+    reliabilityPct: effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
+    hasData: true,
+    outageCount: list.length,
+  };
+}
+
+/** Момент времени → YYYY-MM-DD (по UTC, как слоты лежат в базе). */
+function isoDate(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 /** Надёжность по группам области за окно: доля времени со светом по графику ГПВ. */
 async function reliabilityByQueue(env: Env, region: string, windowMinutes: number) {
   const today = kyivToday();
@@ -1721,42 +1803,70 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const from = fromDate.toISOString().slice(0, 10);
 
-    const emptyWindow = (windowMinutes: number) => ({
-      windowMinutes,
-      outageMinutes: 0,
-      poweredMinutes: 0,
-      reliabilityPct: 0,
-      hasData: false,
-    });
-
-    // start/end/outageCount обязательны: без них карточки надёжности получают неопределённые
-    // значения вместо дат, и интерфейс рисует «Invalid Date».
-    const bucket = (key: string, label: string, startIso: string, endIso: string, windowMinutes: number) => ({
-      key,
-      label,
-      start: startIso,
-      end: endIso,
-      ...emptyWindow(windowMinutes),
-      outageCount: 0,
-    });
-
-    const monthDays = Math.max(1, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1);
-    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-    const dayStart = `${to}T00:00:00.000Z`;
     const monthStart = `${from}T00:00:00.000Z`;
     const monthEnd = `${to}T23:59:59.999Z`;
+
+    // Считаем по слотам графика, а не отдаём пустые оболочки. Раньше бакеты дней/недель/
+    // месяцев были заглушками с hasData:false, и «Статистика електропостачання» выглядела
+    // обнулённой, хотя графики в базе есть и считать их умеем.
+    // Функция обязана быть async: reliabilityForRange ходит в D1, и синхронный вариант
+    // разворачивал бы промис в объект (то есть ни во что) — бакеты выходили без цифр вовсе.
+    const window = async (
+      key: string,
+      label: string,
+      startIso: string,
+      endIso: string,
+      windowMinutes: number,
+    ) => {
+      const totals = await reliabilityForRange(
+        env,
+        region,
+        Date.parse(startIso),
+        Date.parse(endIso),
+        windowMinutes,
+      );
+      return { key, label, start: startIso, end: endIso, ...totals };
+    };
+
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    const dayWindows: Array<Record<string, unknown>> = [];
+    // Считаем дни пачками по одному, но параллельно: 31 запроса подряд медленно, а
+    // лимит параллельных запросов к D1 в воркере позволяет собрать их разом.
+    const daySpecs = Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const iso = `${from.slice(0, 8)}${String(day).padStart(2, '0')}`;
+      return { iso, label: String(day) };
+    });
+    const dayTotals = await Promise.all(
+      daySpecs.map(({ iso, label }) =>
+        window(`day:${iso}`, label, `${iso}T00:00:00.000Z`, `${iso}T23:59:59.999Z`, 24 * 60),
+      ),
+    );
+    dayWindows.push(...dayTotals);
+
+    // Недели режем по понедельникам, месяцы — календарные.
+    const weekWindows: Array<Record<string, unknown>> = [];
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const iso = `${from.slice(0, 8)}${String(day).padStart(2, '0')}`;
+      if (new Date(`${iso}T00:00:00Z`).getUTCDay() !== 1) continue;
+      weekWindows.push(
+        await window(`week:${iso}`, iso, `${iso}T00:00:00.000Z`, `${iso}T23:59:59.999Z`, 7 * 24 * 60),
+      );
+    }
+    if (weekWindows.length === 0 && dayWindows.length > 0) {
+      weekWindows.push(await window(`week:${from}`, from, monthStart, monthEnd, daysInMonth * 24 * 60));
+    }
 
     return json({
       data: {
         from,
         to,
         generatedAt: new Date().toISOString(),
-        days: [bucket(`day:${to}`, to, dayStart, `${to}T23:59:59.999Z`, 24 * 60)],
-        weeks: [bucket(`week:${from}`, from, monthStart, monthEnd, 7 * 24 * 60)],
-        months: [bucket(`month:${to.slice(0, 7)}`, to.slice(0, 7), monthStart, monthEnd, daysInMonth * 24 * 60)],
-        // По группам считаем по графику ГПВ области — это единственное, что воркер знает
-        // о надёжности на сейчас. hasData:false, пока слота по группе нет.
-        groups: await reliabilityByQueue(env, region, monthDays * 24 * 60),
+        days: dayWindows,
+        weeks: weekWindows,
+        months: [await window(`month:${to.slice(0, 7)}`, to.slice(0, 7), monthStart, monthEnd, daysInMonth * 24 * 60)],
+        // По группам — тот же расчёт, но по всей области за месяц.
+        groups: await reliabilityByQueue(env, region, daysInMonth * 24 * 60),
       },
     });
   }

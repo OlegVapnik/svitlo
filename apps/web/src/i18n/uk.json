@@ -92,13 +92,13 @@
     "heroUnknownDesc": "Оператор ще не передав графік для цієї групи. Це не означає, що світло є — просто ми поки не знаємо.",
     "heroTitleOn": "Світло є",
     "heroTitleOff": "Світла немає",
-    "heroNextBig": "вимкнуть через {time}",
-    "heroBackBig": "увімкнуть через {time}",
+    "heroNextBig": "вимкнуть через {{time}}",
+    "heroBackBig": "увімкнуть через {{time}}",
     "heroNoNextBig": "відключень не планується",
-    "heroBoundary": "{time}",
-    "heroProgress": "{percent}% відключення позаду",
+    "heroBoundary": "{{time}}",
+    "heroProgress": "{{percent}}% відключення позаду",
     "heroTipOff": "Встигніть зарядити телефон або попрати — це найкращий час для важливих справ.",
-    "heroFromCache": "Дані з кешу · {time}"
+    "heroFromCache": "Дані з кешу · {{time}}"
   },
   "outages": {
     "title": "Відключення",
