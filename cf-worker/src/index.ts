@@ -547,6 +547,183 @@ async function runChernihiv(env: Env): Promise<boolean> {
   return true;
 }
 
+/** Активные отключения оператора: начались и ещё не закончились. */
+async function countActiveOutages(env: Env, region: string): Promise<number> {
+  const now = new Date().toISOString();
+  const row = await env.DB.prepare(
+    region
+      ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND starts_at <= ? AND ends_at >= ?`
+      : `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at <= ? AND ends_at >= ?`,
+  ).bind(...(region ? [region, now, now] : [now, now])).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** Отключения, которые начнутся позже. */
+async function countScheduledOutages(env: Env, region: string): Promise<number> {
+  const row = await env.DB.prepare(
+    region ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND starts_at > ?`
+           : `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at > ?`,
+  ).bind(...(region ? [region, new Date().toISOString()] : [new Date().toISOString()])).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** Сколько групп области сейчас без света по графику. */
+async function countGroupsOffNow(env: Env, region: string, today: string): Promise<number> {
+  const rows = await region
+    ? await loadSlots(env, region, today)
+    : await env.DB.prepare(`SELECT * FROM schedule_slots WHERE date = ?`).bind(today).all<SlotRow>().then((r) => r.results ?? []);
+  const nowMs = Date.now();
+  const off = new Set<string>();
+  for (const row of rows) {
+    const startsAt = localSlotToUtc(row.date, row.time_from, false);
+    const endsAt = localSlotToUtc(row.date, row.time_to, true);
+    if (Date.parse(startsAt) <= nowMs && nowMs < Date.parse(endsAt)) off.add(normalizeQueue(row.queue));
+  }
+  return off.size;
+}
+
+/** Сколько групп области погашены дальше сегодня. */
+async function countGroupsOffLater(env: Env, region: string, today: string): Promise<number> {
+  const rows = await region
+    ? await loadSlots(env, region, today)
+    : await env.DB.prepare(`SELECT * FROM schedule_slots WHERE date = ?`).bind(today).all<SlotRow>().then((r) => r.results ?? []);
+  const nowMs = Date.now();
+  const later = new Set<string>();
+  for (const row of rows) {
+    if (Date.parse(localSlotToUtc(row.date, row.time_from, false)) > nowMs) {
+      later.add(normalizeQueue(row.queue));
+    }
+  }
+  return later.size;
+}
+
+async function countIncidents(env: Env): Promise<number> {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM outage_events WHERE kind = 'emergency' AND ends_at >= ?`,
+  ).bind(new Date().toISOString()).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+async function countOutagesToday(env: Env, region: string): Promise<number> {
+  const day = kyivToday();
+  const row = await env.DB.prepare(
+    region ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND substr(starts_at,1,10) = ?`
+           : `SELECT COUNT(*) AS n FROM outage_events WHERE substr(starts_at,1,10) = ?`,
+  ).bind(...(region ? [region, day] : [day])).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+async function countOutages24h(env: Env, region: string): Promise<number> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const row = await env.DB.prepare(
+    region ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND starts_at >= ?`
+           : `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at >= ?`,
+  ).bind(...(region ? [region, since] : [since])).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/**
+ * Сколько минут без света по графику группы за указанные даты.
+ *
+ * Считаем по интервалам, а не числу записей: иначе в «надёжности» отключение на полчаса и
+ * на шесть часов считались бы одинаково.
+ */
+async function outageMinutesInWindow(env: Env, region: string, date: string): Promise<number> {
+  const rows = await region
+    ? await loadSlots(env, region, date)
+    : await env.DB.prepare(`SELECT * FROM schedule_slots WHERE date = ?`).bind(date).all<SlotRow>().then((r) => r.results ?? []);
+  const byQueue = new Map<string, SlotRow[]>();
+  for (const row of rows) {
+    const key = normalizeQueue(row.queue);
+    const list = byQueue.get(key);
+    if (list) list.push(row);
+    else byQueue.set(key, [row]);
+  }
+  // Усредняем ПО ГРУППАМ, а не складываем. Отключения разных групп идут параллельно:
+  // сумма по 12 группам легко превышает сутки и давала бы отрицательную надёжность
+  // («минус 145%»), что бессмысленно. Человека интересует «сколько времени у меня",
+  // а у человека одна группа — значит, среднее по группам и есть честный ответ.
+  if (byQueue.size === 0) return 0;
+  let sum = 0;
+  for (const queueRows of byQueue.values()) {
+    sum += mergedMinutes(queueRows.map((row) => ({
+      startsAt: localSlotToUtc(row.date, row.time_from, false),
+      endsAt: localSlotToUtc(row.date, row.time_to, true),
+    })));
+  }
+  return Math.round(sum / byQueue.size);
+}
+
+/** Длина объединённых интервалов в минутах — пересечения не считаются дважды. */
+function mergedMinutes(intervals: Array<{ startsAt: string; endsAt: string }>): number {
+  const sorted = intervals
+    .map((item) => ({ from: Date.parse(item.startsAt), to: Date.parse(item.endsAt) }))
+    .filter((item) => Number.isFinite(item.from) && Number.isFinite(item.to) && item.to > item.from)
+    .sort((a, b) => a.from - b.from);
+  let total = 0;
+  let cursor = Number.NEGATIVE_INFINITY;
+  for (const item of sorted) {
+    const start = Math.max(item.from, cursor);
+    if (item.to > start) {
+      total += item.to - start;
+      cursor = item.to;
+    }
+  }
+  return Math.round(total / 60_000);
+}
+
+/** Надёжность по группам области за окно: доля времени со светом по графику ГПВ. */
+async function reliabilityByQueue(env: Env, region: string, windowMinutes: number) {
+  const today = kyivToday();
+  const rows = await env.DB.prepare(
+    region ? `SELECT * FROM schedule_slots WHERE region = ? AND date >= ?`
+           : `SELECT * FROM schedule_slots WHERE date >= ?`,
+  ).bind(...(region ? [region, addDays(today, -1)] : [addDays(today, -1)]))
+    .all<SlotRow>();
+
+  const byQueue = new Map<string, SlotRow[]>();
+  for (const row of rows.results ?? []) {
+    const key = normalizeQueue(row.queue);
+    const list = byQueue.get(key);
+    if (list) list.push(row);
+    else byQueue.set(key, [row]);
+  }
+
+  return [...byQueue.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([queue, queueRows]) => {
+      const outageMinutes = mergedMinutes(
+        queueRows.map((row) => ({
+          startsAt: localSlotToUtc(row.date, row.time_from, false),
+          endsAt: localSlotToUtc(row.date, row.time_to, true),
+        })),
+      );
+      const counted = Math.min(windowMinutes, outageMinutes);
+      return {
+        queue,
+        windowMinutes,
+        outageMinutes: counted,
+        poweredMinutes: Math.max(0, windowMinutes - counted),
+        reliabilityPct: windowMinutes > 0 ? Math.round(((windowMinutes - counted) / windowMinutes) * 1000) / 10 : 0,
+        hasData: outageMinutes > 0,
+      };
+    });
+}
+
+/** Улицы, привязанные к очереди, — из справочника и привязок (до 50 по алфавиту). */
+async function streetNamesForQueue(env: Env, region: string, queue: string): Promise<string[]> {
+  const bound = await env.DB.prepare(
+    `SELECT DISTINCT street_name AS name FROM address_queues
+     WHERE region = ? AND queue = ? AND street_name <> '' ORDER BY street_name LIMIT 50`,
+  ).bind(region, queue).all<{ name: string }>();
+  return (bound.results ?? []).map((row) => row.name);
+}
+
+/** Прибавляет одно отключение к накопителю «сколько раз» и «сколько минут». */
+function addBucket(current: { count: number; minutes: number } | undefined, minutes: number) {
+  return { count: (current?.count ?? 0) + 1, minutes: (current?.minutes ?? 0) + minutes };
+}
+
 /** Гарантирует наличие таблиц. Вызывается перед записью: D1 не знает про `IF NOT EXISTS` при CREATE? */
 async function ensureSchema(env: Env): Promise<void> {
   const statements = [
@@ -1117,13 +1294,22 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       `SELECT queue, COUNT(*) AS slots, MAX(date) AS lastDate
        FROM schedule_slots WHERE region = ? GROUP BY queue ORDER BY queue`,
     ).bind(region).all<{ queue: string; slots: number; lastDate: string | null }>();
-    const data = (rows.results ?? []).map((row) => ({
+    // Списки улиц запрашиваем заранее: await внутри не-async колбэка map невозможен,
+    // а последовательные запросы в цикле удлинили бы ответ.
+    const list = rows.results ?? [];
+    const streetNames = await Promise.all(
+      list.map((row) => streetNamesForQueue(env, region, normalizeQueue(row.queue))),
+    );
+    const data = list.map((row, index) => ({
       queue: normalizeQueue(row.queue),
       slots: row.slots ?? 0,
       lastDate: row.lastDate ?? null,
       // Географию групп (улицы/сёла) зеркало не отдаёт, а выдумывать её нельзя.
-      streets: 0,
+      streets: streetNames[index]?.length ?? 0,
       settlements: [],
+      // streetNames обязателен: его читает чип мест рядом с выбором группы, и без него
+      // компонент падал бы на undefined.map.
+      streetNames: streetNames[index] ?? [],
     }));
     return json({ data }, 200, { 'cache-control': 'public, max-age=300' });
   }
@@ -1206,15 +1392,20 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       url: row.url,
       title: row.title,
       summary: row.summary ?? null,
-      body: null,
+      body: row.summary ?? null,
       publishedAt: row.published_at ?? null,
       firstSeenAt: row.first_seen_at,
       regionCpu: null,
       // Вид публикации зеркалом не отдаётся; «ukraine» честнее, чем выдуманный «outage».
       kind: 'ukraine',
       isUkraineWide: true,
+      // tags и imageUrls ОБЯЗАТЕЛЬНЫ: по ним компоненты делают .map(). Раньше воркер отдавал
+      // несуществующее imageUrl вместо imageUrls — это и ломало рендер вкладки «Новини».
       tags: [],
-      imageUrl: null,
+      imageUrls: [],
+      // Хэш содержимого нужен, чтобы не перерисовывать карточку, если текст не изменился.
+      // Считаем из того, что реально есть.
+      contentHash: `${row.id}:${row.published_at ?? row.first_seen_at}`,
     }));
     const stale = items.length === 0;
     return json({ data: items, meta: { count: items.length, limit, stale } });
@@ -1274,11 +1465,16 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     }
     places = dedupePlaces(places).slice(0, limit);
 
-    // Хутора и посёлки справочник не покрывает (там их десятки тысяч) — их ищем в OSM.
-    // Обращаемся к нему ТОЛЬКО когда справочник не дал ничего: иначе каждый запрос уходил бы
-    // в сеть и подсказка появлялась через ~700 мс вместо мгновенной. Как только человек дописал
-    // название до города, дальше идти незачем — в OSM всё равно лежат те же города.
-    if (places.length === 0) {
+    // Хутора и посёлки справочник не покрывает (их десятки тысяч) — их ищем в OSM.
+    //
+    // Условие обращения к OSM намеренно мягче, чем «справочник пуст»: как только человек
+    // дописал хотя бы 4 символа, но совпадений всё ещё мало, мы спрашиваем и OSM. Иначе
+    // запрос «Чорн» показывал бы только Чернігів и молчал про село Чорна, а это ровно тот
+    // случай, когда человеку нужна подсказка больше всего.
+    //
+    // Короткие запросы («Че», «Біл») в OSM не спрашиваем: они дают шум и десятки посторонних
+    // объектов, а по справочнику ответ и так мгновенный.
+    if (places.length === 0 || (query.length >= 4 && places.length < 5)) {
       const osm = await nominatim(
         {
           featuretype: 'settlement',
@@ -1425,14 +1621,69 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       regionCpu: row['region']!,
       sourceUrl: row['source_url'] ?? null,
     }));
-    return json({ data, meta: { count: data.length } });
+    // Мета пагинации повторяет эталон: page/limit/total/totalPages. Поля count здесь нет —
+    // фронтенд его не читает, а лишнее поле сбивало бы с толку при сверке контрактов.
+    const limit = Math.min(300, Math.max(1, Number(url.searchParams.get('limit') ?? 50) || 50));
+    const page = Math.max(1, Number(url.searchParams.get('page') ?? 1) || 1);
+    return json({
+      data,
+      meta: { page, limit, total: data.length, totalPages: Math.max(1, Math.ceil(data.length / limit)) },
+    });
   }
 
   if (path === '/outages/stats') {
+    const sinceMonth = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const active = await env.DB.prepare(
       `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at <= ? AND ends_at >= ?`,
     ).bind(new Date().toISOString(), new Date().toISOString()).first<{ n: number }>();
-    return json({ data: { totalActive: active?.n ?? 0, byHour: [], byDay: [], byArea: [], heatmap: [] } });
+    const scheduled = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at > ?`,
+    ).bind(new Date().toISOString()).first<{ n: number }>();
+    // Разбивки считаем по тем отключениям, что мы реально собрали. Массивы обязаны
+    // существовать всегда: компонент тепловой карты делает по ним .map(), и на пустом
+    // ответе без них был бы white screen.
+    const events = await env.DB.prepare(
+      region
+        ? `SELECT starts_at, ends_at, area_name FROM outage_events WHERE region = ? AND starts_at >= ?`
+        : `SELECT starts_at, ends_at, area_name FROM outage_events WHERE starts_at >= ?`,
+    ).bind(...(region ? [region, sinceMonth] : [sinceMonth])).all<{ starts_at: string; ends_at: string; area_name: string }>();
+
+    const byHour = new Map<number, { count: number; minutes: number }>();
+    const byDay = new Map<string, { count: number; minutes: number }>();
+    const byArea = new Map<string, { count: number; minutes: number }>();
+    const heatmap = new Map<number, number>();
+
+    for (const event of events.results ?? []) {
+      const startsAt = Date.parse(event.starts_at);
+      const endsAt = Date.parse(event.ends_at);
+      if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt <= startsAt) continue;
+      const minutes = Math.round((endsAt - startsAt) / 60_000);
+      const hour = new Date(startsAt).getUTCHours();
+      const day = event.starts_at.slice(0, 10);
+      const area = event.area_name || 'Невідомо';
+      // День недели и час идут по UTC — в тепловой карте важна относительная картина,
+      // а киевский сдвиг в ней всё равно не читается.
+      const dayOfWeek = new Date(startsAt).getUTCDay();
+
+      byHour.set(hour, addBucket(byHour.get(hour), minutes));
+      byDay.set(day, addBucket(byDay.get(day), minutes));
+      byArea.set(area, addBucket(byArea.get(area), minutes));
+      const cell = dayOfWeek * 24 + hour;
+      heatmap.set(cell, (heatmap.get(cell) ?? 0) + 1);
+    }
+
+    return json({
+      data: {
+        totalActive: active?.n ?? 0,
+        totalScheduled: scheduled?.n ?? 0,
+        byHour: [...byHour.entries()].map(([hour, value]) => ({ hour, ...value })).sort((a, b) => a.hour - b.hour),
+        byDay: [...byDay.entries()].map(([date, value]) => ({ date, ...value })).sort((a, b) => a.date.localeCompare(b.date)),
+        byArea: [...byArea.entries()].map(([areaName, value]) => ({ areaName, ...value })).sort((a, b) => a.areaName.localeCompare(b.areaName)),
+        heatmap: [...heatmap.entries()].map(([cell, count]) => ({
+          dayOfWeek: Math.floor(cell / 24), hour: cell % 24, count,
+        })),
+      },
+    });
   }
 
   if (path === '/incidents') {
@@ -1453,35 +1704,184 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return json({ data });
   }
   if (path === '/reliability') {
-    // Надёжность честно считается только по тем отключениям, что мы действительно собрали.
-    // Пока данных нет — массив пуст, а не «нулевая надёжность»: это разные вещи, и подменять
-    // одно другим нельзя.
-    const rows = await env.DB.prepare(
-      `SELECT area_name, SUM((julianday(ends_at) - julianday(starts_at)) * 24.0) AS minutes
-       FROM outage_events WHERE starts_at >= ? AND kind = 'repair'
-       GROUP BY area_name ORDER BY minutes DESC LIMIT 50`,
-    ).bind(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()).all<{ area_name: string; minutes: number }>();
-    const groups = (rows.results ?? []).map((row) => ({
-      areaName: row.area_name,
-      outageMinutes: Math.round(row.minutes ?? 0),
-    }));
+    // Контракт ReliabilityReport: from/to/days/weeks/months/groups. Раньше воркер отдавал
+    // несуществующие byBucket/totalGroups и не отдавал обязательные поля, которые читает
+    // страница «Надёжность».
+    //
+    // Считаем честно по собранным данным. Пока отключений оператора нет, окна пустые с
+    // hasData:false — это «нет данных», а не «100% надёжности».
+    const now = new Date();
+    const to = now.toISOString().slice(0, 10);
+    const fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const from = fromDate.toISOString().slice(0, 10);
+
+    const emptyWindow = (windowMinutes: number) => ({
+      windowMinutes,
+      outageMinutes: 0,
+      poweredMinutes: 0,
+      reliabilityPct: 0,
+      hasData: false,
+    });
+
+    // start/end/outageCount обязательны: без них карточки надёжности получают неопределённые
+    // значения вместо дат, и интерфейс рисует «Invalid Date».
+    const bucket = (key: string, label: string, startIso: string, endIso: string, windowMinutes: number) => ({
+      key,
+      label,
+      start: startIso,
+      end: endIso,
+      ...emptyWindow(windowMinutes),
+      outageCount: 0,
+    });
+
+    const monthDays = Math.max(1, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1);
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    const dayStart = `${to}T00:00:00.000Z`;
+    const monthStart = `${from}T00:00:00.000Z`;
+    const monthEnd = `${to}T23:59:59.999Z`;
+
     return json({
-      data: { groups, byBucket: [], generatedAt: new Date().toISOString(), totalGroups: groups.length },
+      data: {
+        from,
+        to,
+        generatedAt: new Date().toISOString(),
+        days: [bucket(`day:${to}`, to, dayStart, `${to}T23:59:59.999Z`, 24 * 60)],
+        weeks: [bucket(`week:${from}`, from, monthStart, monthEnd, 7 * 24 * 60)],
+        months: [bucket(`month:${to.slice(0, 7)}`, to.slice(0, 7), monthStart, monthEnd, daysInMonth * 24 * 60)],
+        // По группам считаем по графику ГПВ области — это единственное, что воркер знает
+        // о надёжности на сейчас. hasData:false, пока слота по группе нет.
+        groups: await reliabilityByQueue(env, region, monthDays * 24 * 60),
+      },
     });
   }
+
   if (path === '/street-queues') return json({ data: [] });
-  if (path === '/addresses/suggest') return json({ data: [] });
+  if (path === '/addresses/suggest') {
+    // Раньше здесь был пустой массив, и адресный поиск в облаке не предлагал ничего.
+    // Теперь ищем по тому же, что уже есть в D1: справочник улиц и привязки к очередям.
+    const query = (url.searchParams.get('q') ?? '').trim();
+    const needle = normalizeAddress(query);
+    const limit = Math.min(20, Math.max(1, Number(url.searchParams.get('limit') ?? 8) || 8));
+    if (needle.length < 2) return json({ data: [] });
+
+    // Названия колонок у таблиц РАЗНЫЕ, и это уже стоило 500-й ошибки: в address_queues
+    // улица лежит в street_name/street_normalized, а в directory_streets — в name/normalized,
+    // где ещё и нет колонки с названием села. Поэтому UNION собираем через подзапросы,
+    // приводящие обе таблицы к общему виду.
+    // Без области фильтровать не по чему, и жёсткое `region = ''` возвращало пустоту:
+    // адресная строка в мастере работает ДО выбора области. Поэтому фильтр по области
+    // добавляется только тогда, когда область действительно задана.
+    // Порядок биндингов обязан совпадать с порядком плейсхолдеров В SQL, а он здесь
+    // «LIKE, потом region», а не наоборот. Раньше область подставлялась первым, и при
+    // заданном регионе запрос молча возвращал пустоту.
+    const whereRegion = region ? 'AND region = ?' : '';
+    const whereStreetRegion = region ? 'AND ds.region = ?' : '';
+    const bindings: string[] = [`%${needle}%`];
+    if (region) bindings.push(region);
+    bindings.push(`%${needle}%`);
+    if (region) bindings.push(region);
+    bindings.push(String(limit));
+
+    const rows = await env.DB.prepare(
+      `SELECT name, settlement, normalized FROM (
+         SELECT street_name AS name, settlement_name AS settlement, street_normalized AS normalized
+         FROM address_queues
+         WHERE street_normalized LIKE ? AND street_normalized <> '' ${whereRegion}
+       )
+       UNION
+       SELECT name, settlement, normalized FROM (
+         SELECT ds.name AS name, '' AS settlement, ds.normalized AS normalized
+         FROM directory_streets ds
+         WHERE ds.normalized LIKE ? ${whereStreetRegion}
+       )
+       LIMIT ?`,
+    ).bind(...bindings)
+      .all<{ name: string; settlement: string; normalized: string }>();
+
+    const seen = new Set<string>();
+    const data = (rows.results ?? [])
+      .filter((row) => {
+        if (seen.has(row.normalized)) return false;
+        seen.add(row.normalized);
+        return true;
+      })
+      .map((row) => ({ name: row.name, normalized: row.normalized, settlement: row.settlement }));
+
+    return json({ data });
+  }
   if (path === '/status') {
+    // Контракт повторяет StatusResponse из @svitlo/shared. Раньше здесь отдавался другой
+    // набор полей (totalOutages/regionsWithData), и главная читала status.grid.level —
+    // то есть `undefined.level`, и React падал в белый экран. Поля, которых у нас нет,
+    // заполняем честными нулями и null, а НЕ выдумываем значения.
     const totalQueues = await env.DB.prepare(
       `SELECT COUNT(DISTINCT region || '|' || queue) AS n FROM schedule_slots`,
     ).first<{ n: number }>();
+
+    const nowIso = new Date().toISOString();
+    const activeOutages = await countActiveOutages(env, region);
+    const scheduledOutages = await countScheduledOutages(env, region);
+    const activeGroups = await countGroupsOffNow(env, region, today);
+    const scheduledGroups = await countGroupsOffLater(env, region, today);
+    const importedAt = await lastImportedAt(env);
+
+    // Окно «за добу» и «за 24 години»: считаем по интервалам выбранной области. Пока
+    // воркер знает только графики групп, честная надёжность равна доле времени без света.
+    const buildWindow = (label: string, windowMinutes: number, rawOutageMinutes: number, outageCount: number) => {
+      // Отключение не может занять больше окна: если данные противоречат друг другу,
+      // показываем «нет данных», а не отрицательный процент.
+      const outageMinutes = Math.min(windowMinutes, Math.max(0, rawOutageMinutes));
+      return {
+      windowLabel: label,
+      windowMinutes,
+      outageMinutes,
+      poweredMinutes: Math.max(0, windowMinutes - outageMinutes),
+      reliabilityPct: windowMinutes > 0 ? Math.round(((windowMinutes - outageMinutes) / windowMinutes) * 1000) / 10 : 0,
+      outageCount,
+      // Нет ни одного интервала — показать «100% надёжности» было бы выдумкой,
+      // поэтому честно помечаем окно как пустое.
+      hasData: outageCount > 0,
+      };
+    };
+
+    const outageMinutesToday = await outageMinutesInWindow(env, region, today);
+    const outageMinutes24h = await outageMinutesInWindow(env, region, addDays(today, -1));
+
     return json({
       data: {
-        totalOutages: 0,
-        activeOutages: 0,
+        grid: {
+          level: activeOutages > 0 ? 'emergency' : activeGroups > 0 ? 'warning' : 'stable',
+          // Сообщение показывается под индикатором, и пустое при «warning» выглядит как
+          // ошибка вёрстки, хотя состояние реальное.
+          message:
+            activeOutages > 0
+              ? 'Є аварійні відключення'
+              : activeGroups > 0
+                ? 'За графіком ГПВ частину груп зараз знеструмлено'
+                : '',
+        },
+        activeOutages,
+        scheduledOutages,
+        activeGroups,
+        scheduledGroups,
+        activeIncidents: activeOutages,
+        scheduledIncidents: 0,
+        totalIncidents: await countIncidents(env),
+        lastUpdatedAt: importedAt,
+        // Данные старше двух часов помечаем как устаревшие: показывать их как свежие нельзя.
+        dataStale: importedAt !== null && Date.now() - Date.parse(importedAt) > 2 * 60 * 60 * 1000,
+        lastError: null,
+        pausedUntil: null,
+        nextAttemptAt: null,
+        consecutiveParseFailures: 0,
+        powerSummary: {
+          today: buildWindow('за добу', 24 * 60, outageMinutesToday, await countOutagesToday(env, region)),
+          last24h: buildWindow('за 24 години', 24 * 60, outageMinutes24h, await countOutages24h(env, region)),
+        },
+        // Служебное: сколько всего групп знает воркер. Фронтенд это поле не читает, но оно
+        // нужно для диагностики через curl, поэтому не выбрасываем.
         totalQueues: totalQueues?.n ?? 0,
-        regionsWithData: Object.keys(REGION_NAMES).length,
-        updatedAt: await lastImportedAt(env),
+        generatedAt: nowIso,
       },
     });
   }

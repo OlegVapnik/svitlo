@@ -267,7 +267,8 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
     regionCpu,
   );
   // useQueueSchedule отдаёт конверт { data } — график лежит в .data.
-  const intervals = data?.data.intervals ?? [];
+  // Без ?. после data ответ без конверта { data: … } ронял страницу вместо пустого графика.
+  const intervals = data?.data?.intervals ?? [];
 
   return (
     <Card>

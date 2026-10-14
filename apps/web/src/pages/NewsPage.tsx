@@ -173,7 +173,8 @@ export const NewsPage: React.FC = () => {
             · {t('news.sources')}: <span className="font-semibold text-foreground">{sourcesData.data.length}</span>
           </span>
         )}
-        {data?.meta.stale && <Badge variant="warning">{t('news.staleChip')}</Badge>}
+        {/* Та же болезнь, что была на главной: `data?.meta.stale` падал без объекта meta. */}
+        {data?.meta?.stale && <Badge variant="warning">{t('news.staleChip')}</Badge>}
         {failedSources.length > 0 && (
           <Badge variant="destructive">
             {t('news.sourceFailed')}: {failedSources.map((source) => sourceLabel(source.sourceKey)).join(', ')}
@@ -181,7 +182,7 @@ export const NewsPage: React.FC = () => {
         )}
       </div>
 
-      {data?.meta.stale && (
+      {data?.meta?.stale && (
         <p className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
           {t('news.stale')}
         </p>

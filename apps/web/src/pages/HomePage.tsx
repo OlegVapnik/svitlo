@@ -254,7 +254,11 @@ export const HomePage: React.FC = () => {
           </div>
         </div>
 
-        <StatusIndicator level={status?.grid.level ?? 'stable'} message={status?.grid.message} />
+        {/* ОПЦИОНАЛЬНАЯ ЦЕПОЧКА ДО КОНЦА: `status?.grid.level` защищает только `status`,
+            и если в ответе нет объекта grid, обращение к `.level` роняет React в белый
+            экран. Ровно это и случилось при подключении к облаку, где маршрут отдавал
+            другой набор полей. */}
+        <StatusIndicator level={status?.grid?.level ?? 'stable'} message={status?.grid?.message} />
 
         {/* «Активні зараз» і «Заплановані» показують ГРУППИ за графіком ГПВ, а не точкові
             ремонтні відключення: саме групове відключення люди називають «відключенням», а

@@ -1,4 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { RouteErrorElement } from './components/common/RouteErrorElement';
 import { AppShell } from './components/layout/AppShell';
 import { HomePage } from './pages/HomePage';
 import { OutagesPage } from './pages/OutagesPage';
@@ -14,6 +15,10 @@ export const router = createBrowserRouter([
   {
     path: '/',
     element: <AppShell />,
+    // Свой errorElement на корневом маршруте: он ловит падение ЛЮБОЙ вложенной страницы и
+    // показывает понятный экран с кнопками восстановления. Без него react-router
+    // показывал служебный «Hey developer 👋» без единого способа выбраться из белого экрана.
+    errorElement: <RouteErrorElement />,
     children: [
       { index: true, element: <HomePage /> },
       { path: 'outages', element: <OutagesPage /> },
