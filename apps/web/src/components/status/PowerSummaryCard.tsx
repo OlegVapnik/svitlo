@@ -32,7 +32,8 @@ function TodayRow({ today }: { today?: PowerWindowSummary | null }) {
   if (!today || !today.hasData) return null;
   return (
     <p className="text-[11px] text-muted-foreground">
-      За добу (з 00:00): без світла {formatMinutes(today.outageMinutes)} · зі світлом {formatMinutes(today.poweredMinutes)}
+      За добу (з 00:00): без світла {formatMinutes(today.outageMinutes)} · зі світлом{' '}
+      {formatMinutes(today.poweredMinutes)} · у середньому по {today.outageCount} групах
     </p>
   );
 }
@@ -61,7 +62,13 @@ export const PowerSummaryCard: React.FC<PowerSummaryCardProps> = ({ summary, isL
           </div>
           <div>
             <div className="text-sm font-semibold text-foreground">Електропостачання за 24 години</div>
-            <div className="text-xs text-muted-foreground">Сумарний час без світла та зі світлом</div>
+            {/* Числа — середні по групах области за графиком ГПВ. Сума по группах дала б «20 год
+                без світла из 24», хотя окна групп разнесены по часам и света нет лишь у части
+                людей; среднее отвечает на вопрос конкретного человека: сколько часов без света
+                у группы, в которую попалёшь ты. */}
+            <div className="text-xs text-muted-foreground">
+              Час без світла та зі світлом, у середньому по групах ({window?.outageCount ?? 0})
+            </div>
           </div>
         </div>
         {isLoading ? (

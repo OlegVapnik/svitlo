@@ -1,15 +1,19 @@
 import { FastifyInstance } from 'fastify';
 import { db } from '../db/connection.js';
-import { gridStatus, outageEvents, sources } from '../db/schema.js';
-import { and, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { gridStatus, outageEvents, scheduleSlots, sources } from '../db/schema.js';
+import { and, eq, gt, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { env } from '../config.js';
 import { getPowerSummary } from '../services/power-summary.service.js';
 import { getIncidents } from '../services/incidents.service.js';
 import { summarizeSourceHealth } from '../services/source-breaker.js';
+import { readRegionParam } from '../services/regions.service.js';
 
 export default async function statusRoutes(fastify: FastifyInstance) {
-  fastify.get('/api/v1/status', async () => {
+  // `?region=` обязателен по смыслу: счётчики групп и статистика считаются по области, а область
+  // у человека одна активная. Без параметра берётся область по умолчанию (см. readRegionParam).
+  fastify.get<{ Querystring: { region?: string } }>('/api/v1/status', async (req) => {
     const now = new Date();
+    const region = readRegionParam(req.query.region);
     const [status] = await db.select().from(gridStatus).orderBy(sql`${gridStatus.updatedAt} desc`).limit(1);
 
     // Рахуємо КАНОНІЧНІ події (invariant 5 у outage-data-core): одна реальна перерва = одна подія, а не
@@ -39,7 +43,51 @@ export default async function statusRoutes(fastify: FastifyInstance) {
     const activeIncidents = incidentList.filter((incident) => incident.status === 'active').length;
     const scheduledIncidents = incidentList.filter((incident) => incident.status === 'scheduled').length;
 
-    const powerSummary = await getPowerSummary(now);
+    // Счётчики по группам за графиком ГПВ области.
+    //
+    // Раньше «активні/заплановані» считались только по outage_events, а это точечные ремонтные
+    // отключения — их единицы, и при выключенном аварийном сборе показатели обнулялись, хотя
+    // реальный график по группам в базе был. Теперь они считаются по schedule_slots: столько
+    // групп области реально сейчас без света / погашены дальше по графику.
+    const kyivDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Kyiv',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now);
+    const kyivTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Kyiv',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(now);
+    const [activeGroupsRow] = await db
+      .select({ count: sql<number>`count(distinct ${scheduleSlots.queue})::int` })
+      .from(scheduleSlots)
+      .where(
+        and(
+          eq(scheduleSlots.region, region),
+          eq(scheduleSlots.date, kyivDate),
+          eq(scheduleSlots.stateCode, 3),
+          lte(scheduleSlots.timeFrom, kyivTime),
+          or(gte(scheduleSlots.timeTo, kyivTime), eq(scheduleSlots.timeTo, '00:00')),
+        ),
+      );
+    const [scheduledGroupsRow] = await db
+      .select({ count: sql<number>`count(distinct ${scheduleSlots.queue})::int` })
+      .from(scheduleSlots)
+      .where(
+        and(
+          eq(scheduleSlots.region, region),
+          eq(scheduleSlots.date, kyivDate),
+          eq(scheduleSlots.stateCode, 3),
+          gt(scheduleSlots.timeFrom, kyivTime),
+        ),
+      );
+    const activeGroups = activeGroupsRow?.count ?? 0;
+    const scheduledGroups = scheduledGroupsRow?.count ?? 0;
+
+    const powerSummary = await getPowerSummary(region, now);
     const lastUpdatedAt = status?.updatedAt ?? null;
     const dataStale = !lastUpdatedAt || now.getTime() - lastUpdatedAt.getTime() > 2 * 60 * 60 * 1000;
 
@@ -66,6 +114,9 @@ export default async function statusRoutes(fastify: FastifyInstance) {
         grid: { level: status?.level ?? 'unknown', message: status?.message ?? '' },
         activeOutages,
         scheduledOutages,
+        // Счётчики групп за графиком ГПВ области (region у вище).
+        activeGroups,
+        scheduledGroups,
         activeIncidents,
         scheduledIncidents,
         totalIncidents: incidentList.length,

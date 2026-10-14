@@ -174,7 +174,7 @@ export const HomePage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const { currentRegionData } = useRegion();
 
-  const { data: statusData, isLoading: statusLoading } = useStatus();
+  const { data: statusData, isLoading: statusLoading } = useStatus(currentRegionData.cpu);
   const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability();
   const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5, region: currentRegionData.cpu });
   // Планові відключення по групах — з schedule_slots оператора (не з outage_events, де лише
@@ -252,9 +252,13 @@ export const HomePage: React.FC = () => {
 
         <StatusIndicator level={status?.grid.level ?? 'stable'} message={status?.grid.message} />
 
+        {/* «Активні зараз» і «Заплановані» показують ГРУППИ за графіком ГПВ, а не точкові
+            ремонтні відключення: саме групове відключення люди називають «відключенням», а
+            ремонтних записів одиниці — з ними показники зerahivалися в нуль навіть за наявності
+            повного графіку в базі. Підказка пояснює джерело числа. */}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard to="/outages" icon={Zap} tone="danger" label={t('home.statActive')} value={status?.activeOutages ?? 0} isLoading={statusLoading} />
-          <StatCard to="/outages" icon={CalendarDays} tone="info" label={t('home.statScheduled')} value={status?.scheduledOutages ?? 0} isLoading={statusLoading} />
+          <StatCard to="/queues" icon={Zap} tone="danger" label={t('home.statActive')} value={status?.activeGroups ?? status?.activeOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
+          <StatCard to="/queues" icon={CalendarDays} tone="info" label={t('home.statScheduled')} value={status?.scheduledGroups ?? status?.scheduledOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
           <StatCard to="/incidents" icon={TriangleAlert} tone="warning" label={t('home.statIncidents')} value={status?.totalIncidents ?? 0} isLoading={statusLoading} hint={`${t('incidents.active')}: ${status?.activeIncidents ?? 0}`} />
         </div>
 

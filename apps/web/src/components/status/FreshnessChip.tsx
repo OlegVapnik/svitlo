@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { CircleAlert, CircleCheck, CircleDashed } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useStatus } from '@/api/queries.js';
+import { useRegion } from '@/hooks/useRegion.js';
 import { sourceSeverity } from '@/lib/source-health.js';
 import { formatDateTime, formatRelative } from '@/lib/date.js';
 
@@ -18,7 +19,8 @@ const STYLES = {
  */
 export const FreshnessChip = () => {
   const { t } = useTranslation();
-  const { data, isLoading } = useStatus();
+  const { currentRegion } = useRegion();
+  const { data, isLoading } = useStatus(currentRegion);
   const status = data?.data;
 
   // Пока идёт первая загрузка — нейтральное «Завантаження…», а не «всё хорошо».

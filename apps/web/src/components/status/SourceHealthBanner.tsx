@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle2, CircleAlert, RefreshCw, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useStatus } from '@/api/queries.js';
+import { useRegion } from '@/hooks/useRegion.js';
 import { sourceSeverity, type SourceSeverity } from '@/lib/source-health.js';
 import { formatDateTime, formatRelative } from '@/lib/date.js';
 import { Button } from '../ui/Button.js';
@@ -36,7 +37,8 @@ function Fact({ label, value }: FactProps) {
  */
 export const SourceHealthBanner = ({ className }: { className?: string }) => {
   const { t } = useTranslation();
-  const { data, isLoading, isFetching, refetch } = useStatus();
+  const { currentRegion } = useRegion();
+  const { data, isLoading, isFetching, refetch } = useStatus(currentRegion);
   const status = data?.data;
   const severity = sourceSeverity(status);
   const tone = TONE[severity];

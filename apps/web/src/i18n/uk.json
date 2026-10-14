@@ -78,7 +78,8 @@
     "groupStreetsToggle": "Вулиці групи ({{n}})",
     "pointOutagesCount": "відключень: {{n}}",
     "unknownPlace": "Невідоме місце",
-    "whatsNew": "Що нового"
+    "whatsNew": "Що нового",
+    "statGroupsHint": "груп за графіком ГПВ"
   },
   "outages": {
     "title": "Відключення",
@@ -373,5 +374,8 @@
   },
   "changelog": {
     "entries": "змін"
+  },
+  "powerSummary": {
+    "perGroup": "у середньому по групах"
   }
 }

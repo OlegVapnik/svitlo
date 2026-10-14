@@ -58,7 +58,11 @@ export const api = {
   },
   fetchIncidents: () => fetcher('/incidents'),
   fetchReliability: () => fetcher('/reliability'),
-  fetchStatus: () => fetcher('/status'),
+  /** Статус сети и счётчики: `region` определяет, по какой области считать группы и статистику. */
+  fetchStatus: (region?: string, signal?: AbortSignal) => {
+    const query = region ? `?${new URLSearchParams({ region }).toString()}` : '';
+    return fetcher(`/status${query}`, { signal });
+  },
   fetchContacts: () => fetcher('/contacts'),
   fetchHealth: () => fetcher('/health'),
   suggestAddresses: (query: string, limit = 8, signal?: AbortSignal) =>

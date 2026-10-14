@@ -83,10 +83,17 @@ export const useIncidents = () =>
     refetchInterval: 60000,
   });
 
-export const useStatus = () =>
+/**
+ * Статус сети и счётчики отключений.
+ *
+ * `region` обязателен по смыслу: «активні/заплановані» и статистика считаются по области —
+ * у человека она одна активная. Без области API считал бы область по умолчанию, и цифры
+ * в шапке не совпадали бы с тем, что показано на главной для выбранной области.
+ */
+export const useStatus = (region?: string) =>
   useQuery<{ data: StatusResponse }>({
-    queryKey: ['status'],
-    queryFn: api.fetchStatus,
+    queryKey: ['status', region ?? null],
+    queryFn: ({ signal }) => api.fetchStatus(region, signal),
     // Свежесть данных и пауза источника видны в шапке на каждой странице: короткий интервал обязателен.
     staleTime: STATUS_POLL_MS / 2,
     refetchInterval: STATUS_POLL_MS,
