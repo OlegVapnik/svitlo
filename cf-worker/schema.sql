@@ -33,6 +33,31 @@ CREATE TABLE IF NOT EXISTS news (
 
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (published_at DESC);
 
+-- Точечные отключения оператора (порядок схемы совпадает с порядком CREATE из воркера).
+CREATE TABLE IF NOT EXISTS outage_events (
+  external_id TEXT PRIMARY KEY,
+  region TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL,
+  area_name TEXT NOT NULL,
+  addresses_raw TEXT NOT NULL,
+  reason TEXT,
+  kind TEXT NOT NULL DEFAULT 'repair',
+  source_url TEXT,
+  fetched_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_outage_events_starts ON outage_events (starts_at DESC);
+
+-- Справочник населённых пунктов оператора: нужные идентификаторы узнаём в рантайме,
+-- чтобы вручную не зашивать одно село и не создавать впечатления, что видим всю область.
+CREATE TABLE IF NOT EXISTS provider_city_ids (
+  provider TEXT NOT NULL,
+  city_id TEXT NOT NULL,
+  discovered_at TEXT NOT NULL,
+  PRIMARY KEY (provider, city_id)
+);
+
 -- Публичные контакты операторов. Перенесены из миграции apps/api 0010_operator_contacts.sql:
 -- без них страница «Контакти» в облаке была бы пустой, а это самые нужные телефоны при отключении.
 CREATE TABLE IF NOT EXISTS contacts (

@@ -1,7 +1,21 @@
 {
- "generatedAt": "2026-10-14T15:31:07.233Z",
+ "generatedAt": "2026-10-14T16:22:09.821Z",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "entries": [
+  {
+   "hash": "57e714d",
+   "date": "2026-10-14",
+   "kind": "fix",
+   "label": "Виправлено",
+   "text": "Первый живой деплой вскрыл пять дефектов, из-за которых сайт выглядел"
+  },
+  {
+   "hash": "96443ba",
+   "date": "2026-10-14",
+   "kind": "new",
+   "label": "Нове",
+   "text": "Две связанные проблемы: приложение работало только пока включён ноутбук, а"
+  },
   {
    "hash": "d7f106c",
    "date": "2026-10-14",
@@ -127,90 +141,6 @@
    "kind": "fix",
    "label": "Виправлено",
    "text": "runtimeCaching отдавал из кэша api-responses устаревший (в том числе пустой) ответ"
-  },
-  {
-   "hash": "6551dbb",
-   "date": "2026-10-14",
-   "kind": "fix",
-   "label": "Виправлено",
-   "text": "fetcher() возвращает res.json() целиком, а API отдаёт график внутри `data`."
-  },
-  {
-   "hash": "1ee6840",
-   "date": "2026-10-14",
-   "kind": "fix",
-   "label": "Виправлено",
-   "text": "region filter for /outages, non-sensitive queue search, no Деснянське for other regions"
-  },
-  {
-   "hash": "2275ac0",
-   "date": "2026-10-14",
-   "kind": "new",
-   "label": "Нове",
-   "text": "all-ukraine providers, canonical outage_events readers, multi-region bookmarks"
-  },
-  {
-   "hash": "0dfa737",
-   "date": "2026-10-13",
-   "kind": "fix",
-   "label": "Виправлено",
-   "text": "- auth.ts: замість `!==` тепер SHA-256 + timingSafeEqual (utils/timing-safe.ts) — без timing-атаки"
-  },
-  {
-   "hash": "662539e",
-   "date": "2026-10-13",
-   "kind": "new",
-   "label": "Нове",
-   "text": "- news: міграції 0014/0016, services/news (collector, RSS, Telegram, classifier, dedup), routes/news, NewsPage + фікстури й тести парсерів"
-  },
-  {
-   "hash": "3a76ad6",
-   "date": "2026-10-11",
-   "kind": "new",
-   "label": "Нове",
-   "text": "provider contract for multi-region schedules (types, interval helpers, provider env config)"
-  },
-  {
-   "hash": "a1676ef",
-   "date": "2026-10-11",
-   "kind": "new",
-   "label": "Нове",
-   "text": "P2 data quality validator and import path integration"
-  },
-  {
-   "hash": "50f1fab",
-   "date": "2026-10-11",
-   "kind": "new",
-   "label": "Нове",
-   "text": "P1 audit and coverage endpoint GET /api/v1/regions/coverage"
-  },
-  {
-   "hash": "e0d57fa",
-   "date": "2026-10-11",
-   "kind": "fix",
-   "label": "Виправлено",
-   "text": "/api/v1/queues без ?region= звужується до дефолтної області (без суміші областей) + регресійний тест"
-  },
-  {
-   "hash": "aec92d6",
-   "date": "2026-10-11",
-   "kind": "new",
-   "label": "Нове",
-   "text": "новий інтерфейс головної — RegionPicker, 24h Timeline, вибір черг області, i18n uk/ru/en"
-  },
-  {
-   "hash": "ffbabe0",
-   "date": "2026-10-11",
-   "kind": "new",
-   "label": "Нове",
-   "text": "multi-region address directory (migration 0013 + region wiring + tests)"
-  },
-  {
-   "hash": "914157c",
-   "date": "2026-10-10",
-   "kind": "new",
-   "label": "Нове",
-   "text": "- API: GET /api/v1/queues — очереди ТОЛЬКО из реальных данных (schedule_slots + street_queues);"
   }
  ]
 }

@@ -44,3 +44,7 @@ cf-worker/.wrangler/
 .mf/
 *.sqlite
 *.db-journal
+
+# Python
+__pycache__/
+*.pyc

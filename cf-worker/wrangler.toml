@@ -28,6 +28,13 @@ MIRROR_SCHEDULE_URL = "https://dtek-api.svitlo-proxy.workers.dev/"
 # Публичные Telegram-веб-страницы операторов (не API: токен бота не нужен, парсится /s/<канал>).
 NEWS_CHANNELS = "chernigivoblenergo,ukrenergo,dtek_ua"
 
+# Сбор точечных отключений Чернігівобленерго. Список НП намеренно пустой: воркер сам
+# узнаёт его у оператора (info_disable?nq=city) и кэширует в D1. Зашивать вручную одно село
+# нельзя — это создало бы впечатление, что мы видим отключения по всей области.
+CHERNIHIV_WEB_ENABLED = "true"
+CHERNIHIV_CITY_IDS = ""
+CHERNIHIV_WEB_BASE_URL = "https://chernihivoblenergo.com.ua"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "svitlo"

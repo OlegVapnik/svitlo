@@ -11,6 +11,8 @@
  */
 
 import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeQueue } from './address.js';
+import { searchSettlements } from './settlements.js';
+import { collectChernihivOutages, fetchCityIds, type ChernihivOutage } from './chernihiv.js';
 
 export interface Env {
   DB: D1Database;
@@ -18,6 +20,12 @@ export interface Env {
   NEWS_CHANNELS: string;
   /** Необязательный RSS-источник. Если не задан — RSS просто не опрашивается. */
   NEWS_RSS_URL?: string;
+  /** Сбор точечных отключений Чернигівобленерго. Выключен по умолчанию, как и в Node-бэкенде. */
+  CHERNIHIV_WEB_ENABLED?: string;
+  /** Базовый адрес оператора (для тестового стенда). */
+  CHERNIHIV_WEB_BASE_URL?: string;
+  /** Идентификаторы НП. Если пусто — определяются в рантайме и кэшируются в D1. */
+  CHERNIHIV_CITY_IDS?: string;
 }
 
 /** Состояние отключения в терминах приложения (совпадает с `OperatorStateCode` в @svitlo/shared). */
@@ -457,6 +465,88 @@ async function fetchNews(env: Env): Promise<Array<Omit<NewsRow, 'first_seen_at'>
   return collected;
 }
 
+/**
+ * Сохраняет собранные отключения оператора.
+ *
+ * Старые записи удаляем только по тем внешним ключам, которых уже нет в новой выборке, и
+ * только для текущего провайдера: иначе один неудачный заход крона стёр бы весь прошлый
+ * архив, а «оператор отменил все ремонты» — это не то же самое, что «мы не смогли прочитать».
+ */
+async function saveOutages(env: Env, outages: ChernihivOutage[]): Promise<void> {
+  const fetchedAt = new Date().toISOString();
+  for (const outage of outages) {
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO outage_events
+         (external_id, region, starts_at, ends_at, area_name, addresses_raw, reason, kind, source_url, fetched_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        outage.externalId, 'chernihivska-oblast', outage.startsAt, outage.endsAt,
+        outage.areaName, outage.addressesRaw, outage.reason, outage.kind,
+        'https://chernihivoblenergo.com.ua/power_outages', fetchedAt,
+      )
+      .run();
+  }
+
+  // Подрезаем прошлое: архив дольше 30 дней людям не нужен, а таблица растёт без границ.
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  await env.DB.prepare(`DELETE FROM outage_events WHERE region = ? AND starts_at < ?`)
+    .bind('chernihivska-oblast', cutoff).run();
+}
+
+/** Идентификаторы НП оператора: из переменной окружения, иначе — найденные и закэшированные. */
+async function chernihivCityIds(env: Env): Promise<string[]> {
+  const fromEnv = (env.CHERNIHIV_CITY_IDS ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+  if (fromEnv.length > 0) return fromEnv;
+
+  const cached = await env.DB.prepare(
+    `SELECT city_id FROM provider_city_ids WHERE provider = 'chernihiv' ORDER BY city_id`,
+  ).all<{ city_id: string }>();
+  if ((cached.results ?? []).length > 0) return cached.results!.map((row) => row.city_id);
+  return [];
+}
+
+/**
+ * Обход оператора: наполняет outage_events живыми данными.
+ *
+ * Возвращает false, если собрать не удалось — вызывающий обязан это учесть и не записать
+ * в метаданные время «успешного» сбора.
+ */
+async function runChernihiv(env: Env): Promise<boolean> {
+  const baseUrl = env.CHERNIHIV_WEB_BASE_URL || 'https://chernihivoblenergo.com.ua';
+
+  let cityIds = await chernihivCityIds(env);
+  if (cityIds.length === 0) {
+    // Справочник НП узнаём в рантайме: зашивать вручную одно село нельзя — это создало бы
+    // впечатление, будто мы видим отключения по всей области, а видели бы одно.
+    try {
+      cityIds = await fetchCityIds(baseUrl, '');
+      if (cityIds.length === 0) return false;
+      const now = new Date().toISOString();
+      for (const cityId of cityIds) {
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO provider_city_ids (provider, city_id, discovered_at) VALUES ('chernihiv', ?, ?)`,
+        ).bind(cityId, now).run();
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  const today = kyivToday();
+  const outages = await collectChernihivOutages(
+    { cityIds, types: [1, 2, 6], baseUrl },
+    kyivOffsetMinutes(today),
+  );
+  if (outages.length === 0) return false;
+
+  await saveOutages(env, outages);
+  await env.DB.prepare(`INSERT OR REPLACE INTO snapshot_meta (key, value, updated_at) VALUES (?, ?, ?)`)
+    .bind('chernihiv', JSON.stringify({ at: new Date().toISOString(), outages: outages.length, cities: cityIds.length }), new Date().toISOString())
+    .run();
+  return true;
+}
+
 /** Гарантирует наличие таблиц. Вызывается перед записью: D1 не знает про `IF NOT EXISTS` при CREATE? */
 async function ensureSchema(env: Env): Promise<void> {
   const statements = [
@@ -469,6 +559,14 @@ async function ensureSchema(env: Env): Promise<void> {
       id TEXT PRIMARY KEY, source_key TEXT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL,
       summary TEXT, published_at TEXT, first_seen_at TEXT NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS idx_news_published ON news (published_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS outage_events (
+      external_id TEXT PRIMARY KEY, region TEXT NOT NULL, starts_at TEXT NOT NULL,
+      ends_at TEXT NOT NULL, area_name TEXT NOT NULL, addresses_raw TEXT NOT NULL,
+      reason TEXT, kind TEXT NOT NULL DEFAULT 'repair', source_url TEXT, fetched_at TEXT NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS idx_outage_events_starts ON outage_events (starts_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS provider_city_ids (
+      provider TEXT NOT NULL, city_id TEXT NOT NULL, discovered_at TEXT NOT NULL,
+      PRIMARY KEY (provider, city_id))`,
   ];
   for (const sql of statements) {
     await env.DB.prepare(sql).run();
@@ -575,6 +673,18 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
     // Игнорируем: график уже записан.
   }
 
+  // Точечные отключения Чернигівобленерго. Выключены по умолчанию, как и в Node-бэкенде:
+  // оператор под WAF, и включение без списка НП дало бы пустую выдачу, которую легко
+  // принять за «отключений нет».
+  if (env.CHERNIHIV_WEB_ENABLED === 'true') {
+    try {
+      const ok = await runChernihiv(env);
+      console.log(`chernihiv: сбор ${ok ? 'завершён' : 'не удался (источник недоступен)'}`);
+    } catch (error) {
+      console.warn(`chernihiv: ${error instanceof Error ? error.message : 'unknown'}`);
+    }
+  }
+
   ctx.waitUntil(cacheApiRefresh());
 }
 
@@ -587,7 +697,7 @@ async function cacheApiRefresh(): Promise<void> {
 // ───────────────────────────── Справочники и поиск по адресу ─────────────────────────────
 
 /** Откуда пришла подсказка: наш справочник, привязка из базы или открытый гео-справочник OSM. */
-type PlaceSource = 'curated' | 'address_queues' | 'osm';
+type PlaceSource = 'curated' | 'address_queues' | 'osm' | 'directory';
 
 interface AddressQueueRow {
   region: string;
@@ -1149,8 +1259,26 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         source: 'curated',
       }));
 
-    // Если в базе мало совпадений — допрашиваем открытый гео-справочник OSM.
-    if (places.length < limit) {
+    // Статический справочник: города и центры громад ищутся по префиксу в памяти, мгновенно
+    // и без сети. Nominatim для них не годится: он требует полное слово, поэтому «Черніг»
+    // не находил «Чернігів», а человек именно так и набирает название.
+    const fromDirectory = searchSettlements(query, region || undefined, limit);
+    for (const hit of fromDirectory) {
+      places.push({
+        name: hit.name,
+        normalized: normalizeAddress(hit.name),
+        lat: hit.lat,
+        lon: hit.lon,
+        source: 'directory',
+      });
+    }
+    places = dedupePlaces(places).slice(0, limit);
+
+    // Хутора и посёлки справочник не покрывает (там их десятки тысяч) — их ищем в OSM.
+    // Обращаемся к нему ТОЛЬКО когда справочник не дал ничего: иначе каждый запрос уходил бы
+    // в сеть и подсказка появлялась через ~700 мс вместо мгновенной. Как только человек дописал
+    // название до города, дальше идти незачем — в OSM всё равно лежат те же города.
+    if (places.length === 0) {
       const osm = await nominatim(
         {
           featuretype: 'settlement',
@@ -1273,10 +1401,73 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
   // Остальные разделы зеркало не отдаёт, и выдумывать их нельзя. Честная пустая выдача:
   // фронтенд на ней показывает свой EmptyState, а не рисует вымышленные отключения.
-  if (path === '/outages' || path === '/outages/stats') return json({ data: [], meta: { count: 0 } });
-  if (path === '/incidents') return json({ data: [] });
+  if (path === '/outages') {
+    const filters = region && region !== 'all' ? 'region = ?' : '1=1';
+    const rows = await env.DB.prepare(
+      `SELECT external_id, region, starts_at, ends_at, area_name, addresses_raw, reason, kind, source_url
+       FROM outage_events WHERE ${filters} AND ends_at >= ? ORDER BY starts_at DESC LIMIT 300`,
+    )
+      .bind(...(region && region !== 'all' ? [region] : []), new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .all<Record<string, string>>();
+    const data = (rows.results ?? []).map((row) => ({
+      id: row['external_id']!,
+      startsAt: row['starts_at']!,
+      endsAt: row['ends_at']!,
+      areaName: row['area_name']!,
+      addressesRaw: row['addresses_raw']!,
+      // Нормализованный адрес считается на бэкенде; здесь отдаём исходный, нормализованный
+      // человек всё равно получит при следующем сохранении через адресный мастер.
+      addressesNormalized: row['addresses_raw']!,
+      streets: [],
+      kind: row['kind'] === 'emergency' ? ('repair' as const) : (row['kind'] as 'repair' | 'gpv'),
+      reason: row['reason'] ?? null,
+      queue: null,
+      regionCpu: row['region']!,
+      sourceUrl: row['source_url'] ?? null,
+    }));
+    return json({ data, meta: { count: data.length } });
+  }
+
+  if (path === '/outages/stats') {
+    const active = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at <= ? AND ends_at >= ?`,
+    ).bind(new Date().toISOString(), new Date().toISOString()).first<{ n: number }>();
+    return json({ data: { totalActive: active?.n ?? 0, byHour: [], byDay: [], byArea: [], heatmap: [] } });
+  }
+
+  if (path === '/incidents') {
+    // Аварийные перерывы (тип 2) показываем отдельным списком: у них есть место и причина,
+    // и без них страница «Аварии» была бы пустой.
+    const rows = await env.DB.prepare(
+      `SELECT external_id, area_name, starts_at, ends_at, reason FROM outage_events
+       WHERE kind = 'emergency' AND ends_at >= ? ORDER BY starts_at DESC LIMIT 100`,
+    ).bind(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).all<Record<string, string>>();
+    const data = (rows.results ?? []).map((row) => ({
+      id: row['external_id']!,
+      title: row['reason'] ?? 'Аварійна перерва',
+      areaName: row['area_name']!,
+      startsAt: row['starts_at']!,
+      etaAt: row['ends_at']!,
+      status: 'open',
+    }));
+    return json({ data });
+  }
   if (path === '/reliability') {
-    return json({ data: { groups: [], byBucket: [], generatedAt: new Date().toISOString() } });
+    // Надёжность честно считается только по тем отключениям, что мы действительно собрали.
+    // Пока данных нет — массив пуст, а не «нулевая надёжность»: это разные вещи, и подменять
+    // одно другим нельзя.
+    const rows = await env.DB.prepare(
+      `SELECT area_name, SUM((julianday(ends_at) - julianday(starts_at)) * 24.0) AS minutes
+       FROM outage_events WHERE starts_at >= ? AND kind = 'repair'
+       GROUP BY area_name ORDER BY minutes DESC LIMIT 50`,
+    ).bind(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()).all<{ area_name: string; minutes: number }>();
+    const groups = (rows.results ?? []).map((row) => ({
+      areaName: row.area_name,
+      outageMinutes: Math.round(row.minutes ?? 0),
+    }));
+    return json({
+      data: { groups, byBucket: [], generatedAt: new Date().toISOString(), totalGroups: groups.length },
+    });
   }
   if (path === '/street-queues') return json({ data: [] });
   if (path === '/addresses/suggest') return json({ data: [] });
