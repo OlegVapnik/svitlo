@@ -8,7 +8,7 @@ import { Sidebar } from './Sidebar.js';
  * «Skip to content» — первая ссылка на странице: клавиатурой можно проскочить меню.
  */
 export const AppShell = () => (
-  <div className="flex min-h-screen flex-col bg-background">
+  <div className="flex min-h-dvh flex-col bg-background">
     <a
       href="#main"
       className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-60 focus:rounded-lg focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:shadow-pop"
@@ -18,7 +18,9 @@ export const AppShell = () => (
     <Header />
     <div className="flex flex-1">
       <Sidebar />
-      <main id="main" className="min-w-0 flex-1 px-4 pb-24 pt-4 sm:px-6 md:pb-8 md:pt-6">
+      {/* pb-28 с запасом: таб-бар теперь на 4 пункта и выше (min-h-56px + safe-area), а
+          раньше pb-24 прижимался к нему впритык и последняя карточка уезжала под панель. */}
+      <main id="main" className="min-w-0 flex-1 px-4 pb-28 pt-4 sm:px-6 md:pb-8 md:pt-6">
         <Outlet />
       </main>
     </div>

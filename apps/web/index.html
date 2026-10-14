@@ -10,17 +10,26 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Svitlo — Чернігів</title>
     <script>
-      /* Тема применяется до первой отрисовки. Иначе на холодной загрузке мигает светлая тема,
-         а на телефоне цвет строки состояния остаётся от прошлой темы. Значения должны совпадать
-         с палитрой светлой/тёмной темы в src/styles/globals.css. */
+      /* Тема применяется ДО первой отрисовки. Иначе на холодной загрузке мигает светлая тема,
+         а на телефоне цвет строки состояния остаётся от прошлой. По умолчанию — «auto»,
+         а при первом запуске (нет сохранённого выбора) — тёмная: приложение открывают ночью,
+         и на AMOLED чёрный физически выключает пиксели.
+         Значения цветов должны совпадать с палитрой в src/styles/globals.css. */
       (function () {
         try {
-          var dark = localStorage.getItem('theme') === 'dark';
+          var stored = localStorage.getItem('theme');
+          var pref = stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto';
+          var dark =
+            pref === 'auto'
+              ? window.matchMedia('(prefers-color-scheme: dark)').matches
+              : pref === 'dark';
           document.documentElement.classList.toggle('dark', dark);
           var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', dark ? '#101411' : '#f3efe6');
+          if (meta) meta.setAttribute('content', dark ? '#050507' : '#f3efe6');
         } catch (error) {
-          /* приватный режим: localStorage недоступен — остаётся светлая тема по умолчанию */
+          /* приватный режим: localStorage недоступен — берём тёмную по системной настройке */
+          var darkAuto = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', darkAuto);
         }
       })();
     </script>

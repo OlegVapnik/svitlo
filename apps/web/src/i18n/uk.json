@@ -10,7 +10,14 @@
     "streets": "Пошук за адресою",
     "scheduleImport": "Імпорт графіка",
     "admin": "Керування",
-    "more": "Ще"
+    "more": "Ще",
+    "search": "Пошук",
+    "monitor": "Моніторинг",
+    "info": "Інфо",
+    "monitorGroups": "Групи",
+    "monitorOutages": "Відключення",
+    "monitorIncidents": "Події",
+    "infoContacts": "Контакти"
   },
   "status": {
     "stable": "Стабільно",
@@ -201,7 +208,8 @@
     "refresh": "Оновити",
     "refreshing": "Оновлюємо…",
     "save": "Зберегти",
-    "bookmarksSaved": "В закладках"
+    "bookmarksSaved": "В закладках",
+    "comingSoon": "Розділ готується"
   },
   "charts": {
     "byHour": "За годинами",
