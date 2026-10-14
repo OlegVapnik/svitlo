@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronDown, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff } from 'lucide-react';
 import { StatusIndicator } from '../components/status/StatusIndicator.js';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
@@ -18,6 +18,9 @@ import { StatCard } from '../components/ui/StatCard.js';
 import { useIncidents, useOutages, useReliability, useStatus, useUpcomingGroupOutages } from '../api/queries.js';
 import { useRegion } from '../hooks/useRegion.js';
 import type { GroupOutageSummary, Outage } from '@svitlo/shared';
+
+/** Скільки групп показываем до кнопки «показати ще N» — решта за кнопкою. */
+const VISIBLE_GROUPS_LIMIT = 6;
 
 /**
  * Карточка ближайшего отключения одной группы: код черги, интервалы «10:00–11:00», статус
@@ -59,39 +62,104 @@ const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
         ))}
       </ul>
 
-      {(item.settlements.length > 0 || item.streetNames.length > 0) && (
+{/* Розкриття списку вулиць групи. Показуємо тільки реальні назви зі street_queues/settlements:
+          якщо джерело географію не віддало — блоку немає, а не «ймовірно, сусідні райони». */}
+      {item.streetNames.length > 0 && (
+        <details className="group/places mt-3 border-t border-border/60 pt-3">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground">
+            <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/places:rotate-180" aria-hidden />
+            {t('home.groupStreetsToggle', { n: item.streetNames.length })}
+          </summary>
+          <ul className="mt-2 grid gap-1 sm:grid-cols-2">
+            {item.streetNames.map((name) => (
+              <li key={name} className="flex items-center gap-1.5 text-xs text-foreground">
+                <MapPin className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                {name}
+              </li>
+            ))}
+          </ul>
+          <Link to="/streets" className="mt-2 inline-block text-xs font-semibold text-primary hover:underline">
+            {t('queues.allStreetsLink')}
+          </Link>
+        </details>
+      )}
+
+      {item.settlements.length > 0 && (
         <div className="mt-3 border-t border-border/60 pt-3">
-          {item.settlements.length > 0 && (
-            <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {item.settlements.map((name) => (
-                <span key={name} className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">
-                  {name}
-                </span>
-              ))}
-            </p>
-          )}
-          {item.streetNames.length > 0 && (
-            <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {item.streetNames.slice(0, 8).map((name) => (
-                <span key={name} className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">
-                  {name}
-                </span>
-              ))}
-              {item.streetNames.length > 8 && (
-                <Link to="/streets" className="font-semibold text-primary hover:underline">
-                  {t('home.moreInStreets', { n: item.streetNames.length - 8 })}
-                </Link>
-              )}
-            </p>
-          )}
+          <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {item.settlements.map((name) => (
+              <span key={name} className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
+                {name}
+              </span>
+            ))}
+          </p>
         </div>
       )}
     </article>
   );
 };
 
+
+/**
+ * Точкові ремонтні відключення, згруповані за місцем (вулиці з `outage_event_addresses`,
+ * назва НП як запасний варіант). Без групування всі записи одного.operator мають одну й ту саму
+ * `areaName`, і блок виглядає як одне відключення, повторене N разів.
+ */
+const PointOutagesByPlace: React.FC<{ outages: Outage[] }> = ({ outages }) => {
+  const { t } = useTranslation();
+  const groups = new Map<string, { label: string; items: Outage[] }>();
+  for (const outage of outages) {
+    const streets = outage.streets ?? [];
+    // Ключ групи — перша вулиця: вулиці конкретні, тож це точніше, ніж одне НП на всю область.
+    const key = streets[0] ?? (outage.areaName || t('home.unknownPlace'));
+    const existing = groups.get(key);
+    if (existing) existing.items.push(outage);
+    else groups.set(key, { label: key, items: [outage] });
+  }
+
+  return (
+    <div className="space-y-2 pt-1">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {t('home.pointOutages')}
+      </p>
+      {[...groups.values()].map((group) => {
+        // Улицы всего события, а не только первой: у группы они общие по сутям.
+        const streets = group.items[0]?.streets ?? [];
+        return (
+          <details key={group.label} className="group/place rounded-2xl border border-border bg-card p-4 shadow-xs" open={group.items.length === 1}>
+            <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-sm font-bold text-foreground">
+                <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                {group.label}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+                <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/place:rotate-180" aria-hidden />
+                {t('home.pointOutagesCount', { n: group.items.length })}
+              </span>
+            </summary>
+
+            {streets.length > 1 && (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {streets.map((street) => (
+                  <li key={street} className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
+                    {street}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-2.5 space-y-2">
+              {group.items.map((outage) => (
+                <OutageCard key={outage.id} outage={outage} />
+              ))}
+            </div>
+          </details>
+        );
+      })}
+    </div>
+  );
+};
 
 /**
  * Главная отвечает на вопрос «что с электричеством сейчас». Порядок блоков — по важности:
@@ -112,6 +180,10 @@ export const HomePage: React.FC = () => {
   // на запитання «які саме групи гасять сьогодні».
   const { data: groupOutagesData, isLoading: groupOutagesLoading } = useUpcomingGroupOutages(currentRegionData.cpu, 2);
   const groupOutages = groupOutagesData?.data ?? [];
+  // Показываем 6 групп, решта — за кнопкою «показати ще N груп» (усі 12 не вміщуються на
+  // першому екрані, але ховати їх назавжди теж неправильно: людина шукає СВЕЮ чергу).
+  const [allGroupsShown, setAllGroupsShown] = useState(false);
+  const visibleGroupOutages = allGroupsShown ? groupOutages : groupOutages.slice(0, VISIBLE_GROUPS_LIMIT);
   const { data: incidentsData } = useIncidents();
 
   const status = statusData?.data;
@@ -214,29 +286,29 @@ export const HomePage: React.FC = () => {
               ) : null
             ) : (
               <>
-                {groupOutages.slice(0, 6).map((item) => (
+                {visibleGroupOutages.map((item) => (
                   <GroupOutageCard key={`${item.date}-${item.queue}`} item={item} />
                 ))}
-                {groupOutages.length > 6 && (
-                  <p className="pt-1 text-center text-xs text-muted-foreground">
-                    {t('home.moreGroups', { n: groupOutages.length - 6 })}
-                  </p>
+                {groupOutages.length > VISIBLE_GROUPS_LIMIT && (
+                  <button
+                    type="button"
+                    onClick={() => setAllGroupsShown((value) => !value)}
+                    className="mx-auto block rounded-full border border-border px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-muted"
+                    aria-expanded={allGroupsShown}
+                  >
+                    {allGroupsShown
+                      ? t('home.hideAllGroups')
+                      : t('home.showAllGroups', { n: groupOutages.length - VISIBLE_GROUPS_LIMIT })}
+                  </button>
                 )}
               </>
             )}
 
-            {/* Точкові ремонтні/аварійні відключення — окремим підрозділом: їх у outage_events
-                одиниці, і раніше вони займали весь блок, тоді як планових відключень по групах
-                не було видно взагалі. */}
+            {/* Точкові ремонтні/аварійні відключення згруповані за вулицями/районами.
+                Раніше всі 28 записів мали одну areaName («Деснянське») і виглядали як одне й
+                те саме відключення; тепер видно реальні вулиці з outage_event_addresses. */}
             {outages.length > 0 && (
-              <div className="space-y-2 pt-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {t('home.pointOutages')}
-                </p>
-                {outages.map((outage) => (
-                  <OutageCard key={outage.id} outage={outage} />
-                ))}
-              </div>
+              <PointOutagesByPlace outages={outages} />
             )}
           </div>
         )}

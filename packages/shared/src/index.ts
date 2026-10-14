@@ -6,7 +6,9 @@ export interface OperatorInterval { time_from: string; time_to: string; queue: O
 export interface OperatorState { name: string; color: string; }
 export interface OperatorScheduleResponse { status?: string; aData: OperatorInterval[]; aState: Record<string, OperatorState>; }
 export interface ScheduleIntervalUtc { startsAt: string; endsAt: string; stateCode: OperatorStateCode; stateName: string; stateColor: string; }
-export interface Outage { id: string; startsAt: string; endsAt: string; areaName: string; addressesRaw: string; addressesNormalized: string; reason?: string | null; status: OutageStatus; queue?: number | null; source: string; sourceId: string; contentHash: string; firstSeenAt: string; updatedAt: string; }
+export interface Outage { id: string; startsAt: string; endsAt: string; areaName: string; addressesRaw: string; addressesNormalized: string;
+  /** Улицы события без номеров домов (из outage_event_addresses). Пусто — источник адрес не отдал. */
+  streets?: string[]; reason?: string | null; status: OutageStatus; queue?: number | null; source: string; sourceId: string; contentHash: string; firstSeenAt: string; updatedAt: string; }
 export interface Incident {
   id: string;
   title: string;

@@ -72,7 +72,12 @@
     "streetsHint": "Черга за адресою",
     "myAddressHint": "Адреса та черги",
     "offTodayLabel": "Без світла за добу",
-    "heroNoOutages": "Світло є — відключень не заплановано"
+    "heroNoOutages": "Світло є — відключень не заплановано",
+    "showAllGroups": "Показати ще {{n}} груп",
+    "hideAllGroups": "Згорнути список груп",
+    "groupStreetsToggle": "Вулиці групи ({{n}})",
+    "pointOutagesCount": "відключень: {{n}}",
+    "unknownPlace": "Невідоме місце"
   },
   "outages": {
     "title": "Відключення",
@@ -261,7 +266,8 @@
     "primary": "Основна",
     "setPrimary": "Зробити основною",
     "settlementsInGroup": "НП у групі",
-    "streetsInGroup": "Вулиці у групі"
+    "streetsInGroup": "Вулиці у групі",
+    "allStreetsLink": "Усі вулиці области →"
   },
   "scheduleImport": {
     "title": "Імпорт графіка",

@@ -7,6 +7,29 @@ import type { OutageFilters, PaginationQuery, OutageStats } from '@svitlo/shared
 const MAX_ROWS_FOR_GROUPING = 500;
 
 /**
+ * Название улицы из строки адреса оператора: «вул. Деснянська 1, 2, 3» → «вул. Деснянська».
+ *
+ * Номера домов отбрасываем: они персональные по смыслу (привязка к конкретным квартирам) и в
+ * блоке «Найближчі відключення» показывать их не нужно — человеку важен уровень улицы.
+ * Если в строке есть только номера (без «вул.»), название не выдумываем и возвращаем null.
+ */
+export function streetNameFromRawAddress(raw: string): string | null {
+  const text = String(raw).trim();
+  // Свёрнутая агрегатная строка («вул. А, вул. Б, вул. В та інші вулиці») — это не одна улица.
+  // Такие лежат рядом с настоящими в outage_event_addresses, поэтому отбрасываем их по признакам
+  // «несколько "вул." подряд» либо «… та інші вулиці».
+  const streetWordCount = (text.match(/вул\.|провулок|пров\./giu) ?? []).length;
+  if (streetWordCount > 1 || /та інші вулиці/iu.test(text)) return null;
+
+  const withoutLeading = text.replace(/^(?:вул(?:ица)?|провулок|пров\.)\.?\s*/iu, '');
+  // Отрезаем хвост с номерами домов: «Деснянська 1, 2, 3» → «Деснянська».
+  const cut = withoutLeading.split(/\s+\d/u)[0]?.trim() ?? '';
+  if (!cut || /\d/u.test(cut)) return null;
+  // Всегда с единым префиксом «вул.» — в UI и в группировке назва улицы должна быть одной строкой.
+  return `вул. ${cut}`;
+}
+
+/**
  * Агрегирует адреса событий: для каждого event_id собирает список уникальных улиц/адресов
  * из outage_event_addresses. Возвращает Map<eventId, addressesSummary>.
  */
@@ -37,6 +60,35 @@ async function loadAddressesForEventIds(eventIds: string[]): Promise<Map<string,
     result.set(eventId, addrs.length > 4 ? `${shown} та інші вулици` : shown);
   }
   return result;
+}
+
+/**
+ * Улицы события (без номеров домов) — Map<eventId, string[]>.
+ *
+ * Раньше блок «Найближчі відключення» показывал одно название населённого пункта на весь экран,
+ * хотя оператор отдаёт адрес до уровня улицы. Эти улицы уже лежат в `outage_event_addresses` —
+ * берём их оттуда, а не строим группировку «по одному селу».
+ */
+async function loadStreetNamesForEventIds(eventIds: string[]): Promise<Map<string, string[]>> {
+  if (eventIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      eventId: outageEventAddresses.eventId,
+      addressRaw: outageEventAddresses.addressRaw,
+    })
+    .from(outageEventAddresses)
+    .where(inArray(outageEventAddresses.eventId, eventIds));
+
+  const byEvent = new Map<string, string[]>();
+  for (const row of rows) {
+    const street = streetNameFromRawAddress(row.addressRaw);
+    if (!street) continue;
+    const list = byEvent.get(row.eventId) ?? [];
+    if (!list.includes(street)) list.push(street);
+    byEvent.set(row.eventId, list);
+  }
+  for (const list of byEvent.values()) list.sort((a, b) => a.localeCompare(b, 'uk'));
+  return byEvent;
 }
 
 /**
@@ -104,7 +156,10 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
 
   // Собираем адреса для этих событий
   const eventIds = rows.map((r) => r.id);
-  const addressesMap = await loadAddressesForEventIds(eventIds);
+  const [addressesMap, streetsMap] = await Promise.all([
+    loadAddressesForEventIds(eventIds),
+    loadStreetNamesForEventIds(eventIds),
+  ]);
 
   // Считаем общее количество (без пагинации)
   const [countRow] = await db
@@ -120,6 +175,9 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
     areaName: row.areaName ?? '',
     addressesRaw: addressesMap.get(row.id.toString()) ?? '',
     addressesNormalized: '',
+    // Улицы события — чтобы блок «Найближчі відключення» группировал по улицам/районам,
+    // а не по одному названию села на весь экран.
+    streets: streetsMap.get(row.id.toString()) ?? [],
     reason: row.reason ?? null,
     status: computeStatus(row, now),
     queue: null,
