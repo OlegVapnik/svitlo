@@ -10,6 +10,8 @@ import { useRegion } from '../../hooks/useRegion.js';
 import { useRegionQueue } from '../../hooks/useRegionQueue.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useQueues, useQueueSchedule, useUpcomingGroupOutages } from '../../api/queries.js';
+import { HeroStatus } from './HeroStatus.js';
+import { useVisibilityTicker } from '../../hooks/useVisibilityTicker.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
@@ -88,10 +90,14 @@ export const HomeHeroSection: React.FC = () => {
   // не должен показываться, когда API уже вернул график.
   const hasRegionData = currentRegionData.slots > 0 || hasSchedule || hasIntervals;
 
+  // Секундний тик для обратного отсчёта. Зупиняється, коли вкладка не видна: иначе таймер
+  // будил бы CPU телефона каждую секунду, пока приложение лежит в кармане.
+  const now = useVisibilityTicker(1000);
+
   // Розрахунок вікна графіка на вибрану добу (що зараз, коли наступне, скільки без світла)
   const windowSummary = useMemo(() => {
-    return hasIntervals ? scheduleWindow(intervals, selectedDate) : null;
-  }, [hasIntervals, intervals, selectedDate]);
+    return hasIntervals ? scheduleWindow(intervals, selectedDate, now) : null;
+  }, [hasIntervals, intervals, selectedDate, now]);
 
   const isOff = Boolean(windowSummary?.isOff);
   // (deleted_duplicate)
@@ -111,23 +117,40 @@ export const HomeHeroSection: React.FC = () => {
   }, [windowSummary, hasIntervals, isOff, t]);
 
   return (
-    <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-card sm:p-6">
+    <section className="space-y-4">
+      {/* Hero — первый экран и главный ответ приложения. Отдельным компонентом: в нём
+          четыре состояния и правило «пустой график ≠ свет есть», и это правило не должно
+          размываться среди разметки страницы. */}
+      <HeroStatus
+        intervals={intervals}
+        isOff={isOff}
+        nextInMinutes={windowSummary?.nextInMinutes ?? null}
+        backInMinutes={windowSummary?.backInMinutes ?? null}
+        nextBoundaryAt={windowSummary?.offEndsAt ?? windowSummary?.nextStartsAt ?? null}
+        fromCache={scheduleFromSnapshot}
+        cachedAt={schedule?.lastImportedAt ?? null}
+        loading={scheduleLoading && !schedule}
+      />
+
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-6">
       {/* Вибір області тепер один — у шапці, з пошуком (дизайн звідси й перенесено).
           Дубль на головній лише плутав: два способи обрати ту саму область. */}
 
-      {/* 1.5. Швидкі закладки: збережені області+черги з РІЗНИХ областей України */}
+      {/* 1.5. Швидкі закладки: збережені області+черги з РІЗНИХ областей України.
+          Горизонтальний рядок со снапом, а не сетка-перенос: закладки — это быстрый
+          переключатель, и перенос делал бы прыжок высоты при каждом добавлении. */}
       {bookmarks.length > 0 && (
         <div
           role="group"
           aria-label={t('home.bookmarks')}
-          className="flex flex-wrap items-center gap-2"
+          className="-mx-1 flex snap-x snap-mandatory items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {bookmarks.map((bm) => {
             const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
             return (
               <div
                 key={bm.id}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5"
+                className="inline-flex snap-start items-center gap-1 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5"
               >
                 <button
                   type="button"
@@ -387,6 +410,7 @@ className={cn(
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 };
