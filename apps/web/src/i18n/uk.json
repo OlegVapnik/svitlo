@@ -370,7 +370,8 @@
     "partialOff": "Часткове відключення",
     "fullOn": "Світло є",
     "noScheduleShort": "Немає графіка",
-    "useArrowsHint": "Стрілки ← → для вибору годин"
+    "useArrowsHint": "Стрілки ← → для вибору годин",
+    "daySegmentLabel": "День графіку"
   },
   "news": {
     "title": "Новини",

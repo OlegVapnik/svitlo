@@ -11,6 +11,7 @@ import { useRegionQueue } from '../../hooks/useRegionQueue.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useQueues, useQueueSchedule, useUpcomingGroupOutages } from '../../api/queries.js';
 import { HeroStatus } from './HeroStatus.js';
+import { DaySegment } from '../schedule/DaySegment.js';
 import { useVisibilityTicker } from '../../hooks/useVisibilityTicker.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
@@ -210,41 +211,15 @@ className={cn(
             {t('home.addToBookmarks')}
           </Button>
 
-          {/* Перемикач дати: Сьогодні / Завтра */}
-          <div
-            role="tablist"
-            aria-label={t('outages.filterDate')}
-            className="inline-flex self-start rounded-xl border border-border bg-muted/50 p-1 text-xs font-semibold"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={selectedDayOffset === 0}
-              onClick={() => setSelectedDayOffset(0)}
-              className={cn(
-                'rounded-lg px-3 py-1.5 transition-all duration-150',
-                selectedDayOffset === 0
-                  ? 'bg-card text-foreground shadow-xs font-bold'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t('outages.today')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={selectedDayOffset === 1}
-              onClick={() => setSelectedDayOffset(1)}
-              className={cn(
-                'rounded-lg px-3 py-1.5 transition-all duration-150',
-                selectedDayOffset === 1
-                  ? 'bg-card text-foreground shadow-xs font-bold'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t('outages.tomorrow')}
-            </button>
-          </div>
+          {/* Перемикач дати: Сьогодні / Завтра. Прежний был 28px высотой и ролью tablist
+              без реальных панелей — мелкая цель для пальца и роли враньё. Новый — 44px. */}
+          <DaySegment
+            value={selectedDayOffset === 0 ? 'today' : 'tomorrow'}
+            today={t('outages.today')}
+            tomorrow={t('outages.tomorrow')}
+            onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
+            className="self-start"
+          />
         </div>
       </div>
 

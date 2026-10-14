@@ -19,6 +19,20 @@ interface Timeline24hProps {
   onHourSelect?: (hour: number) => void;
 }
 
+/**
+ * Часы ночи для мягкой подсветки зон.
+ *
+ * Почему именно эти: ночью отключение длится дольше всего, и именно ночью человек чаще
+ * всего открывает приложение. Подсветка помогает глазу сразу найти «середину» шкалы, где
+ * сосредоточены красные участки, не заставляя вчитываться в подписи часов.
+ */
+const NIGHT_HOURS: Array<[number, number]> = [
+  [23, 5],
+  [0, 5],
+];
+
+const isNightHour = (hour: number): boolean => NIGHT_HOURS.some(([from, to]) => (from > to ? hour >= from || hour < to : hour >= from && hour < to));
+
 export const Timeline24h: React.FC<Timeline24hProps> = ({
   intervals,
   date,
@@ -114,6 +128,21 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
       {/* Головна 24-годинна горизонтальна смуга з 48 слотами */}
       <div className="relative w-full max-w-full">
         {/* Контейнер півгодинних комірок: компактний flex/grid, жодного горизонтального скролу на 360 px */}
+        {/* Мягкая подложка ночных зон: четыре полосы, чтобы сетка слотов не гасила их.
+            Это слой под слотами, а не поверх — иначе он перекрыл бы половины наведения. */}
+        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-xl">
+          {Array.from({ length: 24 }, (_, hour) => (
+            <span
+              key={hour}
+              className={cn(
+                'absolute top-0 h-full',
+                isNightHour(hour) ? 'bg-foreground/[0.04]' : 'bg-transparent',
+              )}
+              style={{ left: `${(hour / 24) * 100}%`, width: `${100 / 24}%` }}
+            />
+          ))}
+        </div>
+
         <div
           role="region"
           aria-label={t('timeline.barAriaLabel', { date })}
@@ -181,9 +210,12 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             style={{ left: `${timeMarker.percent}%` }}
             aria-hidden
           >
-            {/* Верхня стрілка/крапка */}
-            <div className="-mt-1.5 flex items-center justify-center">
-              <span className="h-3 w-3 rounded-full border-2 border-card bg-foreground shadow-xs" />
+            {/* Верхняя точка + подпись времени (напр. 19:42): без подписи бегунок
+                приходилось искать глазами, а он — единственная подвижная точка шкалы. */}
+            <div className="-mt-1.5 flex flex-col items-center">
+              <span className="font-timer rounded-full border border-border bg-card px-1.5 py-0.5 text-[10px] font-bold leading-none text-foreground">
+                {timeMarker.timeFormatted}
+              </span>
             </div>
             {/* Вертикальна лінія */}
             <div className="w-0.5 flex-1 bg-foreground shadow-xs" />
