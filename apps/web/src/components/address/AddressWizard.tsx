@@ -32,7 +32,7 @@ interface ResolveResponse {
  */
 export const AddressWizard: React.FC = () => {
   const { t } = useTranslation();
-  const { currentRegion } = useRegion();
+  const { currentRegion, currentRegionData, setRegion, regions } = useRegion();
   const { addBookmark } = useBookmarks();
 
   const [settlement, setSettlement] = useState('');
@@ -80,12 +80,42 @@ export const AddressWizard: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {/* Выбор области: отдельная строка, чтобы шаги адреса (НП → вулиця → дом) не начинали
+          с неудобного «списка областей» — в восьми случаях из девяти область уже выбрана. */}
+      <div className="space-y-1.5">
+        <label htmlFor="address-region" className="block text-xs font-semibold text-foreground">
+          {t('addressWizard.region')}
+        </label>
+        <select
+          id="address-region"
+          value={currentRegion}
+          onChange={(event) => {
+            setRegion(event.target.value);
+            // Смена области сбрасывает всё ниже: населённый пункт и улица другой области
+            // не существуют, и оставить их — значит искать то, чего нет.
+            setSettlement('');
+            setStreet('');
+            setHouse('');
+            setResult(null);
+          }}
+          className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          {regions.map((region) => (
+            <option key={region.cpu} value={region.cpu}>
+              {region.nameUa}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <ol className="grid gap-3 sm:grid-cols-2">
+        {/* Область выбирается здесь, а не берётся из шапки: поиск адреса — самостоятельный
+            сценарий, и заставлять человека менять область в шапке ради одного поиска
+            означало бы потерять выбранный адрес при возвращении на главную. */}
         <StepField
           step={1}
           label={t('addressWizard.region')}
-          value={currentRegion}
-          hint={t('addressWizard.regionHint')}
+          value={currentRegionData.nameUa ?? currentRegion}
           readOnly
         />
         <li>

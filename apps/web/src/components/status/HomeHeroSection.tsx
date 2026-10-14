@@ -12,7 +12,7 @@ import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useQueues, useQueueSchedule, useUpcomingGroupOutages } from '../../api/queries.js';
 import { HeroStatus } from './HeroStatus.js';
 import { DaySegment } from '../schedule/DaySegment.js';
-import { useVisibilityTicker } from '../../hooks/useVisibilityTicker.js';
+import { useMinuteTicker } from '../../hooks/useVisibilityTicker.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
@@ -93,7 +93,7 @@ export const HomeHeroSection: React.FC = () => {
 
   // Секундний тик для обратного отсчёта. Зупиняється, коли вкладка не видна: иначе таймер
   // будил бы CPU телефона каждую секунду, пока приложение лежит в кармане.
-  const now = useVisibilityTicker(1000);
+  const now = useMinuteTicker();
 
   // Розрахунок вікна графіка на вибрану добу (що зараз, коли наступне, скільки без світла)
   const windowSummary = useMemo(() => {
