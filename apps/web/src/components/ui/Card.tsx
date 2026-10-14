@@ -9,7 +9,12 @@ export const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDi
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn('rounded-2xl border border-border bg-card text-card-foreground shadow-card', className)}
+      className={cn(
+        // Радиус 2xl и тонкая рамка — базовая форма Bento. Глубина даёт граница, а не тень:
+        // на OLED-чёрном тяжёлые тени не видно, зато они съедают батарею при перерисовке.
+        'rounded-2xl border border-border bg-card text-card-foreground',
+        className,
+      )}
       {...props}
     />
   )

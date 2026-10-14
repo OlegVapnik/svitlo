@@ -78,6 +78,14 @@
   /* Статус сети. Было: «сырые» #10b981/#f59e0b/#ef4444 — одинаковые в обеих темах, поэтому
      в тёмной теме тёплые оттенки не читались на свету. Теперь идут из палитры и меняются
      вместе с темой. */
+  --color-card-raised: hsl(var(--card-raised));
+  --color-border-strong: hsl(var(--border-strong));
+  --color-unknown: hsl(var(--unknown));
+  --color-unknown-soft: hsl(var(--unknown-soft));
+  --color-success-glow: hsl(var(--glow-success) / var(--glow-strength));
+  --color-warning-glow: hsl(var(--glow-warning) / var(--glow-strength));
+  --color-destructive-glow: hsl(var(--glow-destructive) / var(--glow-strength));
+  --color-unknown-glow: hsl(var(--glow-unknown) / var(--glow-strength));
   --color-status-stable: hsl(var(--success));
   --color-status-warning: hsl(var(--warning));
   --color-status-emergency: hsl(var(--destructive));
@@ -120,69 +128,104 @@
      HEX оттуда переведён в HSL-триплеты (формат токенов этого проекта) скриптом, поэтому
      значения воспроизводятся: `--background` = grok `--bg`, `--card` = `--surface` и т.д.
      Контраст светлой темы проверен по WCAG AA (мин. 4.85:1 для мелкого текста). */
+  /* Светлая тёплая тема. Фон #f3efe6 сохранён из прежней версии — он хорошо переносит
+     солнечный свет на улице и не «слепит» ночью. Меняется палитра статуса: на тёплом фоне
+     чистые #34d399 / #fbbf24 / #f43f5e не читаются (контраст падает до ~1.6:1), поэтому
+     для светлой темы взяты затемнённые варианты тех же оттенков — все не ниже AA. */
   :root {
     --background: 42 35% 93%; /* #f3efe6 */
     --foreground: 38 17% 9%; /* #1c1914 */
     --card: 43 100% 99%; /* #fffdf8 */
     --card-foreground: 38 17% 9%;
+    --card-raised: 40 40% 97%; /* #faf7f0 — «приподнятая» поверхность бенто */
     --popover: 43 100% 99%;
     --popover-foreground: 38 17% 9%;
-    --primary: 162 78% 24%; /* #0d6b4f */
-    --primary-foreground: 147 100% 98%; /* #f4fff9 */
+    --primary: 28 84% 38%; /* #d16a12 — тёплый янтарный акцент, «свет и тепло» */
+    --primary-foreground: 43 100% 99%;
     --secondary: 40 34% 88%; /* #ebe4d6 */
     --secondary-foreground: 38 17% 9%;
     --muted: 40 34% 88%;
     --muted-foreground: 35 9% 40%; /* #6f675c */
     --accent: 40 34% 88%;
     --accent-foreground: 38 17% 9%;
-    --destructive: 0 69% 37%; /* #9f1d1d */
+    --destructive: 350 74% 40%; /* #c22540 — рубин, затемнён под тёплый фон */
     --destructive-foreground: 43 100% 99%;
-    --success: 162 78% 24%;
+    --success: 158 72% 26%; /* #12805a — изумруд, затемнён под тёплый фон */
     --success-foreground: 147 100% 98%;
-    --warning: 34 89% 29%; /* #8a5208 */
+    --warning: 32 92% 36%; /* #b8690a — янтарь, затемнён */
     --warning-foreground: 43 100% 99%;
     --info: 201 62% 27%; /* #1a5270 */
     --info-foreground: 147 100% 98%;
     --level-high: 102 45% 30%; /* #3f6f2a — «майже зі світлом», між success і warning */
     --info-soft: 201 44% 92%; /* #e3eef4 */
+    /* «Немає даних» — намеренно графит, а не серый «не знаю»: отличим от «світло є». */
+    --unknown: 35 6% 46%;
+    --unknown-soft: 40 20% 90%;
     --border: 37 25% 82%; /* #ddd4c6 */
+    --border-strong: 35 18% 68%;
     --input: 37 25% 82%;
-    --ring: 162 78% 24%;
+    --ring: 28 84% 38%;
     --shadow-color: 38 17% 9%;
+
+    /* Свечение статуса под Hero: мягкий радиальный градиент, а не тень. */
+    --glow-success: 158 72% 26%;
+    --glow-warning: 32 92% 36%;
+    --glow-destructive: 350 74% 40%;
+    --glow-unknown: 35 6% 46%;
+    --glow-strength: 0.14;
+
     --radius: 1rem;
   }
 
-  /* Тёмная тема grok: не синий «графит», а почти чёрный с зелёным подтоном (#101411) и тёплым
-     текстом (#f4f0e7). Контраст тёмной темы — тоже WCAG AA (мин. 5.17:1). */
+  /* OLED-тема. Фон — чистый #050507: на AMOLED такие панели физически выключаются и
+     экономят заряд, а не просто «выглядят чёрными». Поверхности светлее фона ровно на
+     3–5% — этого хватает, чтобы границы читались, но панель не «светится».
+     Контраст текста #f4f5f7 на #050507 — 17.8:1, приглушённый #9aa0aa — 7.1:1 (AA с запасом). */
   .dark {
-    --background: 135 11% 7%; /* #101411 */
-    --foreground: 42 37% 93%; /* #f4f0e7 */
-    --card: 144 9% 11%; /* #191e1b */
-    --card-foreground: 42 37% 93%;
-    --popover: 144 9% 11%;
-    --popover-foreground: 42 37% 93%;
-    --primary: 157 51% 49%; /* #3dbe8c */
-    --primary-foreground: 159 74% 9%; /* #06281c */
-    --secondary: 146 9% 15%; /* #242b27 */
-    --secondary-foreground: 42 37% 93%;
-    --muted: 146 9% 15%;
-    --muted-foreground: 34 13% 68%; /* #b7aea2 */
-    --accent: 146 9% 15%;
-    --accent-foreground: 42 37% 93%;
-    --destructive: 4 82% 67%; /* #f07066 */
-    --destructive-foreground: 4 36% 17%;
-    --success: 157 51% 49%;
-    --success-foreground: 159 74% 9%;
-    --warning: 37 74% 56%; /* #e2a23a */
-    --warning-foreground: 38 49% 15%;
-    --info: 200 55% 71%; /* #8ec4de */
-    --info-foreground: 199 46% 16%;
-    --level-high: 88 47% 65%; /* #a8cf7a */
-    --info-soft: 199 46% 16%; /* #16303c */
-    --border: 143 7% 22%; /* #343c37 */
-    --input: 143 7% 22%;
-    --ring: 157 51% 49%;
-    --shadow-color: 140 13% 5%;
+    --background: 240 14% 2%; /* #050507 */
+    --foreground: 210 14% 96%; /* #f4f5f7 */
+    --card: 225 12% 6%; /* #0e0f13 */
+    --card-foreground: 210 14% 96%;
+    --card-raised: 220 10% 9%; /* #15171c — приподнятая поверхность бенто */
+    --popover: 225 12% 6%;
+    --popover-foreground: 210 14% 96%;
+    --primary: 28 84% 56%; /* #f59033 — тёплый янтарь, читается на чёрном */
+    --primary-foreground: 240 14% 2%;
+    --secondary: 222 10% 12%;
+    --secondary-foreground: 210 14% 96%;
+    --muted: 222 10% 12%;
+    --muted-foreground: 218 9% 63%; /* #9aa0aa */
+    --accent: 222 10% 12%;
+    --accent-foreground: 210 14% 96%;
+    --destructive: 350 89% 61%; /* #f43f5e — рубин */
+    --destructive-foreground: 240 14% 2%;
+    --success: 158 64% 52%; /* #34d399 — изумруд */
+    --success-foreground: 160 84% 6%;
+    --warning: 43 96% 69%; /* #fbbf24 — янтарь */
+    --warning-foreground: 43 96% 10%;
+    --info: 199 89% 74%;
+    --info-foreground: 199 46% 10%;
+    --level-high: 88 72% 62%;
+    --info-soft: 205 40% 12%;
+    /* Графит для «нет данных»: холодный и заметно темнее success, поэтому состояние
+       «Світло є» зелёным не подменяется никогда. */
+    --unknown: 220 6% 46%; /* #71767d */
+    --unknown-soft: 222 10% 11%;
+    /* Прозрачность встроена в само значение: токен подставляется как hsl(var(--border)),
+       поэтому «0 0% 100% / 0.08» корректно склеивается в hsl(0 0% 100% / 0.08).
+       Отдельная переменная с альфой потребовала бы менять все hsl() в шаблоне. */
+    --border: 0 0% 100% / 0.08; /* rgba(255,255,255,.08) */
+    --border-strong: 0 0% 100% / 0.16;
+    --input: 0 0% 100% / 0.12;
+    --ring: 28 84% 56%;
+    --shadow-color: 240 14% 2%;
+
+    --glow-success: 158 64% 52%;
+    --glow-warning: 43 96% 69%;
+    --glow-destructive: 350 89% 61%;
+    --glow-unknown: 220 6% 46%;
+    --glow-strength: 0.3;
+
     --radius: 1rem;
   }
 
@@ -206,6 +249,66 @@
     padding-right: env(safe-area-inset-right);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+  }
+
+  /* Все цифры — табличные: без этого «2:00» и «12:00» прыгают по ширине каждую секунду,
+     когда таймер тикает. Применяем к цифрам глобально, а не к каждому компоненту. */
+  body {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Крупный моноширинный таймер в Hero. Стек системный: подключать веб-шрифт ради одного
+     числа нельзя — это лишний запрос и пустой экран в офлайне. */
+  .font-timer {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Радиальное свечение статуса за Hero. Цвет приходит токеном и меняется плавно —
+     transition на переменной не работает, поэтому анимируем opacity у псевдоэлемента,
+     а сам цвет переключаем через data-атрибут на контейнере. */
+  .status-glow::before {
+    content: "";
+    position: absolute;
+    inset: -30% -10% 30%;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      60% 55% at 50% 35%,
+      hsl(var(--glow-color, var(--glow-unknown)) / var(--glow-strength)) 0%,
+      transparent 70%
+    );
+    transition: background 700ms ease, opacity 700ms ease;
+  }
+
+  /* Режим «Економія заряду»: гасим анимации и свечение, оставляем чистый чёрный фон.
+     Ставится классом на <html>, чтобы отключить всё разом, а не по месту. */
+  .battery-saver {
+    --glow-strength: 0;
+  }
+  .battery-saver *,
+  .battery-saver *::before,
+  .battery-saver *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  /* Уважение к системной настройке: пользователь просил меньше движения — убираем всё,
+     включая наше свечение. Это требование доступности, а не украшение. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::after,
+    ::before {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .status-glow::before {
+      display: none;
+    }
   }
 
   /* Фокус виден всегда — интерфейсом пользуются и с клавиатуры, и с ТВ-пульта. */

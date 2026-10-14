@@ -2,8 +2,11 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#f3efe6" />
+    <!-- maximum-scale/user-scalable убраны осознанно: блокировка зума ломает доступность
+         для людей со слабым зрением и противоречит WCAG 1.4.4. viewport-fit=cover нужен
+         для нижней панели под «чёлкой». -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#050507" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Svitlo — Чернігів</title>
     <script>
