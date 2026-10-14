@@ -30,6 +30,12 @@ export default async function adminRoutes(fastify: FastifyInstance) {
       for (const source of activeSources) {
         try {
           const data = await runParse(source.id);
+          // runParse возвращает null, когда сбор отключений выключен (CHERNIHIV_WEB_ENABLED=false):
+          // прогон не запускался, записей нет — это не ошибка, и «0» здесь вводил бы в заблуждение.
+          if (data === null) {
+            results.push({ sourceId: source.id, name: source.name, recordsFound: 0 });
+            continue;
+          }
           results.push({ sourceId: source.id, name: source.name, recordsFound: data.outages.length });
         } catch (error) {
           results.push({ sourceId: source.id, name: source.name, error: error instanceof Error ? error.message : String(error) });

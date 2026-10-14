@@ -307,6 +307,21 @@ export async function runParse(sourceId: string) {
   const adapters = getAdapters();
   const adapter = adapters[0]!;
 
+  // Сбор отключений по адресам выключен (CHERNIHIV_WEB_ENABLED=false) — по решению владельца.
+  // Раньше в этом случае код молча проваливался в старый HTML-адаптер: тот не отдавал записей,
+  // прогон завершался с «Ingest skipped: incomplete feed or no outage records», а источник навсегда
+  // оставался в состоянии «не відвечает» (consecutiveParseFailures рос), хотя оператор тут ни при
+  // чём — его просто не спрашивают. Теперь прогон не запускается вовсе, а прошлая ошибка снимается,
+  // иначе главная продолжала бы показывать баннер «Джерело даних не відповідає».
+  if (!env.CHERNIHIV_WEB_ENABLED) {
+    logger.info({ sourceId }, 'Outage collection disabled (CHERNIHIV_WEB_ENABLED=false); skipping parse run');
+    await db
+      .update(sources)
+      .set({ lastError: null, consecutiveFailures: 0 })
+      .where(eq(sources.id, sourceId));
+    return null;
+  }
+
   const [run] = await db
     .insert(parseRuns)
     .values({
