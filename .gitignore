@@ -36,7 +36,11 @@ ALL_IN_ONE.md
 # Кэш gradle (общий для всех локальных сборок Android)
 .cache/
 
-# Cloudflare Worker: зависимости и локальные состояния wrangler
+# Cloudflare Worker: зависимости, локальные состояния wrangler и базы D1/SQLite
 cf-worker/node_modules/
 cf-worker/.wrangler/
 .wrangler/
+.pages/
+.mf/
+*.sqlite
+*.db-journal
