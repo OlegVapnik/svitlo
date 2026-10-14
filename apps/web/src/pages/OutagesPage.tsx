@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '../lib/cn.js';
 import { Link } from 'react-router-dom';
 import { List, Calendar as CalendarIcon, BarChart2, MapPin } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs.js';
@@ -47,7 +48,14 @@ const startsOnSelectedKyivDay = (outage: Pick<Outage, 'startsAt' | 'endsAt'>, da
 
 type TabView = 'list' | 'calendar' | 'chart' | 'map';
 
-export const OutagesPage: React.FC = () => {
+/**
+ * Список отключений.
+ *
+ * `embedded` — когда страница вложена сегментом в «Моніторинг». Тогда исчезают её
+ * собственный заголовок и ограничение ширины: заголовок уже нарисован родителем, а вложенный
+ * второй заголовок под ним читается как ошибка вёрстки.
+ */
+export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabView>('list');
   const [searchQuery, setSearchQuery] = useState('');
@@ -147,14 +155,14 @@ export const OutagesPage: React.FC = () => {
   }, [outages]);
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto pb-16 md:pb-6">
+    <div className={cn('space-y-4', embedded ? '' : 'max-w-5xl mx-auto pb-16 md:pb-6')}>
       <header className="space-y-0.5">
         <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-          {t('outages.plannedSection')}
+          {embedded ? t('nav.monitorOutages') : t('outages.plannedSection')}
         </h1>
         <p className="text-xs text-muted-foreground sm:text-sm">
           {t('outages.incidentsHint')}{' '}
-          <Link to="/incidents" className="font-semibold text-primary hover:underline">
+          <Link to="/monitor?tab=incidents" className="font-semibold text-primary hover:underline">
             {t('outages.incidentsLink')}
           </Link>
         </p>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '../lib/cn.js';
 import { Clock, CheckCircle2, CalendarClock, MapPin, Tag, ExternalLink, Search, Radio } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Badge } from '../components/ui/Badge.js';
@@ -36,7 +37,8 @@ const STATUS_META: Record<string, { key: string; variant: 'destructive' | 'warni
  * «Аварії та ремонтні роботи». Фільтр — ui/Tabs (ARIA tabs, стрелки влево/вправо) вместо
  * самодельных кнопок с bg-red-500/bg-amber-500: те цвета были жёсткими и ломали тёмную тему.
  */
-export const IncidentsPage: React.FC = () => {
+/** События и аварии. `embedded` — вложенный сегмент «Моніторингу» (см. OutagesPage). */
+export const IncidentsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t } = useTranslation();
   const { data: incidentsResponse, isLoading } = useIncidents();
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -68,9 +70,11 @@ export const IncidentsPage: React.FC = () => {
   }, [incidents, filter, query]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 pb-16 md:pb-6">
+    <div className={cn('space-y-4', embedded ? '' : 'mx-auto max-w-4xl pb-16 md:pb-6')}>
       <header className="space-y-0.5">
-        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('incidents.title')}</h1>
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+          {embedded ? t('nav.monitorIncidents') : t('incidents.title')}
+        </h1>
         <p className="text-xs text-muted-foreground sm:text-sm">{t('incidents.subtitle')}</p>
       </header>
 
