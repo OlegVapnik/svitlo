@@ -22,18 +22,70 @@ import { syncProviderSchedules } from './provider-sync.service.js';
 import { getRegisteredProviders } from '../providers/registry.js';
 import { sanitizeSourceError } from './source-breaker.js';
 import type { SourceFailureKind } from '../parsers/source-errors.js';
+import { settlementsForRegion, type DirectorySettlement } from '../providers/settlement-directory.js';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+const CHERNIHIV_REGION = 'chernihivska-oblast';
+const STATE_DIR = process.env.SVITLO_STATE_DIR ?? '/tmp';
+
+/**
+ * Порція НП на один прогін: спершу міста, потім села, із курсором між прогонами.
+ *
+ * Область — 1509 НП, а оператор витримує десятки запитів за раз, не тисячі (перевірено вживу:
+ * ~1.8 с на запит, далі WAF). Тому за прогін береться порція, а села додаються поступово —
+ * наступними прогонами. Курсор живе у файлі стану: це лише оптимізація темпу, втрата файлу
+ * означає лише повторний обхід частини сіл, а не поломку сбору.
+ */
+function pickCityBatch(limit = Number.parseInt(process.env.CHERNIHIV_MAX_CITIES_PER_RUN ?? '30', 10)): string[] {
+  const directory = settlementsForRegion(CHERNIHIV_REGION);
+  if (directory.length === 0) return [];
+  const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 200) : 30;
+  const cities = directory.filter((item: DirectorySettlement) => item.priority === 1).map((item) => item.koatuu);
+  const villages = directory.filter((item: DirectorySettlement) => item.priority !== 1).map((item) => item.koatuu);
+  if (cities.length + villages.length <= safeLimit) return [...cities, ...villages];
+
+  const cursorFile = path.join(STATE_DIR, 'chernihiv-city-cursor');
+  let cursor = 0;
+  try {
+    const parsed = Number.parseInt(readFileSync(cursorFile, 'utf8').trim(), 10);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed < villages.length) cursor = parsed;
+  } catch {
+    cursor = 0;
+  }
+
+  const batch = [...cities];
+  let index = cursor;
+  while (batch.length < safeLimit && index < villages.length) {
+    batch.push(villages[index]!);
+    index += 1;
+  }
+  const cursorNext = index >= villages.length ? 0 : index;
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    writeFileSync(cursorFile, String(cursorNext));
+  } catch {
+    // Курсор — оптимізація; відсутність файлу не робить збір невдалим.
+  }
+  return batch;
+}
 
 function getAdapters(): ISourceAdapter[] {
   if (env.USE_MOCK_ADAPTER) return [new MockAdapter()];
+  // Перелік НП: явний CHERNIHIV_CITY_IDS має пріоритет, інакше — довідник КОАТУУ з порцією
+  // (див. pickCityBatch). Без цього в .env лишався один ручний код, і адаптер падав з
+  // «CHERNIHIV_CITY_IDS порожній», не бачачи аварій у 1500+ НП области.
+  const cityIds = env.CHERNIHIV_CITY_IDS.length > 0 ? env.CHERNIHIV_CITY_IDS : pickCityBatch();
   // Основне джерело — публічний веб-API оператора (/power_outages), якщо увімкнено.
   const primary: ISourceAdapter = env.CHERNIHIV_WEB_ENABLED
     ? new ChernihivWebAdapter(fetch, {
         baseUrl: env.CHERNIHIV_BASE_URL,
-        cityIds: env.CHERNIHIV_CITY_IDS,
+        cityIds,
         types: env.CHERNIHIV_OUTAGE_TYPES,
         timeoutMs: env.PARSE_TIMEOUT_MS,
         userAgent: env.CHERNIHIV_USER_AGENT,
         requestDelayMs: env.CHERNIHIV_REQUEST_DELAY_MS,
+        retries: env.CHERNIHIV_RETRIES,
         sessionWarmup: env.CHERNIHIV_SESSION_WARMUP,
       })
     : new ChernihivAdapter();
@@ -324,7 +376,7 @@ export async function runParse(sourceId: string) {
     const partialReason = primaryError
       ? primaryError.message
       : primaryData.complete === false
-        ? `Operator feed incomplete: loaded ${primaryData.completeScopeKeys?.length ?? 0} of ${env.CHERNIHIV_CITY_IDS.length * env.CHERNIHIV_OUTAGE_TYPES.length} configured portions`
+        ? `Operator feed incomplete: loaded ${primaryData.completeScopeKeys?.length ?? 0} of ${(env.CHERNIHIV_CITY_IDS.length > 0 ? env.CHERNIHIV_CITY_IDS.length : settlementsForRegion(CHERNIHIV_REGION).length) * env.CHERNIHIV_OUTAGE_TYPES.length} configured portions`
         : 'No outage records in a complete operator feed';
 
     // Нічого не зібрали з жодного джерела — це помилка (не «порожній успіх»).
@@ -348,9 +400,16 @@ export async function runParse(sourceId: string) {
 
     // 1. Upsert Outages + dual-write канонічних подій в ОДНІЙ транзакції (крок 4 плану міграції).
     //    Читачі поки що читають стару таблицю — тут для них нічого не змінюється.
-    const ingest = fullOutageFeed
-      ? await ingestOutages(sourceId, adapter.name, primaryData.outages, { now, complete: true })
-      : { rowsInFeed: 0, eventsOldPath: 0, eventsNewPath: 0, eventsInTable: 0, addressesInTable: 0, cancelledMarked: 0, unclassifiedReasons: [] };
+    // Пишем ВСЕ, что удалось собрать, даже если лента неполная: `complete` внутри ingestOutages
+    // защищает ровно одну вещь — отмену событий, которых «больше нет». Раньше при complete=false
+    // прогін не писал НИЧЕГО, и одна упавшая порция (например, оператор ответил ESOCKETTIMEDOUT
+    // на Чернігів) викидала 210 зібраних записів по інших 23 НП. Втрата реальних даних заради
+    // «чистої» семантики complete — неприйнятна: краще зберегти те, що є, і не скасовувати
+    // зниклі вікна (саме це complete=false і робить).
+    const ingest = await ingestOutages(sourceId, adapter.name, primaryData.outages, {
+      now,
+      complete: fullOutageFeed,
+    });
     logDualWriteComparison(sourceId, ingest);
 
     // Persist Telegram post IDs in their own table; channel content never becomes an outage record.

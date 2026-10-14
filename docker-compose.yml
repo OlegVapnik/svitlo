@@ -29,10 +29,16 @@ x-api-env: &api-env
   CHERNIHIV_BASE_URL: ${CHERNIHIV_BASE_URL:-https://chernihivoblenergo.com.ua}
   # Перелік населених пунктів оператора (id через кому). Порожньо = перелік не заданий, і адаптер
   # голосно падає з причиною замість «тихо порожньо» (раніше тут було зашите одне село — с. Деснянське).
+  # Перелік НП за КОАТУУ. Порожньо = беремо довідник (1509 НП Чернігівщини) і обходимо
+  # його порціями, містами вперед; курсор обходу сіл живе між прогонами.
   CHERNIHIV_CITY_IDS: ${CHERNIHIV_CITY_IDS:-}
+  CHERNIHIV_MAX_CITIES_PER_RUN: ${CHERNIHIV_MAX_CITIES_PER_RUN:-30}
   CHERNIHIV_OUTAGE_TYPES: ${CHERNIHIV_OUTAGE_TYPES:-1,2,6}
   # Пауза між запитами до оператора + прогрів сесії (GET /power_outages) — щоб не тригерити WAF.
   CHERNIHIV_REQUEST_DELAY_MS: ${CHERNIHIV_REQUEST_DELAY_MS:-1000}
+  # Повтори однієї порції: оператор віддає 400 ESOCKETTIMEDOUT на великих містах (Чернігів),
+  # наступний запит зазвичай успішний. Без повторів місто випадало з вибірки цілком.
+  CHERNIHIV_RETRIES: ${CHERNIHIV_RETRIES:-2}
   CHERNIHIV_SESSION_WARMUP: ${CHERNIHIV_SESSION_WARMUP:-true}
   # Рідше опитування (30 хв) + джиттер, бо розклад ГПВ змінюється нечасто, а WAF не любить регулярність.
   PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}

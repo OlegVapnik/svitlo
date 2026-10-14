@@ -27,6 +27,11 @@ COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 
 COPY --from=builder /app/apps/api/src/db/migrations ./apps/api/dist/db/migrations
 
+# Справочник населённых пунктов по кодам КОАТУУ (apps/api/src/providers/data). tsc не копирует
+# .json в dist, а без него providers/settlement-directory.ts читает пустоту, и сбор оператора
+# падает с «CHERNIHIV_CITY_IDS порожній» — то есть область не обходится вовсе.
+COPY --from=builder /app/apps/api/src/providers/data ./apps/api/dist/providers/data
+
 # Оператор (chernihivoblenergo.com.ua) віддає неповний TLS-ланцюжок: листовий сертифікат
 # підписано проміжним "Sectigo Public Server Authentication CA DV R36", а корінь
 # "Sectigo Public Server Authentication Root R46" відсутній у бандлі node:22-alpine.

@@ -36,6 +36,10 @@ const envSchema = z.object({
   CHERNIHIV_USER_AGENT: z.string().default('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'),
   // Пауза між запитами до оператора (мс) — щоб не тригерити WAF/рейт-ліміт.
   CHERNIHIV_REQUEST_DELAY_MS: z.coerce.number().default(1000),
+  // Повтори для однієї порції (НП × тип відключень). Оператор періодично віддає 400
+  // ESOCKETTIMEDOUT на великих містах (Чернігів) — це його внутрішній сокет, не наша помилка,
+  // і наступний запит зазвичай успішний. 2 повтори — це дозволяє не втрачати місто цілком.
+  CHERNIHIV_RETRIES: z.coerce.number().default(2),
   // Прогрів сесії: спершу GET /power_outages (cookies), потім POST /api/list_acc — як у браузера.
   CHERNIHIV_SESSION_WARMUP: z.string().default('true').transform((value) => value.toLowerCase() === 'true'),
   // Публічний метод оператора `POST /api/info_schedule {queue, curr_dt}` — без капчі й без ПД.

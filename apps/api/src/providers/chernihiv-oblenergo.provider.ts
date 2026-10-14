@@ -10,19 +10,38 @@
 import { ChernihivOblenergoFullAdapter } from '../parsers/ukraine-providers.adapter.js';
 import type { ProviderSlot, ProviderSettlement, ProviderSnapshot, RegionScheduleProvider } from './types.js';
 import { SLOT_STATE } from './intervals.js';
+import { settlementsForRegion, type DirectorySettlement } from './settlement-directory.js';
+
+const REGION = 'chernihivska-oblast';
+
+/** «селище» у КОАТТГ і «смт» у нашому типів ProviderSettlement — те саме поняття. */
+function toProviderKind(kind: string | undefined): 'місто' | 'смт' | 'село' | null {
+  if (kind === 'місто') return 'місто';
+  if (kind === 'селище') return 'смт';
+  if (kind === 'село') return 'село';
+  return null;
+}
 
 export const chernihivOblenergoProvider: RegionScheduleProvider = {
   id: 'chernihivoblenergo',
   displayName: 'Черніговобленерго',
   sourceUrl: 'https://chernihivoblenergo.com.ua/',
-  regions: ['chernihivska-oblast'],
+  regions: [REGION],
 
   async fetchSchedules(options): Promise<ProviderSnapshot> {
+    // Явний перелік у CHERNIHIV_CITY_IDS має пріоритет (так можна вручну точково перевірити
+    // конкретне село). Інакше беремо довідник КОАТУУ — інакше область не обходитися ніколи.
     const cityIdsRaw = process.env.CHERNIHIV_CITY_IDS ?? '';
-    const cityIds = cityIdsRaw
+    const explicitCityIds = cityIdsRaw
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+
+    // Явний перелік у CHERNIHIV_CITY_IDS має пріоритет (так можна точково перевірити одне
+    // село). Інакше — довідник КОАТУУ: область з 1509 НП інакше не обходиться ніколи.
+    const directory = settlementsForRegion(REGION);
+    const cityIds =
+      explicitCityIds.length > 0 ? explicitCityIds : directory.map((item) => item.koatuu);
 
     if (cityIds.length === 0) {
       return {
@@ -54,15 +73,21 @@ export const chernihivOblenergoProvider: RegionScheduleProvider = {
       }
     }
 
-    // Строим settlement-список (села/города с улицами)
+    // Строим settlement-список (села/города с улицами).
+    // Тип НП берем из справочника КОАТУУ по коду города, а не пишем «село» всем подряд:
+    // раньше Бахмач/Ніжин тоже помечались как село, и подпись в UI была неверной.
+    const directoryByKoatuu = new Map(directory.map((item) => [item.koatuu, item]));
     const settlements: ProviderSettlement[] = [];
-    for (const [, entry] of settlementMap) {
+    for (const [cityId, entry] of settlementMap) {
       settlements.push({
-        region: 'chernihivska-oblast',
-        name: entry.name,
-        kind: 'село',
+        region: REGION,
+        name: directoryByKoatuu.get(cityId)?.name ?? entry.name,
+        // Тип з довідника приводимо до типу провайдера: реєстр має ще й «селище», провайдер — «смт».
+        kind: toProviderKind(directoryByKoatuu.get(cityId)?.kind),
         queues: [],
-        sourceRef: null,
+        // Код КОАТУУ: он же идентификатор в ответе оператора, по нему обновляем запись,
+        // а не ищем по названию (которую оператор пишет капсом: ДЕСНЯНСЬКЕ).
+        sourceRef: cityId,
       });
     }
 

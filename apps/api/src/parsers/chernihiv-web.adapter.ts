@@ -37,6 +37,30 @@ export const OUTAGE_TYPE_LABELS: Record<number, string> = {
   6: 'Графік погодинних відключень (ГПВ)',
 };
 
+/** Профілі браузерів: UA і sec-ch-ua мусять бути узгодженими (див. pickUserAgent). */
+const CHERNIHIV_UA_PROFILES = [
+  {
+    userAgent:
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    secChUa: '"Chromium";v="120", "Not?A_Brand";v="24", "Google Chrome";v="120"',
+  },
+  {
+    userAgent:
+      'Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0',
+    secChUa: '"Chromium";v="120", "Not?A_Brand";v="24", "Google Chrome";v="120"',
+  },
+  {
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    secChUa: '"Chromium";v="120", "Not?A_Brand";v="24", "Google Chrome";v="120"',
+  },
+  {
+    userAgent:
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:124.0) Gecko/20100101 Firefox/124.0',
+    secChUa: '"Chromium";v="120", "Not?A_Brand";v="24", "Google Chrome";v="120"',
+  },
+];
+
 /** Рядок відповіді /api/list_acc: [населений пункт, вулиця, будинки, старт, кінець, створено, причина, ...]. */
 export type ListAccRow = [string, string, string, string, string, string?, string?, string?];
 
@@ -203,6 +227,12 @@ export class ChernihivWebAdapter implements ISourceAdapter {
 
   /** Cookies, отримані під час прогріву сесії (GET /power_outages). */
   private cookies = '';
+  /** Курсор ротації UA: кожен наступний запит — інший профіль браузера. */
+  private userAgentCursor = Math.floor(Math.random() * 4);
+  /** Профіль поточного запиту (див. pickUserAgent). */
+  private currentProfile: { userAgent: string; secChUa: string } | null = null;
+  /** Адаптивний множник паузи: зростає при тиску на джерело, сам повільно згасає. */
+  private slowdownFactor = 1;
 
   /** Заголовки, характерні для браузерного XHR-запиту зі сторінки /power_outages. */
   private browserHeaders(): Record<string, string> {
@@ -210,18 +240,65 @@ export class ChernihivWebAdapter implements ISourceAdapter {
       'content-type': 'application/json',
       accept: 'application/json, text/plain, */*',
       'accept-language': 'uk-UA,uk;q=0.9,en;q=0.8',
-      'user-agent': this.options.userAgent,
+      // Кожен запит іде з випадковим UA із реальних браузерів. Завжди однаковий UA на сотнях
+      // запитів — це найпомітніший сигнал автоматизації; ротація робить профіль «звичайним».
+      'user-agent': this.pickUserAgent().userAgent,
       origin: this.options.baseUrl,
       referer: `${this.options.baseUrl}/power_outages`,
       'sec-fetch-dest': 'empty',
       'sec-fetch-mode': 'cors',
       'sec-fetch-site': 'same-origin',
-      'sec-ch-ua': '"Chromium";v="120", "Not?A_Brand";v="24", "Google Chrome";v="120"',
+      'sec-ch-ua': this.pickUserAgent().secChUa,
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Linux"',
     };
     if (this.cookies) headers.cookie = this.cookies;
     return headers;
+  }
+
+  /**
+   * Випадковий UA із списку актуальних браузерів.
+   *
+   * UA має відповідати заголовку `sec-ch-ua`, інакше профіль виглядає підробленим: браузер ніколи
+   * не надсилає «Chrome 120» з UA Firefox. Тому список UA — це пари (Chromium-подібні й Firefox),
+   * а sec-ch-ua теж підставляється разом із ними.
+   */
+  private pickUserAgent(): { userAgent: string; secChUa: string } {
+    // Профіль визначається ОДИН раз на запит і кешується: browserHeaders() звертається до нього
+    // двічі (user-agent і sec-ch-ua), і без кешу запит отримав би UA від одного профілю, а
+    // sec-ch-ua від іншого — такий « frankenstein» профilu WAF розпізнає легко.
+    if (!this.currentProfile) {
+      this.currentProfile = CHERNIHIV_UA_PROFILES[this.userAgentCursor % CHERNIHIV_UA_PROFILES.length]!;
+      this.userAgentCursor += 1;
+    }
+    return this.currentProfile;
+  }
+
+  /** Скидає профіль на початку нового запиту, щоб кожен запит виглядав окремим відкриттям сторінки. */
+  private resetProfile(): void {
+    this.currentProfile = null;
+  }
+
+  /**
+   * Пауза між запитами: базова + випадковий jitter + адаптивне збільшення після 5xx.
+   *
+   * Три шари разом дають те, чого не дає жоден окремо:
+   *  * jitter — не рівномірний «робот»-малюнок;
+   *  * адаптив — після серверних помилок темп сам знижується, до того як джерело не відповідає;
+   *  * базова пауза — гарантований технічний мінімум, щоб не «длубати» оператора.
+   */
+  private async paceRequest(): Promise<void> {
+    const base = this.options.requestDelayMs * this.slowdownFactor;
+    const jitter = base * 0.6 * Math.random();
+    await sleep(Math.round(base + jitter));
+    // Плавний «від'їзд» угору, але без різкого стрибка: серверу час повернутись у норму.
+    if (this.slowdownFactor < 4) {
+      this.slowdownFactor = Math.min(4, this.slowdownFactor + 0.08 * Math.random());
+    }
+  }
+
+  private noteServerPressure(): void {
+    this.slowdownFactor = Math.min(6, this.slowdownFactor * 1.6);
   }
 
   /**
@@ -307,8 +384,10 @@ export class ChernihivWebAdapter implements ISourceAdapter {
 
     for (const cityId of this.options.cityIds) {
       for (const type of this.options.types) {
-        // Пауза перед кожним запитом — не «бомбимо» оператора.
-        if (this.options.requestDelayMs > 0) await sleep(this.options.requestDelayMs);
+        // Пауза перед кожним запитом: базова + jitter + адаптив (див. paceRequest).
+        // Рівномірний потім запитів — це і є впізнавана ознака автоматизації.
+        await this.paceRequest();
+        this.resetProfile();
         let payload: { status?: string; list?: ListAccRow[] };
         try {
           payload = await this.fetchListAcc(cityId, type);
@@ -378,6 +457,8 @@ export class ChernihivWebAdapter implements ISourceAdapter {
           signal: AbortSignal.timeout(this.options.timeoutMs),
         });
         if (response.ok) {
+          // Успішна відповідь — сигнал, що темп нормальний: трохи відпускаємо адаптив.
+          this.slowdownFactor = Math.max(1, this.slowdownFactor * 0.9);
           return (await response.json()) as { status?: string; list?: ListAccRow[] };
         }
         const message = `Operator /api/list_acc returned HTTP ${response.status} (${scope})`;
@@ -389,11 +470,20 @@ export class ChernihivWebAdapter implements ISourceAdapter {
             retryAfterMs: parseRetryAfter(response.headers.get('retry-after')),
           });
         }
-        if (response.status < 500) {
-          // Інші 4xx — повторювати безглуздо: проблема в запиті, а не в джерелі. І це не блок.
+        // 4xx «ESOCKETTIMEDOUT» — не наша помилка запиту: оператор сам упав на власному
+        // внутрішньому сокеті й віддає HTTP 400 з тілом-помилкою. Це транзиентно і повтор
+        // виправданий (перевірено вживу на Чернігові: другий запит віддає 200 з даними).
+        const isUpstreamSocketTimeout =
+          response.status === 400 &&
+          /ESOCKETTIMEDOUT|timeout|timed out/iu.test(await response.clone().text());
+        if (response.status < 500 && !isUpstreamSocketTimeout) {
+          // Справжні 4xx (не наш params) — повторювати безглуздо: проблема в запиті, а не в джерелі.
           throw new SourceRequestError(message);
         }
-        // 5xx — тимчасовий збій сервера оператора: ось тут повтор із backoff виправданий.
+        // 5xx — тимчасовий збій сервера або WAF-подовження: ось тут повтор із backoff виправданий,
+        // але й темп треба знизити — інакше наступні запити отримають те саме.
+        // Те саме стосується й 400+ESOCKETTIMEDOUT: оператор впав на своєму сокеті, темп нижче.
+        this.noteServerPressure();
         lastError = new Error(message);
       } catch (error) {
         // Обе «окончательные» ошибки порции выходят наружу: блок — на паузу, 4xx — просто неудача
