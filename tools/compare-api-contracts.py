@@ -13,6 +13,7 @@
 """
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -61,7 +62,14 @@ REQUIRED = {
     "regions": ["data"],
     "queues": ["data"],
     "schedules": ["data.queue", "data.date", "data.intervals"],
-    "schedules/upcoming": ["data"],
+    # Поля localTimeFrom/localTimeTo обязательны внутри интервалов: без них карточка
+    # ближайших отключений рисует «– –». Именно это уехало незамеченным.
+    "schedules/upcoming": [
+        "data[0].queue", "data[0].date", "data[0].isActiveNow",
+        "data[0].intervals[0].startsAt", "data[0].intervals[0].endsAt",
+        "data[0].intervals[0].localTimeFrom", "data[0].intervals[0].localTimeTo",
+        "data[0].intervals[0].stateCode", "data[0].intervals[0].stateName",
+    ],
     "addresses/settlements": ["data"],
     "addresses/streets": ["data"],
     "addresses/resolve": ["data.queue", "data.options", "data.reason", "data.source"],
@@ -83,22 +91,33 @@ def fetch(base, path):
 
 MISSING = object()
 
+# Путь к полю поддерживает индексы: "data[0].intervals[0].localTimeFrom".
+_SEGMENT = re.compile(r"^([^\[]+)((\[\d+\])*)$")
+_INDEX = re.compile(r"\[(\d+)\]")
+
 
 def dig(payload, dotted):
-    """Достаёт значение по пути «a.b.c».
+    """Достаёт значение по пути «data[0].intervals[0].localTimeFrom».
 
     Возвращает MISSING, если КЛЮЧА нет, и None, если ключ есть и равен null: эти два случая
     разные, а раньше скрипт путал их и помечал исправные `lastError: null` как отсутствующие.
     """
     current = payload
     for part in dotted.split("."):
+        match = _SEGMENT.match(part)
+        if not match:
+            return MISSING
+        key, indexes = match.group(1), match.group(2)
         if isinstance(current, list):
             current = current[0] if current else MISSING
-        if not isinstance(current, dict):
+        if not isinstance(current, dict) or key not in current:
             return MISSING
-        if part not in current:
-            return MISSING
-        current = current[part]
+        current = current[key]
+        for index in _INDEX.findall(indexes or ""):
+            position = int(index)
+            if not isinstance(current, list) or position >= len(current):
+                return MISSING
+            current = current[position]
     return current
 
 
@@ -114,7 +133,10 @@ def shape(value, depth=0):
     if isinstance(value, dict):
         return {key: shape(item, depth + 1) for key, item in sorted(value.items())}
     if isinstance(value, list):
-        return [shape(value[0], depth + 1)] if value else []
+        # Сравниваем ВСЕ элементы, а не только первый: список из 12 групп мог иметь
+        # одинаковую форму в обоих ответах по первому элементу и различаться дальше,
+        # а простой list[0] этого не показывал.
+        return [shape(item, depth + 1) for item in value[:5]]
     return type(value).__name__
 
 

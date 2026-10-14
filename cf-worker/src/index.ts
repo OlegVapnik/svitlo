@@ -1036,6 +1036,12 @@ function toIntervals(rows: SlotRow[], queue: string, date: string) {
     .map((row) => ({
       startsAt: localSlotToUtc(date, row.time_from, false),
       endsAt: localSlotToUtc(date, row.time_to, true),
+      // Локальное время оператора («20:00»). Обязательное поле контракта
+      // GroupOutageInterval: без него карточка ближайших отключений на главной рисовала
+      // «– –» вместо времени, хотя сам график был загружен. Наш скрипт сверки контрактов
+      // это пропустил — он сравнивал форму массива, но не заходил внутрь элемента списка.
+      localTimeFrom: row.time_from,
+      localTimeTo: row.time_to,
       stateCode: OFF_STATE.code,
       stateName: OFF_STATE.name,
       stateColor: OFF_STATE.color,
