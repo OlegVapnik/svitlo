@@ -10,6 +10,7 @@ import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
 import { ReliabilityCard } from '../components/status/ReliabilityCard.js';
 import { ChangelogCard } from '../components/changelog/ChangelogCard.js';
 import { HomeHeroSection } from '../components/status/HomeHeroSection.js';
+import { ConnectionProblem } from '../components/region/ConnectionProblem.js';
 import { IncidentBanner } from '../components/incidents/IncidentBanner.js';
 import { OutageCard } from '../components/outages/OutageCard.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
@@ -220,6 +221,10 @@ export const HomePage: React.FC = () => {
 
       {/* Оновлений головний блок: першокласний селектор області, вибір черги для області,
           24-годинний горизонтальний таймлайн із півгодинними комірками та поточним станом */}
+      {/* Показывается только при отказе загрузки каталога областей: без него приложение молча
+          откатывается на область по умолчанию и выглядит как «нечего выбирать». */}
+      <ConnectionProblem />
+
       <HomeHeroSection />
 
 

@@ -23,6 +23,13 @@ export interface RegionContextValue {
   isLoading: boolean;
   /** Ознака помилки запиту каталогу областей. */
   isError: boolean;
+  /**
+   * Сам текст ошибки каталога областей.
+   *
+   * Нужен для диагностики соединения: без него приложение при отказе молча откатывается на
+   * область по умолчанию, и непонятно — это «нет данных» или нет связи с сервером.
+   */
+  error: Error | null;
   /** Функція повторного запиту каталогу областей (для кнопки retry). */
   refetch: () => Promise<unknown>;
 }
@@ -76,7 +83,7 @@ export const RegionProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return getStoredRegion();
   });
 
-  const { data: regionsResponse, isLoading, isError, refetch } = useRegions();
+  const { data: regionsResponse, isLoading, isError, error: regionsError, refetch } = useRegions();
 
   const regions = useMemo<RegionSummary[]>(
     () => regionsResponse?.data ?? [],
@@ -131,9 +138,10 @@ export const RegionProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currentRegionData,
       isLoading,
       isError,
+      error: regionsError instanceof Error ? regionsError : null,
       refetch,
     }),
-    [currentRegion, regions, currentRegionData, isLoading, isError, refetch],
+    [currentRegion, regions, currentRegionData, isLoading, isError, regionsError, refetch],
   );
 
   return <RegionContext.Provider value={value}>{children}</RegionContext.Provider>;

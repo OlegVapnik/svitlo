@@ -314,6 +314,13 @@
   },
   "regions": {
     "label": "Область",
+    "connectionProblem": "Немає зв’язку з сервером",
+    "apiAddress": "Адреса API:",
+    "queueRequest": "Черги:",
+    "queueOk": "завантажено",
+    "queueFailed": "помилка",
+    "loadFailed": "не вдалося завантажити список областей",
+    "error": "Помилка:",
     "select": "Оберіть область…",
     "allRegions": "Всі області",
     "loading": "Завантаження областей…",
