@@ -8,6 +8,7 @@ import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
 import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
 import { ReliabilityCard } from '../components/status/ReliabilityCard.js';
+import { ChangelogCard } from '../components/changelog/ChangelogCard.js';
 import { HomeHeroSection } from '../components/status/HomeHeroSection.js';
 import { IncidentBanner } from '../components/incidents/IncidentBanner.js';
 import { OutageCard } from '../components/outages/OutageCard.js';
@@ -313,6 +314,10 @@ export const HomePage: React.FC = () => {
           </div>
         )}
       </section>
+
+      {/* Що нового — згенерований з історії git список. Раскривається, щоб не тиснути на
+          першому екрані на вибір міста та графіка. */}
+      <ChangelogCard />
 
       <ReliabilityCard report={reliabilityData?.data} isLoading={reliabilityLoading} />
     </div>

@@ -77,7 +77,8 @@
     "hideAllGroups": "Згорнути список груп",
     "groupStreetsToggle": "Вулиці групи ({{n}})",
     "pointOutagesCount": "відключень: {{n}}",
-    "unknownPlace": "Невідоме місце"
+    "unknownPlace": "Невідоме місце",
+    "whatsNew": "Що нового"
   },
   "outages": {
     "title": "Відключення",
@@ -362,5 +363,8 @@
     "openSource": "Першоджерело",
     "imageAlt": "Зображення до новини",
     "searchPlaceholder": "Пошук за текстом новини…"
+  },
+  "changelog": {
+    "entries": "змін"
   }
 }

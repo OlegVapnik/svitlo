@@ -5,6 +5,12 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
 export default defineConfig({
+  define: {
+    // Метка сборки видна в интерфейсе (нижняя часть меню). Нужна, чтобы отличить на телефоне
+    // старую установленную версию APK от свежей: при отладке «ничего не работает» первым
+    // делом проверяется именно она — иначе неизвестно, какой бандл реально запущен.
+    __BUILD_ID__: JSON.stringify(process.env.SVITLO_BUILD_ID ?? 'dev'),
+  },
   plugins: [
     react(),
     // Tailwind v4 подключается плагином Vite (в v3 это был postcss.config.js + tailwind.config.ts).

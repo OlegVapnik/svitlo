@@ -39,8 +39,44 @@ mkdir -p "${APK_OUT_DIR}"
 
 cd "${REPO_ROOT}"
 
-echo ">>> Сборка веб-бандла"
-VITE_API_BASE_URL="${API_BASE}" npx --yes pnpm@11 --filter @svitlo/web build
+# Чейджлог обновляем перед сборкой: он генерируется из истории git, а в Docker и в PWA истории
+# нет. Если git недоступен (сборка без репозитория) — оставляем предыдущий файл как есть.
+echo ">>> Обновление чейджлога"
+node tools/gen_changelog.mjs --limit 20 || echo "    (пропущено: git недоступен, используем прежний changelog.json)"
+
+# Метка сборки попадает в интерфейс (низ меню): по ней видно, что на телефоне стоит именно
+# свежая версия, а не предыдущая установка.
+BUILD_ID="$(date -u +%Y%m%d-%H%M)"
+echo ">>> Сборка веб-бандла (build ${BUILD_ID})"
+VITE_API_BASE_URL="${API_BASE}" SVITLO_BUILD_ID="${BUILD_ID}" \
+  npx --yes pnpm@11 --filter @svitlo/web build
+
+# Service Worker в нативном приложении вреден: он встаёт ПЕРЕД локальной раздачей ассетов
+# Capacitor, а на активации наш selfDestroying-SW ещё и стирает все кэши и перезагружает
+# страницу (client.navigate). В нативном приложении это ломает загрузку частей интерфейса:
+# приложение открывалось с «кучей функций» — области и очереди не подгружались.
+# Офлайн-режим тут обеспечивает сам Capacitor: ассеты лежат внутри APK. Поэтому SW убираем.
+echo ">>> Удаление Service Worker из нативного бандла"
+node - <<'NODE'
+import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+
+const indexPath = 'apps/web/dist/index.html';
+const html = readFileSync(indexPath, 'utf8');
+// Вырезаем именно инъекцию vite-plugin-pwa, а не любое упоминание: в PWA-сборке она остаётся.
+const cleaned = html.replace(/<script[^>]*id="vite-plugin-pwa:register-sw"[^>]*><\/script>\s*/g, '');
+if (cleaned !== html) {
+  writeFileSync(indexPath, cleaned);
+  console.log('    тег регистрации SW удалён из index.html');
+} else {
+  console.log('    (тег регистрации SW не найден — возможно, сборка без PWA)');
+}
+for (const file of ['apps/web/dist/sw.js', 'apps/web/dist/registerSW.js']) {
+  if (existsSync(file)) {
+    rmSync(file);
+    console.log(`    удалён ${file}`);
+  }
+}
+NODE
 
 echo ">>> Генерация иконок"
 node apps/web/scripts/generate-android-icons.mjs >/dev/null

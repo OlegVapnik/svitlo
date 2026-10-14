@@ -42,6 +42,10 @@ export const Sidebar = () => {
 
       <p className="mt-auto px-3 pt-4 text-[11px] leading-relaxed text-muted-foreground/80">
         {t('common.serverHint')}
+        {/* Метка сборки: на телефоне сразу видно, какая версия приложения установлена. */}
+        <span className="mt-1 block font-mono text-[10px] text-muted-foreground/60">
+          build {__BUILD_ID__}
+        </span>
       </p>
     </nav>
   );
