@@ -60,6 +60,12 @@
     "heroNoNext": "У найближчу добу відключень за графіком немає",
     "offToday": "Без світла за день: {{time}}",
     "upcoming": "Найближчі відключення",
+    "queueGroup": "Черга {{queue}}",
+    "groupOutageActive": "Відключення триває",
+    "groupOutagePlanned": "Заплановано",
+    "pointOutages": "Точкові відключення (ремонт)",
+    "moreGroups": "Ще {{n}} груп",
+    "moreInStreets": "Ще {{n}} вулиць →",
     "allOutages": "Усі відключення",
     "hotline": "Гаряча лінія",
     "hotlineNumber": "0 800 210-310",
@@ -253,7 +259,9 @@
     "noSchedule": "Графік не імпортовано",
     "error": "Не вдалося завантажити графік. Перевірте підключення або імпортуйте його вручну.",
     "primary": "Основна",
-    "setPrimary": "Зробити основною"
+    "setPrimary": "Зробити основною",
+    "settlementsInGroup": "НП у групі",
+    "streetsInGroup": "Вулиці у групі"
   },
   "scheduleImport": {
     "title": "Імпорт графіка",

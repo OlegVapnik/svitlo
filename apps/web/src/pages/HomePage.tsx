@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays, RefreshCw, TriangleAlert, Zap, ZapOff } from 'lucide-react';
+import { ArrowRight, CalendarDays, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff } from 'lucide-react';
 import { StatusIndicator } from '../components/status/StatusIndicator.js';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
@@ -15,9 +15,82 @@ import { Skeleton } from '../components/ui/Skeleton.js';
 import { Button } from '../components/ui/Button.js';
 import { cn } from '../lib/cn.js';
 import { StatCard } from '../components/ui/StatCard.js';
-import { useIncidents, useOutages, useReliability, useStatus } from '../api/queries.js';
+import { useIncidents, useOutages, useReliability, useStatus, useUpcomingGroupOutages } from '../api/queries.js';
 import { useRegion } from '../hooks/useRegion.js';
-import type { Outage } from '@svitlo/shared';
+import type { GroupOutageSummary, Outage } from '@svitlo/shared';
+
+/**
+ * Карточка ближайшего отключения одной группы: код черги, интервалы «10:00–11:00», статус
+ * (идёт сейчас / запланировано) и — если источник её отдал — привязанные к группе населённые
+ * пункты и улицы. Пустые списки НЕ заполняем вымышленными районами: зеркало ГПВ номера групп
+ * с районами не связывает, и догадка здесь опаснее пустоты (AGENTS.md).
+ */
+const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
+  const { t } = useTranslation();
+  return (
+    <article className="rounded-2xl border border-border bg-card p-4 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-bold',
+              item.isActiveNow ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary',
+            )}
+          >
+            {item.isActiveNow ? <ZapOff className="h-3.5 w-3.5" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
+            {t('home.queueGroup', { queue: item.queue })}
+          </span>
+          <span className="text-xs font-semibold text-muted-foreground">
+            {item.isActiveNow ? t('home.groupOutageActive') : t('home.groupOutagePlanned')}
+          </span>
+        </div>
+        <span className="text-xs font-semibold text-muted-foreground">{item.date}</span>
+      </div>
+
+      <ul className="mt-3 flex flex-wrap gap-2">
+        {item.intervals.map((interval, index) => (
+          <li
+            key={`${interval.startsAt}-${index}`}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-muted/60 px-2.5 py-1 text-xs font-semibold tabular text-foreground"
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: interval.stateColor }} aria-hidden />
+            {interval.localTimeFrom}–{interval.localTimeTo}
+          </li>
+        ))}
+      </ul>
+
+      {(item.settlements.length > 0 || item.streetNames.length > 0) && (
+        <div className="mt-3 border-t border-border/60 pt-3">
+          {item.settlements.length > 0 && (
+            <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {item.settlements.map((name) => (
+                <span key={name} className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">
+                  {name}
+                </span>
+              ))}
+            </p>
+          )}
+          {item.streetNames.length > 0 && (
+            <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {item.streetNames.slice(0, 8).map((name) => (
+                <span key={name} className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground">
+                  {name}
+                </span>
+              ))}
+              {item.streetNames.length > 8 && (
+                <Link to="/streets" className="font-semibold text-primary hover:underline">
+                  {t('home.moreInStreets', { n: item.streetNames.length - 8 })}
+                </Link>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+    </article>
+  );
+};
 
 
 /**
@@ -34,6 +107,11 @@ export const HomePage: React.FC = () => {
   const { data: statusData, isLoading: statusLoading } = useStatus();
   const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability();
   const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5, region: currentRegionData.cpu });
+  // Планові відключення по групах — з schedule_slots оператора (не з outage_events, де лише
+  // точкові ремонтні записи одного села). Без них блок «Найближчі відключення» не відповідав би
+  // на запитання «які саме групи гасять сьогодні».
+  const { data: groupOutagesData, isLoading: groupOutagesLoading } = useUpcomingGroupOutages(currentRegionData.cpu, 2);
+  const groupOutages = groupOutagesData?.data ?? [];
   const { data: incidentsData } = useIncidents();
 
   const status = statusData?.data;
@@ -122,16 +200,44 @@ export const HomePage: React.FC = () => {
               <Skeleton key={index} className="h-24 w-full rounded-2xl" />
             ))}
           </div>
-        ) : outages.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card/50 px-6 py-8 text-sm text-muted-foreground">
-            <ZapOff className="h-4 w-4" aria-hidden />
-            {t('outages.noOutages')}
-          </div>
         ) : (
           <div className="space-y-2.5">
-            {outages.map((outage) => (
-              <OutageCard key={outage.id} outage={outage} />
-            ))}
+            {/* Групи без відключень на найближчі дні — не показуємо: блок про відключення, а не про график. */}
+            {groupOutagesLoading ? (
+              <Skeleton className="h-28 w-full rounded-2xl" />
+            ) : groupOutages.length === 0 ? (
+              outages.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card/50 px-6 py-8 text-sm text-muted-foreground">
+                  <ZapOff className="h-4 w-4" aria-hidden />
+                  {t('outages.noOutages')}
+                </div>
+              ) : null
+            ) : (
+              <>
+                {groupOutages.slice(0, 6).map((item) => (
+                  <GroupOutageCard key={`${item.date}-${item.queue}`} item={item} />
+                ))}
+                {groupOutages.length > 6 && (
+                  <p className="pt-1 text-center text-xs text-muted-foreground">
+                    {t('home.moreGroups', { n: groupOutages.length - 6 })}
+                  </p>
+                )}
+              </>
+            )}
+
+            {/* Точкові ремонтні/аварійні відключення — окремим підрозділом: їх у outage_events
+                одиниці, і раніше вони займали весь блок, тоді як планових відключень по групах
+                не було видно взагалі. */}
+            {outages.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {t('home.pointOutages')}
+                </p>
+                {outages.map((outage) => (
+                  <OutageCard key={outage.id} outage={outage} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

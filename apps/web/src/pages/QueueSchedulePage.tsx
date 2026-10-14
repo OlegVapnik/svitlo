@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/Badge.js';
 import { Select } from '../components/ui/Select.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { EmptyState } from '../components/common/EmptyState.js';
+import { QueuePlacesChips } from '../components/queue/QueuePlacesChips.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
 import { useBookmarks } from '../hooks/useBookmarks.js';
 import { useRegion } from '../hooks/useRegion.js';
@@ -176,13 +177,10 @@ export const QueueSchedulePage: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {bookmarks.map((bm) => (
-            <QueueScheduleCard
+            <BookmarkQueueCard
               key={bm.id}
-              regionCpu={bm.regionCpu}
-              queue={bm.queue}
-              street={bm.streetName ?? bm.label}
+              bookmark={bm}
               date={date}
-              isPrimary={bm.isPrimary ?? false}
               onRemove={() => removeBookmark(bm.id)}
               onSetPrimary={() => setPrimaryBookmark(bm.id)}
             />
@@ -201,6 +199,38 @@ type QueueCardProps = {
   isPrimary: boolean;
   onRemove: () => void;
   onSetPrimary: () => void;
+  /** Прив'язка группы: населённые пункты и улицы этой области (из GET /api/v1/queues). */
+  settlements?: string[];
+  streetNames?: string[];
+};
+
+/**
+ * Обгортка закладки: підтягує прив'язку «НП/вулиці → група» для ОБЛАСТИ САМОЇ закладки.
+ *
+ * У закладок можуть бути різні області, а черга «2/2» у Чернігівській і Львівській — різні
+ * групи, тому список груп треба питати per-region, а не один раз для поточної області.
+ */
+const BookmarkQueueCard: React.FC<{
+  bookmark: { regionCpu: string; queue: string; label: string; streetName?: string; isPrimary?: boolean };
+  date: string;
+  onRemove: () => void;
+  onSetPrimary: () => void;
+}> = ({ bookmark, date, onRemove, onSetPrimary }) => {
+  const { data: regionQueues } = useQueues(bookmark.regionCpu);
+  const places = (regionQueues?.data ?? []).find((item) => item.queue === bookmark.queue);
+  return (
+    <QueueScheduleCard
+      regionCpu={bookmark.regionCpu}
+      queue={bookmark.queue}
+      street={bookmark.streetName ?? bookmark.label}
+      date={date}
+      isPrimary={bookmark.isPrimary ?? false}
+      onRemove={onRemove}
+      onSetPrimary={onSetPrimary}
+      settlements={places?.settlements ?? []}
+      streetNames={places?.streetNames ?? []}
+    />
+  );
 };
 
 /**
@@ -216,6 +246,8 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
   isPrimary,
   onRemove,
   onSetPrimary,
+  settlements = [],
+  streetNames = [],
 }) => {
   const { t } = useTranslation();
   const { data, isLoading, isFetching, isError, refetch } = useQueueSchedule(
@@ -282,6 +314,9 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
         ) : (
           <QueueScheduleBar intervals={intervals} date={date} />
         )}
+        {/* Що входить у цю групу в її області. Джерело географії груп не надсилає — тоді
+            блок просто не малюється, без вигаданих районів. */}
+        <QueuePlacesChips settlements={settlements} streetNames={streetNames} />
         {isError && (
           <p role="alert" className="text-xs text-destructive">
             {t('queues.error')}

@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
 import { ensureMirrorSchedule } from '../services/mirror-schedule.service.js';
+import { listUpcomingGroupOutages } from '../services/upcoming-outages.service.js';
 import { readRegionParam } from '../services/regions.service.js';
 import { AppError } from '../utils/errors.js';
 import { queueCodeSchema } from '@svitlo/shared';
@@ -46,6 +47,23 @@ async function buildQueueSchedule(queue: string, date: string, region: string, l
 }
 
 export default async function scheduleRoutes(fastify: FastifyInstance) {
+  /**
+   * Ближні відключення по ГРУПАХ усієї області (GET /api/v1/schedules/upcoming).
+   *
+   * На відміну від `/schedules?queue=…` (одна черга) — це зріз по всій області: головна й блок
+   * «Найближчі відключення» показують, які саме групи гасять сьогодні/завтра, з реальними
+   * интервалами. Порожній масив = графіка в области на ці дати немає (чесно, без «демо»).
+   */
+  fastify.get<{ Querystring: { region?: string; days?: string } }>('/api/v1/schedules/upcoming', async (req, reply) => {
+    const days = Number(req.query.days ?? 2);
+    if (!Number.isInteger(days) || days < 1 || days > 7) {
+      throw new AppError(400, 'VALIDATION_ERROR', 'days має бути цілим від 1 до 7');
+    }
+    reply.header('Cache-Control', 'public, max-age=60');
+    const region = readRegionParam(req.query.region);
+    return { data: await listUpcomingGroupOutages(region, days) };
+  });
+
   // Основний маршрут: черга передається query-параметром, тому «2/2» працює за будь-яким проксі.
   fastify.get<{ Querystring: { queue?: string; date?: string; region?: string } }>('/api/v1/schedules', async (req) => {
     const queue = String(req.query.queue ?? '');

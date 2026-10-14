@@ -116,6 +116,36 @@ export async function getQueueScheduleMeta(
 }
 
 /**
+ * Граница слота (київський локальный час) → ISO UTC для указанной киевской даты.
+ *
+ * График оператора построен по местным суткам, а API отдаёт интервалы в UTC, поэтому перевод
+ * делается итеративно: киевское смещение (+2/+3) зависит от даты, а формат времени оператора
+ * «24:00» означает полночь следующих суток. Одна функция на всех читателей слотов, иначе
+ * график в разных экранах разъедется по часам.
+ */
+export function localSlotToUtc(date: string, time: string, end: boolean): string {
+  if (end && time === '00:00') {
+    const nextDay = new Date(`${date}T00:00:00Z`);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    const nextLocalDate = `${nextDay.getUTCFullYear()}-${String(nextDay.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDay.getUTCDate()).padStart(2, '0')}`;
+    return new Date(Date.parse(`${nextLocalDate}T00:00:00Z`) - kyivOffsetMinutes(nextLocalDate) * 60_000).toISOString();
+  }
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const target = Date.UTC(year!, month! - 1, day!, hour!, minute!);
+  let guess = target;
+  for (let i = 0; i < 3; i++) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map((part) => [part.type, part.value]));
+    const represented = Date.UTC(Number(parts['year']), Number(parts['month']) - 1, Number(parts['day']), Number(parts['hour']), Number(parts['minute']));
+    const delta = target - represented;
+    if (!delta) break;
+    guess += delta;
+  }
+  return new Date(guess).toISOString();
+}
+
+/**
  * Слоти однієї області/черги/дати у UTC. Невідома область дає порожній масив — це не помилка
  * (контракт: невідома область = чесний порожній графік, а не чужий).
  *
@@ -143,30 +173,9 @@ export async function getQueueSchedule(
     .select()
     .from(scheduleSlots)
     .where(and(eq(scheduleSlots.region, targetRegion), inArray(scheduleSlots.queue, queueVariants), eq(scheduleSlots.date, date)));
-  const toUtc = (time: string, end: boolean) => {
-    if (end && time === '00:00') {
-      const nextDay = new Date(`${date}T00:00:00Z`);
-      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
-      const nextLocalDate = `${nextDay.getUTCFullYear()}-${String(nextDay.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDay.getUTCDate()).padStart(2, '0')}`;
-      return new Date(Date.parse(`${nextLocalDate}T00:00:00Z`) - kyivOffsetMinutes(nextLocalDate) * 60_000).toISOString();
-    }
-    const [year, month, day] = date.split('-').map(Number);
-    const [hour, minute] = time.split(':').map(Number);
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-    const target = Date.UTC(year!, month! - 1, day!, hour!, minute!);
-    let guess = target;
-    for (let i = 0; i < 3; i++) {
-      const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map((part) => [part.type, part.value]));
-      const represented = Date.UTC(Number(parts['year']), Number(parts['month']) - 1, Number(parts['day']), Number(parts['hour']), Number(parts['minute']));
-      const delta = target - represented;
-      if (!delta) break;
-      guess += delta;
-    }
-    return new Date(guess).toISOString();
-  };
   return rows.map((row) => ({
-    startsAt: toUtc(row.timeFrom, false),
-    endsAt: toUtc(row.timeTo, true),
+    startsAt: localSlotToUtc(date, row.timeFrom, false),
+    endsAt: localSlotToUtc(date, row.timeTo, true),
     stateCode: row.stateCode as 1 | 2 | 3,
     stateName: row.stateName,
     stateColor: row.stateColor,

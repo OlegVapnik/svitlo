@@ -10,7 +10,8 @@ import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useRegionQueue } from '../../hooks/useRegionQueue.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
-import { useQueueSchedule } from '../../api/queries.js';
+import { useQueues, useQueueSchedule } from '../../api/queries.js';
+import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
 import { formatMinutesUk, scheduleWindow } from '../../lib/scheduleWindow.js';
@@ -61,6 +62,10 @@ export const HomeHeroSection: React.FC = () => {
     isError: scheduleError,
     refetch: refetchSchedule,
   } = useQueueSchedule(selectedQueue ?? undefined, selectedDate, currentRegion);
+
+  // Список групп области: он же несёт привязку «населённые пункты / улицы → группа».
+  const { data: queuesResponse } = useQueues(currentRegion);
+  const selectedQueuePlaces = (queuesResponse?.data ?? []).find((item) => item.queue === selectedQueue);
 
   // API отдаёт конверт { data: { queue, date, intervals, source, lastImportedAt } }, а fetcher()
   // (api/client.ts) возвращает res.json() целиком — поэтому график лежит в .data.
@@ -301,6 +306,16 @@ className={cn(
                   </span>
                 )}
               </div>
+
+              {/* Що входить у цю групу: населені пункти та вулиці, які джерело прив'язало до черги.
+                  Якщо прив'язки немає — блок не показується (QueuePlacesChips повертає null). */}
+              {selectedQueuePlaces && (
+                <QueuePlacesChips
+                  settlements={selectedQueuePlaces.settlements ?? []}
+                  streetNames={selectedQueuePlaces.streetNames ?? []}
+                  className="mt-2"
+                />
+              )}
 
               {/* Великий заголовок "Світло є" / "Зараз без світла" */}
               <h2

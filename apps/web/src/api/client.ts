@@ -20,7 +20,11 @@ export class ApiError extends Error {
 }
 
 async function fetcher(endpoint: string, options?: RequestInit) {
-  const res = await fetch(`${API_BASE}${endpoint}`, options);
+  // cache: 'no-store' — график групп меняется у оператора каждые полчаса, а обычный HTTP disk
+  // cache в браузере отдавал по /api/v1/schedules устаревший (в том числе пустой) ответ: главная
+  // показывала «Даних графіка немає», хотя бэкенд отдавал интервалы. Кэширование данных решает
+  // React Query (staleTime/refetchInterval), дублировать его в HTTP-кэше бессмысленно.
+  const res = await fetch(`${API_BASE}${endpoint}`, { cache: 'no-store', ...options });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as
       | { error?: { code?: string; message?: string; details?: Array<{ path: string; message: string }> } }
@@ -52,6 +56,12 @@ export const api = {
     const params = new URLSearchParams({ queue, date });
     if (region) params.set('region', region);
     return fetcher(`/schedules?${params.toString()}`);
+  },
+  /** Ближні відключення по ГРУПАХ усієї області (GET /api/v1/schedules/upcoming) — блок «Найближчі відключення». */
+  fetchUpcomingGroupOutages: (region?: string, days = 2, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (region) params.set('region', region);
+    return fetcher(`/schedules/upcoming?${params.toString()}`, { signal });
   },
   fetchStreetQueues: (signal?: AbortSignal) => fetcher('/street-queues', { signal }),
   /** Реальный список очередей (GET /api/v1/queues?region=...). */

@@ -199,6 +199,37 @@ export interface QueueSummary {
   lastDate: string | null;
   /** Сколько улиц привязано к очереди в street_queues. */
   streets: number;
+  /**
+   * Населённые пункты (населені пункти), привязанные к очереди в этой области (settlement_queues).
+   * Пустой массив — значит источник не отдал географию групп; выдумывать её нельзя (AGENTS.md).
+   */
+  settlements: string[];
+  /** Названия улиц, привязанных к очереди в этой области (до 50 первых по алфавиту). */
+  streetNames: string[];
+}
+
+/** Интервал отключения группы с локальным временем оператора (для карточек: «10:00–11:00»). */
+export interface GroupOutageInterval extends ScheduleIntervalUtc {
+  /** Начало в киевском локальном времени, HH:MM — так график показывает оператор. */
+  localTimeFrom: string;
+  /** Конец в киевском локальном времени, HH:MM. */
+  localTimeTo: string;
+}
+
+/** Ближайшие отключения по группам области: один элемент — одна черга на одну дату. */
+export interface GroupOutageSummary {
+  queue: string;
+  /** Київська дата YYYY-MM-DD. */
+  date: string;
+  /** Джерело слотів: 'mirror' | 'manual' | … */
+  source: string;
+  intervals: GroupOutageInterval[];
+  settlements: string[];
+  streetNames: string[];
+  /** Отключение этой группы идёт прямо сейчас. */
+  isActiveNow: boolean;
+  /** Начало ближайшего ещё не начавшегося отключения группы (ISO) либо null. */
+  nextStartsAt: string | null;
 }
 
 /** Особовий рахунок → вулиця + черга (довідник для перевірки даних, GET /api/v1/places/:account). */

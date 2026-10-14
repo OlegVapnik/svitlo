@@ -8,6 +8,7 @@ import type {
   OutageStatus,
   QueueScheduleData,
   QueueSummary,
+  GroupOutageSummary,
   ReliabilityResponse,
   StatusResponse,
   StreetQueuePair,
@@ -125,6 +126,21 @@ export const useQueues = (region?: string) =>
     queryKey: ['queues', region],
     queryFn: ({ signal }) => api.fetchQueues(region, signal),
     staleTime: 60_000,
+  });
+
+/**
+ * Ближні відключення по групах усієї області (GET /api/v1/schedules/upcoming).
+ *
+ * Джерело — `schedule_slots` оператора, а не `outage_events`: останні містять лише точкові
+ * ремонтні записи одного села й не відповідають на запитання «які групи гасять сьогодні».
+ */
+export const useUpcomingGroupOutages = (region?: string, days = 2) =>
+  useQuery<{ data: GroupOutageSummary[] }>({
+    queryKey: ['upcomingGroupOutages', region, days],
+    queryFn: ({ signal }) => api.fetchUpcomingGroupOutages(region, days, signal),
+    enabled: Boolean(region),
+    staleTime: 60_000,
+    refetchInterval: OUTAGE_POLL_MS,
   });
 
 /**
