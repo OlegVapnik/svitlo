@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Сетевая политика ТОЛЬКО для debug-сборки (app-debug.apk, который ставится руками с телефона).
+
+  Почему отдельный файл, а не флаг в манифесте:
+  Android ИГНОРИРУЕТ android:usesCleartextTraffic, если задан networkSecurityConfig. Основной
+  манифест его задаёт (там http разрешён строго), поэтому флаг из debug-манифеста ничего не
+  давал: запросы к http://192.168.1.100:3000 уходили в блок и падали с «Failed to fetch».
+  Ресурсы из src/debug/res перекрывают src/main/res при сборке debug — так политика для
+  личной установки и для релиза остаётся раздельной.
+
+  Здесь cleartext разрешён целиком: сборка ставится с телефона на локальный сервер в той же
+  Wi-Fi сети, посторонних данных в ней нет и наружу она не публикуется. В release действует
+  строгий основной конфиг (http запрещён глобально, кроме перечисленных адресов).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

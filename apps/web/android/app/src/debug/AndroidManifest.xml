@@ -1,16 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Манифест ТОЛЬКО для debug-сборки (тот самый app-debug.apk, который ставится руками с телефона).
+  Манифест ТОЛЬКО для debug-сборки.
 
-  Зачем он нужен: основной манифест подключает network_security_config.xml, где http разрешён
-  для конкретных адресов локальной сети. Но Android сопоставляет элемент <domain> с ИМЕНЕМ ХОСТА,
-  а для IP-литерала вида 192.168.1.100 такое сопоставление не гарантировано — debug-сборка не могла
-  достучаться до локального сервера и показывала пустые экраны.
-
-  Здесь cleartext разрешён целиком: это сборка для личной установки с телефона, чужих данных в ней
-  нет и наружу она не публикуется. В release-сборке действует основной манифест со строгим
-  правилом (http запрещён глобально, кроме перечисленных адресов).
+  Здесь НЕТ android:usesCleartextTraffic: этот атрибут Android игнорирует, когда задан
+  networkSecurityConfig, а он задан в основном манифесте. Разрешение http на debug задаётся
+  отдельным ресурсом app/src/debug/res/xml/network_security_config.xml, который перекрывает
+  основной (строгий) вариант.
 -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:usesCleartextTraffic="true" />
-</manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
