@@ -1,0 +1,47 @@
+# Базовый образ для сборки Android-обёртки Svitlo (Capacitor) внутри Docker.
+#
+# Зачем Docker: на машине разработчика нет ни JDK, ни Android SDK, а APK нужен локально
+# и воспроизводимо. Образ собирает из temurin:21-jdk + Android commandline-tools +
+# platform-tools + build-tools + platform 36, и всё дальнейшее (gradle assembleDebug)
+# происходит внутри контейнера без правки хостовой системы.
+FROM eclipse-temurin:21-jdk
+
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools:${PATH}"
+
+ARG CMDLINE_TOOLS_VERSION=11076708
+ARG BUILD_TOOLS_VERSION=36.0.0
+# Проект собирается с compileSdk 35 (targetSdk 35 для Google Play), поэтому нужен и platform 35,
+# и build-tools 34 — именно ту версию подтягивает Capacitor 7.
+ARG PLATFORM_VERSION=36
+ARG PLATFORM_VERSION_CAPACITOR=35
+ARG BUILD_TOOLS_VERSION_CAPACITOR=34.0.0
+
+RUN apt-get update -qq \
+ && apt-get install -y -qq --no-install-recommends unzip curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools" \
+ && curl -fsSL -o /tmp/cmdline.zip \
+    "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" \
+ && unzip -q /tmp/cmdline.zip -d "${ANDROID_SDK_ROOT}/cmdline-tools" \
+ && mv "${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools" "${ANDROID_SDK_ROOT}/cmdline-tools/latest" \
+ && rm /tmp/cmdline.zip
+
+# yes — автоматическое принятие лицензий SDK и Gradle: без этого сборка падает на интерактиве.
+RUN yes | sdkmanager --licenses > /dev/null 2>&1 || true
+RUN sdkmanager "platform-tools" \
+  "platforms;android-${PLATFORM_VERSION}" \
+  "platforms;android-${PLATFORM_VERSION_CAPACITOR}" \
+  "build-tools;${BUILD_TOOLS_VERSION}" \
+  "build-tools;${BUILD_TOOLS_VERSION_CAPACITOR}" > /dev/null
+
+# Gradle запускается от текущего пользователя (см. tools/build-android-apk.sh --user), чтобы не
+# оставлять build-каталоги под root. Но sdkmanager/gradle ещё и докачивают недостающие
+# компоненты в SDK, поэтому каталог SDK должен быть им доступен на запись — иначе сборка падает
+# с «The SDK directory is not writable (/opt/android-sdk)».
+RUN chmod -R a+rwX "${ANDROID_SDK_ROOT}"
+
+WORKDIR /workspace
+CMD ["bash"]

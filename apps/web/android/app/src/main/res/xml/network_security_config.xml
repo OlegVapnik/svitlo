@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Политика сетевых соединений приложения.
+
+  cleartextTrafficPermitted="false" по умолчанию: приложение должно ходить на сервер по HTTPS.
+  Начиная с Android 9 (API 28) при targetSdk 28+ обычный http просто не работает, а с Android 13+ это
+  ещё и требование безопасности. Поэтому глобально http ЗАПРЕЩЁН, а разрешён он только адресам
+  локальной сети — для разработки и домашнего использования, когда сервер поднят на компьютере
+  в той же Wi-Fi сети.
+
+  Домен-суффиксы (*.local, localhost) — это тестовые и локальные имена; они же нужны, когда
+  приложение обращается к серверу по имени хоста вместо IP.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Локальная сеть: разрешён только http, HTTPS остаётся доступным как обычно. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- Общая сеть хоста /10 -->
+        <domain includeSubdomains="true">192.168.0.0</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <!-- Общая сеть /8 (в т.ч. 172.17–172.31 — подсети Docker) -->
+        <domain includeSubdomains="true">172.16.0.0</domain>
+        <domain includeSubdomains="false">*.local</domain>
+    </domain-config>
+</network-security-config>

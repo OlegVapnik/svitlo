@@ -23,3 +23,15 @@ ALL_IN_ONE.md
 *.docx
 *.doc
 *.odt
+
+# Android-обёртка (Capacitor): нативный проект генерируется `npx cap add android`,
+# build-каталоги и артефакты сборки не коммитим.
+/apps/web/android/app/build/
+/apps/web/android/build/
+/apps/web/android/capacitor-cordova-android-plugins/build/
+/apps/web/android/.gradle/
+/apps/web/android/local.properties
+# Готовый APK — производный артефакт, пересобирается tools/build-android-apk.sh
+/apps/web/android-apk/
+# Кэш gradle (общий для всех локальных сборок Android)
+.cache/
