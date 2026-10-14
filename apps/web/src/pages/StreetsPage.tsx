@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, Info, MapPin, Plus, Star, Trash2 } from 'lucide-react';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
+import { AddressWizard } from '../components/address/AddressWizard.js';
 import { Button } from '../components/ui/Button.js';
-import { Card, CardContent } from '../components/ui/Card.js';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card.js';
 import { Input } from '../components/ui/Input.js';
 import { Badge } from '../components/ui/Badge.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
@@ -103,6 +104,16 @@ export const StreetsPage: React.FC = () => {
         </h1>
         <p className="text-xs text-muted-foreground sm:text-sm">{t('streets.subtitle')}</p>
       </header>
+
+      <Card>
+        <CardHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
+          <CardTitle className="text-sm font-semibold">{t('addressWizard.title')}</CardTitle>
+          <p className="text-xs text-muted-foreground">{t('addressWizard.subtitle')}</p>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-5">
+          <AddressWizard />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="space-y-3 p-4 sm:p-5">

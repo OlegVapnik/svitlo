@@ -462,6 +462,43 @@ export interface NewsListResponse {
 }
 
 /**
+/** Вариант «дома 1-15 → черга 2/1», когда на улице несколько групп. */
+export interface AddressHouseOption {
+  housePattern: string;
+  queue: string;
+}
+
+/** Ответ поиска своей группы (GET /api/v1/addresses/resolve). */
+export interface AddressResolveResult {
+  /** Найденная группа; null — привязки в базе нет. */
+  queue: string | null;
+  options: AddressHouseOption[];
+  reason: 'exact-house' | 'whole-street' | 'whole-settlement' | 'not-found';
+  /** Откуда привязка: 'manual' | 'operator' | 'dtek' | 'curated'. */
+  source: string | null;
+  /** График найденной группы на сегодня — чтобы не делать второй запрос. */
+  schedule: QueueScheduleData | null;
+}
+
+/** Параметры поиска группы по адресу. */
+export interface AddressResolveInput {
+  region: string;
+  settlement: string;
+  street?: string;
+  house?: string;
+}
+
+/** Строка массового импорта привязок (POST /api/v1/admin/addresses/import). */
+export interface AddressQueueImportRow {
+  region: string;
+  settlement: string;
+  street?: string;
+  /** '*' = вся улица; иначе «12», «2, 4, 6А» или «1-19». */
+  housePattern?: string;
+  queue: string;
+}
+
+/**
  * Чейджлог приложения (GET /api/v1/changelog).
  *
  * Отдельный тип живёт здесь, потому что список приходит с сервера: серверный фикс должен быть

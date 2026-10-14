@@ -175,7 +175,45 @@ export const streetQueues = pgTable('street_queues', {
 }));
 
 /**
- * Довідник «особовий рахунок → вулиця + черга» (міграція 0011). Наповнюється з даних оператора
+ * Привязка адреса к группе ГПВ (миграция 0017): область → НП → улица → дом → черга.
+ *
+ * Отличие от `street_queues`: здесь есть область и номера домов. На одной улице группы
+ * различаются по домам («2/2 до 15-го, 3/2 с 16-го»), поэтому плоский ключ «улица → черга»
+ * принципиально не мог ответить на вопрос человека «какая у меня группа».
+ *
+ * Пустые `settlementName`/`streetName` означают «на весь НП», а `housePattern = '*'` — «на всю
+ * улицу». Это осмысленные значения из источника, а не «неизвестно»: пустое в этих полях и
+ * отсутствие строки — разные вещи, и UI обязан их различать.
+ */
+export const addressQueues = pgTable('address_queues', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** cpu области: 'kyiv', 'chernihivska-oblast' и т.п. */
+  region: text('region').notNull(),
+  settlementName: text('settlement_name').notNull(),
+  /** energy_normalize_address(settlementName) — по нему поиск и индексы. */
+  settlementNormalized: text('settlement_normalized').notNull(),
+  /** '' = группа действует на весь НП целиком. */
+  streetName: text('street_name').notNull().default(''),
+  streetNormalized: text('street_normalized').notNull().default(''),
+  /** '*' = вся улица; иначе «12», «14А», «2, 4, 6А» или «1-19». */
+  housePattern: text('house_pattern').notNull().default('*'),
+  /** Каноничный код группы: «3» или «2/2». */
+  queue: text('queue').notNull(),
+  /** Происхождение привязки: 'curated' | 'operator' | 'dtek' | 'manual'. */
+  source: text('source').notNull().default('curated'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  // Одна запись на адрес; повторный импорт того же адреса апсертится по этому индексу.
+  uniqueAddr: uniqueIndex('address_queues_unique_idx')
+    .on(table.region, table.settlementNormalized, table.streetNormalized, table.housePattern),
+  regionSettlementIdx: index('address_queues_region_settlement_idx').on(table.region, table.settlementNormalized),
+  regionQueueIdx: index('address_queues_region_queue_idx').on(table.region, table.queue),
+  settlementTrgmIdx: index('settlement_trgm_idx').using('gin', table.settlementNormalized.op('gin_trgm_ops')),
+  streetTrgmIdx: index('street_trgm_idx').using('gin', table.streetNormalized.op('gin_trgm_ops')),
+}));
+
+/**
+ * Довідник «особовий рахунок → вулица + черга» (міграція 0011). Наповнюється з даних оператора
  * через адмін-маршрут; ПІБ та номери квартир тут не зберігаються.
  */
 export const subscriberPlaces = pgTable('subscriber_places', {

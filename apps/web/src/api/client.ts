@@ -1,3 +1,4 @@
+import type { AddressResolveResult } from '@svitlo/shared';
 import { noteServedFromCache, noteServedOnline, readCache, writeCache } from './offline-cache.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] || '/api/v1';
@@ -96,6 +97,22 @@ export const api = {
   },
   fetchContacts: () => fetcher('/contacts'),
   fetchHealth: () => fetcher('/health'),
+  /**
+   * Поиск своей группы ГПВ по адресу (область → НП → улица → дом).
+   *
+   * Пустые street/house не отправляем: бэкенд трактует их как «уточните адрес» и отвечает
+   * либо группой на всё село, либо списком вариантов по улице.
+   */
+  resolveAddressQueue: async (
+    params: { region: string; settlement: string; street?: string; house?: string },
+    signal?: AbortSignal,
+  ): Promise<AddressResolveResult> => {
+    const query = new URLSearchParams({ region: params.region, settlement: params.settlement });
+    if (params.street?.trim()) query.set('street', params.street.trim());
+    if (params.house?.trim()) query.set('house', params.house.trim());
+    const res = (await fetcher(`/addresses/resolve?${query}`, { signal })) as { data: AddressResolveResult };
+    return res.data;
+  },
   suggestAddresses: (query: string, limit = 8, signal?: AbortSignal) =>
     fetcher(`/addresses/suggest?q=${encodeURIComponent(query)}&limit=${limit}`, { signal }),
   fetchQueueSchedule: (queue: string, date: string, region?: string) => {

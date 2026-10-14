@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Home, Save, Search, ShieldCheck, Trash2, CheckCircle2 } from 'lucide-react';
 import { Button } from '../components/ui/Button.js';
-import { Card, CardContent } from '../components/ui/Card.js';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card.js';
 import { Input } from '../components/ui/Input.js';
 import { EmptyState } from '../components/common/EmptyState.js';
 import { OutageList } from '../components/outages/OutageList.js';
@@ -12,6 +12,7 @@ import { useRegion } from '../hooks/useRegion.js';
 import { useOutages } from '../api/queries.js';
 import { api, ApiError } from '../api/client.js';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
+import { AddressWizard } from '../components/address/AddressWizard.js';
 import { isAccountNumber, normalizeAccountNumber } from '../lib/account.js';
 import type { Outage, SubscriberPlace } from '@svitlo/shared';
 
@@ -118,6 +119,16 @@ export const MyAddressPage: React.FC = () => {
         <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('myAddress.title')}</h1>
         <p className="text-xs text-muted-foreground sm:text-sm">{t('myAddress.description')}</p>
       </header>
+
+      <Card>
+        <CardHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
+          <CardTitle className="text-sm font-semibold">{t('addressWizard.title')}</CardTitle>
+          <p className="text-xs text-muted-foreground">{t('addressWizard.subtitle')}</p>
+        </CardHeader>
+        <CardContent className="p-4 sm:p-5">
+          <AddressWizard />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-4 sm:p-5">

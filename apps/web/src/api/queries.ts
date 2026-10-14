@@ -16,6 +16,7 @@ import type {
   NewsListResponse,
   NewsSourcesResponse,
   ChangelogFile,
+  AddressResolveInput,
 } from '@svitlo/shared';
 import type { RegionListResponse } from '../lib/region.js';
 import { api } from './client';
@@ -296,3 +297,22 @@ export const useNewsSources = () =>
     staleTime: NEWS_STALE_MS,
     queryFn: () => api.fetchNewsSources(),
   });
+
+/**
+ * Поиск своей группы ГПВ по адресу (мастер «область → НП → улица → дом»).
+ *
+ * Это mutation, а не query: у него есть конкретный ввод и побочный эффект (бэкенд мог дозагрузить
+ * привязку у провайдера). Результат кэшировать нельзя — привязка может появиться после первого
+ * запроса, и человек должен иметь возможность спросить заново.
+ */
+export const useAddressLookup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: AddressResolveInput) => api.resolveAddressQueue(params),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['addressSettlements'] });
+      void queryClient.invalidateQueries({ queryKey: ['addressStreets'] });
+      void queryClient.invalidateQueries({ queryKey: ['queueSchedule'] });
+    },
+  });
+};
