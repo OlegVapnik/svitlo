@@ -1,4 +1,4 @@
-import type { ReliabilityBucket, ReliabilityReport } from '@svitlo/shared';
+import type { ReliabilityBucket, ReliabilityGroup, ReliabilityReport } from '@svitlo/shared';
 import { computeWindowSummary, kyivDayStart, type OutageRow } from './power-summary.js';
 
 const KYIV_TZ = 'Europe/Kyiv';
@@ -115,6 +115,42 @@ function bucket(
   };
 }
 
+
+/**
+ * Зведення по кожній групі за весь звітний період.
+ *
+ * Окремо від днів/тижнів/місяців: людина найчастіше хочеть знати «а скільки в МОЄЙ групі», а не
+ * загальну цифру по области. Рахується по тих самих інтервалах графіку, що й решта звіту, тож
+ * числа узгоджені між собою.
+ */
+export function buildGroupSummary(
+  start: Date,
+  end: Date,
+  byQueue: Map<string, OutageRow[]>,
+): ReliabilityGroup[] {
+  const windowMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
+  const groups: ReliabilityGroup[] = [];
+  for (const [queue, rows] of byQueue) {
+    const overlapping = rows.filter(
+      (row) => row.startsAt.getTime() <= end.getTime() && row.endsAt.getTime() >= start.getTime(),
+    );
+    if (overlapping.length === 0) continue;
+    const summary = computeWindowSummary(queue, start, end, overlapping);
+    if (!summary.hasData) continue;
+    groups.push({
+      queue,
+      windowMinutes,
+      outageMinutes: summary.outageMinutes,
+      poweredMinutes: summary.poweredMinutes,
+      reliabilityPct: summary.reliabilityPct,
+      hasData: true,
+    });
+  }
+  // Найбільші збої — першими: це те, що люди намагаються побачити.
+  groups.sort((a, b) => a.reliabilityPct - b.reliabilityPct || b.outageMinutes - a.outageMinutes);
+  return groups;
+}
+
 /**
  * Надійність електропостачання по днях / тижнях / місяцях з початку поточного
  * місяця (київського). Рахуємо лише фактичні, вже минулі інтервали — у майбутнє
@@ -178,5 +214,6 @@ export function buildReliabilityReport(
     days,
     weeks,
     months,
+    groups: byQueue ? buildGroupSummary(monthStart, now, byQueue) : [],
   };
 }

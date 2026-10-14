@@ -53,7 +53,9 @@ export const NewsPage: React.FC = () => {
   const { currentRegion } = useRegion();
   const [kind, setKind] = useState<KindFilter>('all');
   const [ukraineWide, setUkraineWide] = useState(false);
-  const [onlyPower, setOnlyPower] = useState(true);
+  // Видими за замовчуванням: фільтр «лише про світло» ховав загальні новини, і в мобільному
+  // застосунку список здавався порожнім навіть там, де новини є.
+  const [onlyPower, setOnlyPower] = useState(false);
   const [query, setQuery] = useState('');
 
   const { data, isLoading, isError, refetch } = useNews({
@@ -68,13 +70,37 @@ export const NewsPage: React.FC = () => {
   const { data: sourcesData } = useNewsSources();
 
   const items = data?.data ?? [];
+
+  /**
+   * Подстраховка для регионов без своих новостей.
+   *
+   * Сбор новостей привязан к источникам конкретных областей, и для части регионов их просто
+   * нет (Полтавщина, Днепр-ЦЭК, Закарпатье — по 0 записей). Раньше страница показывала пустое
+   * состояние и требовала вручную нажать «Україна». Теперь при пустой региональной выдаче
+   * подключаем запасной общий источник — так новости не выглядят «сломанными».
+   *
+   * Региональные записи при этом не теряются: как только они появятся, переключатель вернётся
+   * в положение «область».
+   */
+  const useUkraineFallback = !ukraineWide && items.length === 0 && !isLoading && !isError;
+  const { data: fallbackData, isLoading: fallbackLoading } = useNews({
+    region: currentRegion,
+    kind: kind === 'all' ? undefined : kind,
+    excludeKind: onlyPower ? 'other' : undefined,
+    ukraineWide: true,
+    limit: 50,
+    enabled: useUkraineFallback,
+  });
   const failedSources = (sourcesData?.data ?? []).filter((source) => Boolean(source.lastError));
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('uk-UA');
-    // «Лише про світло» (типово увімкнено): сервер віддає вже без kind='other', тут лишається
-    // страхувальна сітка — якщо перемикач щойно вимкнули, у кеші ще може бути стара вибірка.
-    const relevant = onlyPower ? items.filter((item) => item.kind !== 'other') : items;
+    // Беремо те, що реально показуємо: региональную выдачу, а если она пуста — запасную
+    // общеукраинскую (см. useUkraineFallback).
+    const source = items.length > 0 ? items : (fallbackData?.data ?? []);
+    // «Лише про світло»: сервер уже не отдаёт kind='other', здесь остаётся страховочная сетка на
+    // случай, если переключатель только что выключили и в кэше ещё старая выборка.
+    const relevant = onlyPower ? source.filter((item) => item.kind !== 'other') : source;
     if (!needle) return relevant;
     return relevant.filter((item) =>
       [item.title, item.summary, item.body]
@@ -83,7 +109,7 @@ export const NewsPage: React.FC = () => {
         .toLocaleLowerCase('uk-UA')
         .includes(needle),
     );
-  }, [items, onlyPower, query]);
+  }, [items, fallbackData, onlyPower, query]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 pb-16 md:pb-6">
@@ -172,7 +198,12 @@ export const NewsPage: React.FC = () => {
       {isError && <ErrorState onRetry={() => void refetch()} />}
 
       {!isLoading && !isError && filtered.length === 0 && (
-        <EmptyState icon={Newspaper} title={t('news.noNews')} description={t('news.noNewsDesc')} />
+        <EmptyState
+          icon={Newspaper}
+          title={t('news.noNews')}
+          // Объясняем, ЧЕМУ не хватает данных: иначе пустое состояние выглядит как баг.
+          description={useUkraineFallback || fallbackLoading ? t('news.noNewsLoading') : t('news.noNewsDesc')}
+        />
       )}
 
       <div className="space-y-3">

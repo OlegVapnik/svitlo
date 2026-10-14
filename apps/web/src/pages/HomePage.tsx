@@ -176,7 +176,7 @@ export const HomePage: React.FC = () => {
   const { currentRegionData } = useRegion();
 
   const { data: statusData, isLoading: statusLoading } = useStatus(currentRegionData.cpu);
-  const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability();
+  const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability(currentRegionData.cpu);
   const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5, region: currentRegionData.cpu });
   // Планові відключення по групах — з schedule_slots оператора (не з outage_events, де лише
   // точкові ремонтні записи одного села). Без них блок «Найближчі відключення» не відповідав би

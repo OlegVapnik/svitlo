@@ -1,7 +1,14 @@
 {
- "generatedAt": "2026-10-14T03:20:02.049Z",
+ "generatedAt": "2026-10-14T03:55:32.791Z",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "entries": [
+  {
+   "hash": "f9c64e6",
+   "date": "2026-10-14",
+   "kind": "new",
+   "label": "Нове",
+   "text": "Статистика електропостачання:"
+  },
   {
    "hash": "7fd04a4",
    "date": "2026-10-14",
@@ -134,13 +141,6 @@
    "kind": "new",
    "label": "Нове",
    "text": "- news: міграції 0014/0016, services/news (collector, RSS, Telegram, classifier, dedup), routes/news, NewsPage + фікстури й тести парсерів"
-  },
-  {
-   "hash": "3a76ad6",
-   "date": "2026-10-11",
-   "kind": "new",
-   "label": "Нове",
-   "text": "provider contract for multi-region schedules (types, interval helpers, provider env config)"
   }
  ]
 }

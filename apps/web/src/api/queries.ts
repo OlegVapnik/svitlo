@@ -99,10 +99,11 @@ export const useStatus = (region?: string) =>
     refetchInterval: STATUS_POLL_MS,
   });
 
-export const useReliability = () =>
+export const useReliability = (region?: string) =>
   useQuery<ReliabilityResponse>({
-    queryKey: ['reliability'],
-    queryFn: api.fetchReliability,
+    // region в ключе: иначе переключение области показывало бы цифры прошлой области из кеша.
+    queryKey: ['reliability', region ?? null],
+    queryFn: ({ signal }) => api.fetchReliability(region, signal),
     refetchInterval: 300000,
   });
 
@@ -252,8 +253,11 @@ export const useNews = (filters?: {
   excludeKind?: string;
   ukraineWide?: boolean;
   limit?: number;
+  /** Не выполнять запрос, пока условие не выполнено (например, ждём пустую региональную выдачу). */
+  enabled?: boolean;
 }) =>
   useQuery<NewsListResponse>({
+    enabled: filters?.enabled ?? true,
     queryKey: ['news', filters],
     staleTime: NEWS_STALE_MS,
     refetchInterval: NEWS_POLL_MS,

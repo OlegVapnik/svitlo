@@ -178,8 +178,11 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
       {isOpen && (
         <div
           className={cn(
-            'absolute left-0 right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in',
-            variant === 'prominent' ? 'w-full min-w-[300px]' : 'w-80 max-w-[90vw]',
+            // У шапці (compact) панель выравнивается по правому краю: кнопка там у правого
+            // края экрана, и панель на `left-0 right-0` уезжала бы за границу окна на телефоне.
+            variant === 'prominent'
+              ? 'absolute left-0 right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-full min-w-[300px]'
+              : 'absolute right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-80 max-w-[90vw]',
           )}
         >
           {/* Пошуковий інпут */}

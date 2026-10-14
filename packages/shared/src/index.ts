@@ -8,7 +8,15 @@ export interface OperatorScheduleResponse { status?: string; aData: OperatorInte
 export interface ScheduleIntervalUtc { startsAt: string; endsAt: string; stateCode: OperatorStateCode; stateName: string; stateColor: string; }
 export interface Outage { id: string; startsAt: string; endsAt: string; areaName: string; addressesRaw: string; addressesNormalized: string;
   /** Улицы события без номеров домов (из outage_event_addresses). Пусто — источник адрес не отдал. */
-  streets?: string[]; reason?: string | null; status: OutageStatus; queue?: number | null; source: string; sourceId: string; contentHash: string; firstSeenAt: string; updatedAt: string; }
+  streets?: string[];
+  /**
+   * 'group' — плановое отключение по графику ГПВ (schedule_slots, одна запись на группу);
+   * 'repair' — точечный ремонт по адресам (outage_events). Различать нужно, потому что это
+   * разные сущности: у группы нет адреса, а у ремонта нет группы.
+   */
+  kind?: 'group' | 'repair';
+  /** Код группы для kind='group', напр. «2/2». */
+  group?: string; reason?: string | null; status: OutageStatus; queue?: number | null; source: string; sourceId: string; contentHash: string; firstSeenAt: string; updatedAt: string; }
 export interface Incident {
   id: string;
   title: string;
@@ -114,6 +122,17 @@ export interface ReliabilityBucket {
 }
 
 /** Статистика електропостачання з початку поточного місяця. */
+/** Зведення по одній групі (черзі) за весь звітний період. */
+export interface ReliabilityGroup {
+  /** Код группы, напр. «2/2». */
+  queue: string;
+  windowMinutes: number;
+  outageMinutes: number;
+  poweredMinutes: number;
+  reliabilityPct: number;
+  hasData: boolean;
+}
+
 export interface ReliabilityReport {
   /** Початок звіту — 1-ше число поточного місяця (київський час). */
   from: string;
@@ -122,6 +141,8 @@ export interface ReliabilityReport {
   days: ReliabilityBucket[];
   weeks: ReliabilityBucket[];
   months: ReliabilityBucket[];
+  /** Розбиття по групах за той самий період — щоб було видно, кому з них не повезло. */
+  groups: ReliabilityGroup[];
 }
 
 export interface ReliabilityResponse {

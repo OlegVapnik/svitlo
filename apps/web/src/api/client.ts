@@ -83,7 +83,12 @@ export const api = {
     return fetcher(`/outages/stats${q}`);
   },
   fetchIncidents: () => fetcher('/incidents'),
-  fetchReliability: () => fetcher('/reliability'),
+  // Статистика — по области: без region бэкенд рахує область за замовчуванням (Чернігівщину),
+  // і цифри в картці не збігалися б з областю, вибраною в шапці.
+  fetchReliability: (region?: string, signal?: AbortSignal) => {
+    const query = region ? `?${new URLSearchParams({ region }).toString()}` : '';
+    return fetcher(`/reliability${query}`, { signal });
+  },
   /** Статус сети и счётчики: `region` определяет, по какой области считать группы и статистику. */
   fetchStatus: (region?: string, signal?: AbortSignal) => {
     const query = region ? `?${new URLSearchParams({ region }).toString()}` : '';

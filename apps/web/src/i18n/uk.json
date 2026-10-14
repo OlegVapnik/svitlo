@@ -269,7 +269,10 @@
     "setPrimary": "Зробити основною",
     "settlementsInGroup": "НП у групі",
     "streetsInGroup": "Вулиці у групі",
-    "allStreetsLink": "Усі вулиці области →"
+    "allStreetsLink": "Усі вулиці области →",
+    "groupNameLabel": "Назва групи",
+    "groupNamePlaceholder": "Напр. Дім, Робота",
+    "renameGroup": "Перейменувати групу"
   },
   "scheduleImport": {
     "title": "Імпорт графіка",
@@ -370,7 +373,8 @@
     "sourceFailed": "Останній збір не вдався",
     "openSource": "Першоджерело",
     "imageAlt": "Зображення до новини",
-    "searchPlaceholder": "Пошук за текстом новини…"
+    "searchPlaceholder": "Пошук за текстом новини…",
+    "noNewsLoading": "Шукаємо новини по Україні…"
   },
   "changelog": {
     "entries": "змін"

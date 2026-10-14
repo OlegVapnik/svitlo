@@ -110,8 +110,15 @@ export const OutagesPage: React.FC = () => {
     ...dateParams,
   });
 
-  // Fetch outage stats for charts
-  const { data: statsResponse } = useOutageStats({ region: currentRegionData.cpu });
+  // Статистика для графиков — по той же области И тому же периоду, что и сам список.
+  // Раньше сюда уходила только область, из-за чего график не соответствовал выбранным датам.
+  const { data: statsResponse } = useOutageStats({
+    region: currentRegionData.cpu,
+    // Именно dateParams (а не filters.dateFrom): он уже переводит пресеты «сьогодні/завтра/
+    // тиждень» у конкретні дати, інакше статистика рахувала б не за вибраний період.
+    ...(dateParams.dateFrom ? { dateFrom: dateParams.dateFrom } : {}),
+    ...(dateParams.dateTo ? { dateTo: dateParams.dateTo } : {}),
+  });
 
   const outages = (outagesResponse?.data || []).map((item) => ({
     ...item,

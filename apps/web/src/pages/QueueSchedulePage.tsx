@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CalendarDays, Plus, RefreshCw, Star, Trash2 } from 'lucide-react';
+import { CalendarDays, Plus, RefreshCw, Pencil, Star, Trash2 } from 'lucide-react';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
 import type { QueueSummary } from '@svitlo/shared';
 import { Card, CardContent } from '../components/ui/Card.js';
@@ -37,16 +37,19 @@ function kyivDate(offsetDays = 0): string {
 export const QueueSchedulePage: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, currentRegionData } = useRegion();
-  const { bookmarks, addBookmark, removeBookmark, setPrimaryBookmark } = useBookmarks();
+  const { bookmarks, addBookmark, removeBookmark, setPrimaryBookmark, renameBookmark } = useBookmarks();
   const { data: queuesData, isLoading: queuesLoading } = useQueues(currentRegion);
-  const [street, setStreet] = useState(() => localStorage.getItem('myQueueStreet') || '');
+  // Выбор группы — только из списка групп области. Раньше поле требовало ещё и ручной ввод кода
+  // очереди, а подсказка по улице ничего не определяла (в базе 0 привязок «улица → черга»),
+  // поэтому добавить группу было невозможно. Название группы задаёт сам человек.
   const [newQueue, setNewQueue] = useState('');
+  const [newLabel, setNewLabel] = useState(() => localStorage.getItem('myQueueLabel') || '');
   const [day, setDay] = useState<0 | 1>(0);
   const date = useMemo(() => kyivDate(day), [day]);
   const knownQueues = queuesData?.data ?? [];
   const code = normalizeQueueCode(newQueue);
   const codeValid = isQueueCode(code);
-  const canAdd = street.trim().length > 0 && codeValid;
+  const canAdd = codeValid;
 
   /** Подпись варианта-подсказки: сколько улиц закреплено и на какую дату есть график. */
   function queueOptionLabel(item: QueueSummary): string {
@@ -60,16 +63,15 @@ export const QueueSchedulePage: React.FC = () => {
 
   const handleAdd = () => {
     if (!canAdd) return;
-    localStorage.setItem('myQueueStreet', street.trim());
-    // Закладка с текущей областью, вулицей и чергой.
+    localStorage.setItem('myQueueLabel', newLabel.trim());
+    // Закладка группы. Название — то, что ввёл человек («Дім», «Робота»), иначе область+код.
     addBookmark({
-      label: street.trim().length > 0 ? street.trim() : currentRegionData.nameUa || currentRegion,
+      label: newLabel.trim() || `${currentRegionData.nameUa || currentRegion} · ${code}`,
       regionCpu: currentRegion,
-      settlementName: undefined,
-      streetName: street.trim().length > 0 ? street.trim() : undefined,
       queue: code,
     });
     setNewQueue('');
+    setNewLabel('');
   };
 
   return (
@@ -88,18 +90,18 @@ export const QueueSchedulePage: React.FC = () => {
         <CardContent className="space-y-3 p-4 sm:p-5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="queue-street" className="text-xs font-semibold text-foreground">
-                {t('queues.streetLabel')}
+              <label htmlFor="queue-label" className="text-xs font-semibold text-foreground">
+                {t('queues.groupNameLabel')}
               </label>
-              <AddressCombobox
-                id="queue-street"
-                value={street}
-                onChange={setStreet}
-                onSelect={(suggestion) => {
-                  setStreet(suggestion.name);
-                  localStorage.setItem('myQueueStreet', suggestion.name);
-                }}
-                placeholder={t('queues.streetPlaceholder')}
+              {/* Своё название группы («Дім», «Робота»). Переименовать закладку можно в любой
+                  момент — название здесь лишь значение по умолчанию. */}
+              <input
+                id="queue-label"
+                type="text"
+                value={newLabel}
+                onChange={(event) => setNewLabel(event.target.value)}
+                placeholder={t('queues.groupNamePlaceholder')}
+                className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
             <div className="space-y-1.5">
@@ -183,6 +185,7 @@ export const QueueSchedulePage: React.FC = () => {
               date={date}
               onRemove={() => removeBookmark(bm.id)}
               onSetPrimary={() => setPrimaryBookmark(bm.id)}
+              onRename={(label) => renameBookmark(bm.id, label)}
             />
           ))}
         </div>
@@ -202,6 +205,8 @@ type QueueCardProps = {
   /** Прив'язка группы: населённые пункты и улицы этой области (из GET /api/v1/queues). */
   settlements?: string[];
   streetNames?: string[];
+  /** Перейменувати групу («Дім» → «Офіс»). */
+  onRename: (label: string) => void;
 };
 
 /**
@@ -215,7 +220,8 @@ const BookmarkQueueCard: React.FC<{
   date: string;
   onRemove: () => void;
   onSetPrimary: () => void;
-}> = ({ bookmark, date, onRemove, onSetPrimary }) => {
+  onRename: (label: string) => void;
+}> = ({ bookmark, date, onRemove, onSetPrimary, onRename }) => {
   const { data: regionQueues } = useQueues(bookmark.regionCpu);
   const places = (regionQueues?.data ?? []).find((item) => item.queue === bookmark.queue);
   return (
@@ -227,6 +233,7 @@ const BookmarkQueueCard: React.FC<{
       isPrimary={bookmark.isPrimary ?? false}
       onRemove={onRemove}
       onSetPrimary={onSetPrimary}
+      onRename={onRename}
       settlements={places?.settlements ?? []}
       streetNames={places?.streetNames ?? []}
     />
@@ -248,8 +255,12 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
   onSetPrimary,
   settlements = [],
   streetNames = [],
+  onRename,
 }) => {
   const { t } = useTranslation();
+  // Режим перейменування: показываем поле ввода прямо в карточке, чтобы не искать диалог.
+  const [editing, setEditing] = useState(false);
+  const [draftLabel, setDraftLabel] = useState(street);
   const { data, isLoading, isFetching, isError, refetch } = useQueueSchedule(
     queue,
     date,
@@ -263,9 +274,41 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
       <CardContent className="space-y-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-sm font-semibold text-foreground sm:text-base">
-              {street || t('queues.streetFallback')}
-            </h2>
+            {editing ? (
+              <input
+                type="text"
+                value={draftLabel}
+                autoFocus
+                onChange={(event) => setDraftLabel(event.target.value)}
+                onBlur={() => {
+                  onRename(draftLabel);
+                  setEditing(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    onRename(draftLabel);
+                    setEditing(false);
+                  }
+                  if (event.key === 'Escape') setEditing(false);
+                }}
+                aria-label={t('queues.renameGroup')}
+                className="h-8 rounded-md border border-input bg-transparent px-2 text-sm font-semibold shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftLabel(street);
+                  setEditing(true);
+                }}
+                aria-label={t('queues.renameGroup')}
+                title={t('queues.renameGroup')}
+                className="inline-flex items-center gap-1.5 truncate rounded-md text-sm font-semibold text-foreground hover:bg-muted"
+              >
+                {street || t('queues.streetFallback')}
+                <Pencil className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+              </button>
+            )}
             <Badge variant="info">
               {t('queues.queueLabel')} {queue}
             </Badge>

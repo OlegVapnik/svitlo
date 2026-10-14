@@ -104,11 +104,11 @@ export function useBookmarks() {
         (b) => b.regionCpu === regionCpu && b.queue === queue,
       );
       if (existing) {
-        next = prev.map((b) =>
-          b.id === existing.id
-            ? { ...b, label: label || b.label, settlementName: input.settlementName ?? b.settlementName, streetName: input.streetName ?? b.streetName }
-            : b,
-        );
+        // Уже є закладка на цю область+чергу. Раніше її підпис МОВЧКИ перезаписувався новим —
+        // через що «Дім» і «Робота» на одній групі не могли існувати разом, а старе назва
+        // зникало без запиту. Тепер існуючу закладку не чіпаємо: перейменувати її можна
+        // явно (renameBookmark), додавання — не приховане редагування.
+        next = prev;
         createdId = existing.id;
       } else {
         createdId = makeId();
@@ -126,6 +126,22 @@ export function useBookmarks() {
       return next;
     });
     return createdId;
+  }, []);
+
+  /**
+   * Перейменувати закладку («Дім», «Робота», «Вулиця Шевченка»).
+   *
+   * Раніше перейменувати було нечем: назва змінювалася лише побічним шляхом — повторним
+   * addBookmark з тим самим region+queue, який ще й затирав адресу попередньої закладки.
+   */
+  const renameBookmark = useCallback((id: string, label: string) => {
+    const trimmed = label.trim();
+    if (!trimmed) return;
+    setBookmarks((prev) => {
+      const next = prev.map((b) => (b.id === id ? { ...b, label: trimmed } : b));
+      persistBookmarks(next);
+      return next;
+    });
   }, []);
 
   const removeBookmark = useCallback((id: string) => {
@@ -157,5 +173,6 @@ export function useBookmarks() {
     addBookmark,
     removeBookmark,
     setPrimaryBookmark,
+    renameBookmark,
   };
 }

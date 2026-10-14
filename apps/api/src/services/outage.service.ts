@@ -1,7 +1,8 @@
 import { db } from '../db/connection.js';
 import { outageEvents, outageEventAddresses } from '../db/schema.js';
 import { eq, and, gte, lte, sql, desc, or, ilike, isNull, not, inArray } from 'drizzle-orm';
-import type { OutageFilters, PaginationQuery, OutageStats } from '@svitlo/shared';
+import { listGroupOutages } from './group-outages.service.js';
+import type { Outage, OutageFilters, PaginationQuery, OutageStats } from '@svitlo/shared';
 
 /** Верхня межа рядків в одному запиті (для пагінації). */
 const MAX_ROWS_FOR_GROUPING = 500;
@@ -111,9 +112,10 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
   // Фільтр за областю: сьогодні єдиний джерело адресних відключень у `outage_events` —
   // Чернігівобленерго (с. Деснянське та інші). Якщо користувач обрал iншу область (kyiv, lviv),
   // не повертаємо чернігівські записи: для них детальных уличных робот немає — чесний пустий массив.
-  if (filters.region && filters.region !== 'chernihivska-oblast') {
-    return { data: [], meta: { page: pagination.page, limit: pagination.limit, total: 0, totalPages: 1 } };
-  }
+  // Раніше тут стояв відсів по `'chernihivska-oblast'`: для інших областей сторінка відключень
+  // була порожня, бо `outage_events` містить лише точкові ремонти одного села. Тепер відключення
+  // за областю береться з графіка ГПВ (`schedule_slots`), а ремонти додаються зверху — див.
+  // group-outages.service.ts. Відсів не відновлюємо: він робив би 15 областей з 16 порожніми.
 
   const conditions: any[] = [];
 
@@ -166,7 +168,7 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
     .select({ count: sql<number>`count(*)::int` })
     .from(outageEvents)
     .where(whereClause);
-  const total = countRow?.count ?? 0;
+  const repairTotal = countRow?.count ?? 0;
 
   const data = rows.map((row) => ({
     id: row.id.toString(),
@@ -183,15 +185,46 @@ export async function getOutages(filters: OutageFilters, pagination: PaginationQ
     queue: null,
     source: 'outage_events',
     sourceId: row.sourceId.toString(),
+    kind: 'repair',
     contentHash: row.eventKey,
     firstSeenAt: row.firstSeenAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }));
 
+  // Планові відключення за графіком ГПВ области. Саме вони дають сторінці «Відключення»
+  // зміст для всіх областей; ремонти (outage_events) додаються до них.
+  const groupOutages = filters.region
+    ? await listGroupOutages(filters.region, filters.dateFrom, filters.dateTo, now)
+    : [];
+
+  // Фільтри «Статус» і «Черга» з панелі пошуку. Вони застосовуються до об'єднаних даних, а не
+  // лише до таблиці: статус у ремонтів обчислюється на льоту (окремий стовпці немає), а черга
+  // є тільки у групових відключеннях. Раніше ці фільтри просто ігнорувалися — випадаючі списки
+  // були no-op.
+  const repairFiltered = (filters.status || filters.queue != null)
+    ? data.filter((item) => {
+        const matchesStatus = !filters.status || item.status === filters.status;
+        const matchesQueue = filters.queue == null || item.queue === filters.queue;
+        return matchesStatus && matchesQueue;
+      })
+    : data;
+
+  const groupsFiltered = groupOutages.filter((item) => {
+    const matchesStatus = !filters.status || item.status === filters.status;
+    const matchesQueue = filters.queue == null || item.queue === filters.queue;
+    return matchesStatus && matchesQueue;
+  });
+
+  const merged = [...groupsFiltered, ...repairFiltered].sort(
+    (a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt),
+  );
+  const total = groupsFiltered.length + repairFiltered.length;
   const totalPages = Math.max(1, Math.ceil(total / pagination.limit));
 
+  // Обмечение по размеру страницы делаем после слияния: иначе пагинация ремонтов «съедала» бы
+  // первую страницу и групповые отключения вообще не показывались.
   return {
-    data,
+    data: merged.slice(0, pagination.limit),
     meta: {
       page: pagination.page,
       limit: pagination.limit,
@@ -226,18 +259,94 @@ export async function getOutageById(id: string) {
   };
 }
 
-export async function getOutageStats(now: Date = new Date(), region?: string): Promise<OutageStats> {
-  // Фільтр за областю (як у getOutages): єдине джерело адресних відключень — Чернігівобленерго.
-  // Для інших областей — чесна «порожня» статистика (0 скрізь), щоб не показувати чернігівські села.
-  if (region && region !== 'chernihivska-oblast') {
+
+/**
+ * Зведення статистики з відключень по групах.
+ *
+ * Рахуємо в пам'яті з тих самих записів, що показує список відключень, тож лічильники
+ * на вкладках «Графік»/«Карта» завжди збігаються з тим, що видно в списку.
+ */
+function statsFromGroupOutages(outages: Outage[], now: Date): OutageStats {
+  const byHour = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0, totalMinutes: 0 }));
+  const byDay: Array<{ date: string; count: number; totalMinutes: number }> = [];
+  const byArea: OutageStats['byArea'] = [];
+  const heatmap = Array.from({ length: 7 * 24 }, (_, i) => ({ dayOfWeek: Math.floor(i / 24), hour: i % 24, count: 0 }));
+
+  const kyivParts = (iso: string) => {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Kyiv',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(new Date(iso)).map((part) => [part.type, part.value]),
+    );
     return {
-      byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0, totalMinutes: 0 })),
-      byDay: [],
-      byArea: [],
-      heatmap: Array.from({ length: 7 * 24 }, (_, i) => ({ dayOfWeek: Math.floor(i / 24), hour: i % 24, count: 0 })),
-      totalActive: 0,
-      totalScheduled: 0,
+      date: `${parts['year']}-${parts['month']}-${parts['day']}`,
+      hour: Number(parts['hour']) % 24,
+      // 0 = понеділок: тиждень починається з понеділка, як в українському календарі.
+      dayOfWeek: (new Date(`${parts['year']}-${parts['month']}-${parts['day']}T00:00:00Z`).getUTCDay() + 6) % 7,
     };
+  };
+
+  for (const outage of outages) {
+    const start = kyivParts(outage.startsAt);
+    const end = kyivParts(outage.endsAt);
+    const minutes = Math.max(0, Math.round((Date.parse(outage.endsAt) - Date.parse(outage.startsAt)) / 60_000));
+
+    byHour[start.hour]!.count += 1;
+    byHour[start.hour]!.totalMinutes += minutes;
+    heatmap[start.dayOfWeek * 24 + start.hour]!.count += 1;
+
+    const day = byDay.find((item) => item.date === start.date);
+    if (day) { day.count += 1; day.totalMinutes += minutes; }
+    else byDay.push({ date: start.date, count: 1, totalMinutes: minutes });
+
+    const area = outage.areaName || outage.group || 'невідомо';
+    const areaRow = byArea.find((item) => item.areaName === area);
+    if (areaRow) { areaRow.count += 1; areaRow.totalMinutes += minutes; }
+    else byArea.push({ areaName: area, count: 1, totalMinutes: minutes });
+
+    // Окно, перешедшее за опівночі, відносимо ще й до наступного дня.
+    if (end.date !== start.date) {
+      const nextDay = byDay.find((item) => item.date === end.date);
+      if (nextDay) { nextDay.count += 1; nextDay.totalMinutes += minutes; }
+      else byDay.push({ date: end.date, count: 1, totalMinutes: minutes });
+    }
+  }
+
+  return {
+    byHour,
+    byDay: byDay.sort((a, b) => a.date.localeCompare(b.date)),
+    byArea: byArea.sort((a, b) => b.totalMinutes - a.totalMinutes),
+    heatmap,
+    totalActive: outages.filter((item) => item.status === 'active').length,
+    totalScheduled: outages.filter((item) => item.status === 'scheduled').length,
+  };
+}
+
+export async function getOutageStats(
+  now: Date = new Date(),
+  region?: string,
+  dateFrom?: string,
+  dateTo?: string,
+): Promise<OutageStats> {
+  const empty = (): OutageStats => ({
+    byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0, totalMinutes: 0 })),
+    byDay: [],
+    byArea: [],
+    heatmap: Array.from({ length: 7 * 24 }, (_, i) => ({ dayOfWeek: Math.floor(i / 24), hour: i % 24, count: 0 })),
+    totalActive: 0,
+    totalScheduled: 0,
+  });
+
+  // Статистика по графіку ГПВ области: розподіл відключень за годинами/днями/теплиною.
+  //
+  // Раніше тут стояв відсів по Чернігівщині, а решта рахувалася по `outage_events`, де лишилися
+  // одиничні ремонти. Через це вкладки «Графік» і «Карта» були порожні для 15 областей із 16.
+  // Тепер показуємо те, що люди називають відключеннями, — планові вікна груп.
+  if (region) {
+    const groupOutages = await listGroupOutages(region, dateFrom, dateTo, now);
+    if (groupOutages.length > 0) return statsFromGroupOutages(groupOutages, now);
   }
   // Читаем КАНОНИЧЕСКИЕ события, а не сырые адресные строки: иначе одна реальная авария
   // на 30 адресов попадает в статистику 30 раз (см. skills/outage-data-core, invariant 5).

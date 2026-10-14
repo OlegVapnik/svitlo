@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Zap } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle.js';
-import { RegionSelect } from '../ui/RegionSelect.js';
+import { RegionPicker } from '../region/RegionPicker.js';
 import { FreshnessChip } from '../status/FreshnessChip.js';
 
 /**
@@ -28,7 +28,10 @@ export const Header = () => {
         </Link>
 
         <div className="flex items-center gap-1.5">
-          <RegionSelect />
+          {/* Тот же выбор области с поиском, что и на главной, — но компактный. Раньше в шапке
+              стоял нативный <select> без поиска, из-за чего в мобильном приложении выбрать
+              область в средине списка было невозможно. */}
+          <RegionPicker variant="compact" />
           <FreshnessChip />
           <ThemeToggle />
         </div>

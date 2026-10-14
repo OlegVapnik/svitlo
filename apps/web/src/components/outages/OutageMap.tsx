@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useRegion } from '../../hooks/useRegion.js';
+import { regionCenter } from '../../lib/region-centers.js';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -21,6 +23,7 @@ interface OutageMapProps {
 
 export const OutageMap: React.FC<OutageMapProps> = ({ outages }) => {
   const { t } = useTranslation();
+  const { currentRegion } = useRegion();
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -31,15 +34,16 @@ export const OutageMap: React.FC<OutageMapProps> = ({ outages }) => {
     return <div className="h-96 w-full rounded-xl bg-muted animate-pulse" />;
   }
 
-  // Center the map on the oblast, rather than the city of Chernihiv.
-  const center: [number, number] = [51.5, 32.1];
+  // Центр карты — по выбранной области. Раньше он был жёстко зашит на Чернигов, и для всех
+  // остальных областей карта открывалась в чужом месте.
+  const { center, zoom } = regionCenter(currentRegion);
 
   return (
     <div className="w-full bg-card p-3 rounded-xl border border-border shadow-xs overflow-hidden">
       <div className="h-[400px] w-full rounded-lg overflow-hidden">
         <MapContainer
           center={center}
-          zoom={8}
+          zoom={zoom}
           scrollWheelZoom={false}
           style={{ height: '100%', width: '100%' }}
         >

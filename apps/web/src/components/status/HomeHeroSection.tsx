@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { CalendarDays, FileQuestion, PhoneCall, RefreshCw, Star, Zap, ZapOff } from 'lucide-react';
-import { RegionPicker } from '../region/RegionPicker.js';
 import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
 import { Skeleton } from '../ui/Skeleton.js';
@@ -107,10 +106,8 @@ export const HomeHeroSection: React.FC = () => {
 
   return (
     <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-card sm:p-6">
-      {/* 1. Першокласний селектор області (Searchable Dropdown / Command Palette) */}
-      <div className="space-y-2">
-        <RegionPicker variant="prominent" />
-      </div>
+      {/* Вибір області тепер один — у шапці, з пошуком (дизайн звідси й перенесено).
+          Дубль на головній лише плутав: два способи обрати ту саму область. */}
 
       {/* 1.5. Швидкі закладки: збережені області+черги з РІЗНИХ областей України */}
       {bookmarks.length > 0 && (

@@ -4,12 +4,14 @@ import type { ReliabilityBucket, ReliabilityReport } from '@svitlo/shared';
 import { Skeleton } from '../ui/Skeleton.js';
 import { formatMinutes } from './PowerSummaryCard.js';
 
-type Granularity = 'days' | 'weeks' | 'months';
+type Granularity = 'days' | 'weeks' | 'months' | 'groups';
 
 const TABS: Array<{ id: Granularity; label: string }> = [
   { id: 'days', label: 'Дні' },
   { id: 'weeks', label: 'Тижні' },
   { id: 'months', label: 'Місяці' },
+  // Розбиття по групах: люди найчастіше питають «а скільки в МОЄЙ групі», а не загальне по области.
+  { id: 'groups', label: 'Групи' },
 ];
 
 function barColor(pct: number): string {
@@ -40,6 +42,30 @@ const ReliabilityRow: React.FC<{ bucket: ReliabilityBucket }> = ({ bucket }) => 
   );
 };
 
+/** Рядок «по групах»: код черги, смуга надійності, відсоток і час без світла. */
+const GroupRow: React.FC<{
+  queue: string;
+  reliabilityPct: number;
+  outageMinutes: number;
+  windowMinutes: number;
+}> = ({ queue, reliabilityPct, outageMinutes, windowMinutes }) => {
+  const width = windowMinutes > 0 ? Math.min(100, Math.max(0, ((windowMinutes - outageMinutes) / windowMinutes) * 100)) : 100;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-24 shrink-0 text-xs font-semibold text-foreground">Черга {queue}</span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-red-500/20">
+        <div className={`h-full rounded-full ${barColor(reliabilityPct)}`} style={{ width: `${width}%` }} />
+      </div>
+      <span className="w-14 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
+        {reliabilityPct}%
+      </span>
+      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+        {formatMinutes(outageMinutes)}
+      </span>
+    </div>
+  );
+};
+
 interface ReliabilityCardProps {
   report?: ReliabilityReport | null;
   isLoading?: boolean;
@@ -51,9 +77,17 @@ interface ReliabilityCardProps {
  */
 export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoading }) => {
   const [granularity, setGranularity] = useState<Granularity>('days');
-  // Найсвіжіші періоди — зверху.
-  const buckets = useMemo(() => [...(report?.[granularity] ?? [])].reverse(), [report, granularity]);
+  const groups = report?.groups ?? [];
+  // Найсвіжіші періоди — зверху. Режим «Групи» рендерится окремо (GroupRow), тож у бакетах
+  // завжди ReliabilityBucket — інакше типи мішалися б.
+  const timeGranularity = granularity === 'groups' ? 'days' : granularity;
+  const buckets = useMemo(
+    () => [...(report?.[timeGranularity] ?? [])].reverse(),
+    [report, timeGranularity],
+  );
 
+  // Для груп загальний відсоток рахуємо по сумі хвилин без світла (середнє за групами), а не
+  // середньому відсотків: інакше група з 100% «піднімала» біднішу до 95% і різниця губилася.
   const totalWindow = buckets.reduce((sum, bucket) => sum + bucket.windowMinutes, 0);
   const totalOutage = buckets.reduce((sum, bucket) => sum + bucket.outageMinutes, 0);
   const overallPct = totalWindow > 0 ? Math.round((1 - totalOutage / totalWindow) * 1000) / 10 : 100;
@@ -112,7 +146,17 @@ export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoad
             <span className="w-14 text-right">надійність</span>
             <span className="w-20 text-right">без світла</span>
           </div>
-          {buckets.map((bucket) => <ReliabilityRow key={bucket.key} bucket={bucket} />)}
+          {granularity === 'groups'
+            ? groups.map((group) => (
+                <GroupRow
+                  key={group.queue}
+                  queue={group.queue}
+                  reliabilityPct={group.reliabilityPct}
+                  outageMinutes={group.outageMinutes}
+                  windowMinutes={group.windowMinutes}
+                />
+              ))
+            : buckets.map((bucket) => <ReliabilityRow key={bucket.key} bucket={bucket} />)}
         </div>
       )}
 
