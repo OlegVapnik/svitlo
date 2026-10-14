@@ -83,6 +83,22 @@ node apps/web/scripts/generate-android-icons.mjs >/dev/null
 
 # Версию поднимаем на единицу при каждой сборке.
 #
+# Файл build.gradle меняется на время сборки и возвращается в исходное состояние после неё:
+# иначе каждая сборка оставляла бы в дереве изменённый versionCode, который не несёт смысла
+# и только мешает видеть реальные правки в git status.
+GRADLE_FILE="apps/web/android/app/build.gradle"
+GRADLE_WAS_CLEAN=false
+if git diff --quiet -- "${GRADLE_FILE}" 2>/dev/null; then
+  GRADLE_WAS_CLEAN=true
+  cp "${GRADLE_FILE}" "${GRADLE_FILE}.buildbak"
+fi
+restore_gradle() {
+  if [[ "${GRADLE_WAS_CLEAN}" == true && -f "${GRADLE_FILE}.buildbak" ]]; then
+    mv "${GRADLE_FILE}.buildbak" "${GRADLE_FILE}"
+  fi
+}
+trap restore_gradle EXIT
+#
 # Зачем: пока versionCode оставался равным 1, установщик на телефоне получал APK с тем же
 # кодом версии и не мог отличить новую сборку от старой — а нам нужно было проверить, какая
 # именно версия установлена. Плюс по versionCode видно, обновилось ли приложение вообще.
