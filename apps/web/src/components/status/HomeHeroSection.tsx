@@ -1,8 +1,25 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { CalendarDays, FileQuestion, PhoneCall, RefreshCw, Star, Zap, ZapOff } from 'lucide-react';
+import {
+  Briefcase,
+  CalendarDays,
+  Check,
+  FileQuestion,
+  Heart,
+  Home,
+  MapPin,
+  PhoneCall,
+  RefreshCw,
+  Sparkles,
+  Star,
+  X,
+  Zap,
+  ZapOff,
+  type LucideIcon,
+} from 'lucide-react';
 import { QueueSelector } from '../queue/QueueSelector.js';
+import { WavyDivider } from '../ui/WavyProgressBar.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
 import { ShareSchedule } from '../schedule/ShareSchedule.js';
 import { Skeleton } from '../ui/Skeleton.js';
@@ -30,6 +47,20 @@ function formatKyivTime(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(iso));
+}
+
+/**
+ * Иконка закладки по её названию. Раньше роль значка играли текстовые эмодзи («Дім»,
+ * «Робота»), но эмодзи разъезжаются по шрифтам и выглядят по-разному на Android, iOS и
+ * Windows. Подпись как была, а значок — векторный: дім, робота, батьки, село/місто.
+ */
+function bookmarkIcon(label: string): LucideIcon {
+  const value = label.toLowerCase();
+  if (/дім|дом|home|квартир/.test(value)) return Home;
+  if (/робот|work|офіс/.test(value)) return Briefcase;
+  if (/батьк|мам[аи]|тато|родин/.test(value)) return Heart;
+  if (/село|місто|вул\.|смт/.test(value)) return MapPin;
+  return Sparkles;
 }
 
 export const HomeHeroSection: React.FC = () => {
@@ -149,6 +180,7 @@ export const HomeHeroSection: React.FC = () => {
           размываться среди разметки страницы. */}
       <HeroStatus
         intervals={intervals}
+        date={selectedDate}
         isOff={isOff}
         nextInMinutes={windowSummary?.nextInMinutes ?? null}
         backInMinutes={windowSummary?.backInMinutes ?? null}
@@ -158,7 +190,7 @@ export const HomeHeroSection: React.FC = () => {
         loading={scheduleLoading && !schedule}
       />
 
-      <div className="space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-6">
+      <div className="space-y-4 rounded-[32px] border border-outline-variant/60 bg-surface-container-low p-4 sm:p-6">
       {/* Вибір області тепер один — у шапці, з пошуком (дизайн звідси й перенесено).
           Дубль на головній лише плутав: два способи обрати ту саму область. */}
 
@@ -173,10 +205,17 @@ export const HomeHeroSection: React.FC = () => {
         >
           {bookmarks.map((bm) => {
             const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
+            const BookmarkIcon = bookmarkIcon(bm.label);
             return (
               <div
                 key={bm.id}
-                className="inline-flex snap-start items-center gap-1 rounded-full border border-border bg-muted/40 py-1 pl-3 pr-1.5"
+                className={cn(
+                  // M3 Filter Chip: форма-капсула, тон поверхности вместо рамки у активного чипа.
+                  'inline-flex snap-start items-center gap-0.5 rounded-full py-1 pl-1 pr-1.5 transition-colors duration-200 ease-[var(--ease-m3-expressive-fast)]',
+                  isActive
+                    ? 'bg-primary-container text-on-primary-container shadow-xs'
+                    : 'border border-outline-variant/70 bg-surface-container text-on-surface',
+                )}
               >
                 <button
                   type="button"
@@ -185,14 +224,15 @@ export const HomeHeroSection: React.FC = () => {
                     applyBookmark(bm);
                   }}
                   aria-current={isActive ? 'true' : undefined}
-className={cn(
-                    'inline-flex min-h-9.5 items-center gap-1.5 rounded-full px-2 text-xs font-semibold transition-colors',
-                    isActive ? 'text-primary' : 'text-foreground hover:text-primary',
-                  )}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-xs font-bold transition-transform duration-200 ease-[var(--ease-m3-expressive-fast)] active:scale-[0.96]"
                 >
-                  <Star className={cn('h-3.5 w-3.5', isActive && 'fill-current')} aria-hidden />
+                  {isActive ? (
+                    <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
+                  ) : (
+                    <BookmarkIcon className="h-4 w-4" strokeWidth={2.2} aria-hidden />
+                  )}
                   <span className="max-w-40 truncate">{bm.label}</span>
-                  <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+                  <span className="rounded-full bg-surface-container-highest px-2 py-0.5 text-[11px] font-bold text-on-surface-variant tabular">
                     {bm.queue}
                   </span>
                 </button>
@@ -200,11 +240,9 @@ className={cn(
                   type="button"
                   onClick={() => removeBookmark(bm.id)}
                   aria-label={`${t('common.delete')} ${bm.label}`}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-destructive"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-destructive"
                 >
-                  <span aria-hidden className="text-base leading-none">
-                    ×
-                  </span>
+                  <X className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
                 </button>
               </div>
             );
@@ -213,7 +251,7 @@ className={cn(
       )}
 
       {/* 2. Панель керування: перемикач дати та вибір черги області */}
-      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/* Вибір черги (запам'ятовується для кожної області) */}
         <QueueSelector
           queues={availableQueues}
@@ -247,6 +285,10 @@ className={cn(
           />
         </div>
       </div>
+
+      {/* Волнистый разделитель M3 вместо прямой рамки: секция «управление» отделена от графика,
+          но линия не спорит с тональными поверхностями. */}
+      <WavyDivider className="opacity-70" />
 
       {/* 3. Головний стан героя та таймлайн */}
       {regionLoading || (scheduleLoading && !schedule) ? (

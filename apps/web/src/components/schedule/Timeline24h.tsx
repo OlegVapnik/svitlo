@@ -43,6 +43,8 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   const { t } = useTranslation();
   const timelineId = useId();
   const liveRegionId = useId();
+  // Идентификатор SVG-паттерна штриховки: url(#…) не принимает символы «:» из useId().
+  const hatchId = `hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
   // 48 півгодинних слотів доби
   const slots = useMemo(
@@ -130,47 +132,87 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         {/* Контейнер півгодинних комірок: компактний flex/grid, жодного горизонтального скролу на 360 px */}
         {/* Мягкая подложка ночных зон: четыре полосы, чтобы сетка слотов не гасила их.
             Это слой под слотами, а не поверх — иначе он перекрыл бы половины наведения. */}
-        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-xl">
+        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-[22px]">
           {Array.from({ length: 24 }, (_, hour) => (
             <span
               key={hour}
               className={cn(
                 'absolute top-0 h-full',
-                isNightHour(hour) ? 'bg-foreground/[0.04]' : 'bg-transparent',
+                isNightHour(hour) ? 'bg-on-surface/[0.05]' : 'bg-transparent',
               )}
               style={{ left: `${(hour / 24) * 100}%`, width: `${100 / 24}%` }}
             />
           ))}
         </div>
 
+        {/* Штриховка часов отключения. Векторный <pattern>, а не картинка: линии остаются
+            резкими на любом DPI и берут цвет у родителя через currentColor. */}
+        <svg className="absolute h-0 w-0" aria-hidden focusable="false">
+          <defs>
+            <pattern id={hatchId} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1={0} y1={0} x2={0} y2={6} stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+            </pattern>
+          </defs>
+        </svg>
+
+        {/* 24-часовая шкала-капсулы: 48 получасовых капсул с зазором. Раньше это были
+            слипшиеся прямоугольники с рамками в 1px — на телефоне они читались как одна
+            серая полоса, и границы отключения приходилось угадывать. */}
         <div
           role="region"
           aria-label={t('timeline.barAriaLabel', { date })}
-          className="relative grid h-10 w-full grid-cols-[repeat(48,minmax(0,1fr))] gap-px overflow-hidden rounded-xl bg-border p-0.5 shadow-xs sm:h-12"
+          className="relative grid h-11 w-full grid-cols-[repeat(48,minmax(0,1fr))] items-stretch gap-1 rounded-[22px] bg-surface-container p-1 sm:h-12"
         >
           {slots.map((slot) => {
-            let bgClass = 'bg-muted';
-            if (slot.stateCode === 3) {
-              bgClass = 'bg-destructive';
-            } else if (slot.stateCode === 2) {
-              bgClass = 'bg-warning';
-            } else if (slot.stateCode === 1) {
-              bgClass = 'bg-success';
-            }
+            // Тон капсулы: отключение — янтарь/рубин-подсветка со штриховкой, свет — изумруд.
+            const capsuleClass =
+              slot.stateCode === 3
+                ? 'bg-destructive/25 text-destructive'
+                : slot.stateCode === 2
+                  ? 'bg-warning/40 text-warning'
+                  : slot.stateCode === 1
+                    ? 'bg-success/80'
+                    : 'bg-surface-container-high';
 
             return (
               <div
                 key={slot.index}
                 className={cn(
-                  'h-full transition-opacity duration-150',
-                  bgClass,
-                  slot.isPast && 'opacity-65',
-                  slot.isCurrent && 'ring-1 ring-inset ring-foreground',
+                  'relative h-full overflow-hidden rounded-full transition-opacity duration-200',
+                  capsuleClass,
+                  slot.isPast && 'opacity-55',
+                  slot.isCurrent && 'ring-1 ring-inset ring-on-surface/50',
                 )}
                 title={`${slot.rangeLabel}: ${slot.stateName}`}
-              />
+              >
+                {slot.stateCode === 3 && (
+                  <svg className="absolute inset-0 h-full w-full opacity-70" aria-hidden focusable="false">
+                    <rect width="100%" height="100%" fill={`url(#${hatchId})`} />
+                  </svg>
+                )}
+              </div>
             );
           })}
+
+          {/* Линия «зараз» внутри шкалы + пин с временем: раньше бегунок выходил за пределы
+              полосы и налезал на подписи часов, поэтому теперь он живёт внутри капсулы. */}
+          {timeMarker && (
+            <>
+              <span
+                className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_8px_currentColor]"
+                style={{ left: `${timeMarker.percent}%` }}
+                aria-hidden
+              />
+              <span
+                className="pointer-events-none absolute top-1/2 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 animate-pin-in items-center gap-1 rounded-full bg-primary px-2 py-1 text-[10px] font-bold leading-none text-on-primary shadow-lg"
+                style={{ left: `${timeMarker.percent}%` }}
+                aria-hidden
+              >
+                <Clock className="h-3 w-3" strokeWidth={2.6} />
+                {t('schedule.now')} {timeMarker.timeFormatted}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Шар інтерактивних 24 годинних кнопок для клавіатурної та тач-навігації */}
@@ -195,43 +237,27 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
                 onMouseEnter={() => handleHourFocus(h)}
                 onKeyDown={(e) => handleKeyDown(e, h)}
                 className={cn(
-                  'relative h-full w-full rounded-xs transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                  isSelected && 'ring-2 ring-primary ring-offset-1',
+                  'relative h-full w-full rounded-2xl transition-all focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                  isSelected && 'bg-primary/10 ring-2 ring-primary ring-offset-1',
                 )}
               />
             );
           })}
         </div>
 
-        {/* Маркер поточного часу "Зараз" */}
-        {timeMarker && (
-          <div
-            className="pointer-events-none absolute -bottom-1 -top-1 z-20 flex flex-col items-center"
-            style={{ left: `${timeMarker.percent}%` }}
-            aria-hidden
-          >
-            {/* Верхняя точка + подпись времени (напр. 19:42): без подписи бегунок
-                приходилось искать глазами, а он — единственная подвижная точка шкалы. */}
-            <div className="-mt-1.5 flex flex-col items-center">
-              <span className="font-timer rounded-full border border-border bg-card px-1.5 py-0.5 text-[10px] font-bold leading-none text-foreground">
-                {timeMarker.timeFormatted}
-              </span>
-            </div>
-            {/* Вертикальна лінія */}
-            <div className="w-0.5 flex-1 bg-foreground shadow-xs" />
-          </div>
-        )}
+        {/* Маркер поточного часу «Зараз» переехал внутрь шкалы (см. выше): снаружи он
+            выходил за полосу и перекрывал подписи часов. */}
       </div>
 
       {/* Інформаційна картка обраної години */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface-container-high/60 px-3.5 py-2.5 text-xs">
         <div className="flex items-center gap-2">
-          <Clock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-          <span className="font-bold text-foreground">
+          <Clock className="h-3.5 w-3.5 text-primary" strokeWidth={2.3} aria-hidden />
+          <span className="font-bold text-on-surface">
             {hourSummary.label}
           </span>
           {hourSummary.isCurrent && (
-            <span className="rounded-full bg-foreground px-2 py-0.5 text-[10px] font-bold text-background">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-on-primary">
               {t('schedule.now')} ({timeMarker?.timeFormatted})
             </span>
           )}
@@ -258,26 +284,30 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         </div>
       </div>
 
-      {/* Легенда станів */}
+      {/* Легенда станів: у відключення — та сама штриховка, що в шкалі, щоб не вигадувати
+          окремий значок для того самого стану. */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs">
         <div className="flex flex-wrap gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high/60 px-2.5 py-1 text-[11px] font-medium text-on-surface">
             <span className="h-2.5 w-2.5 rounded-full bg-success" />
             {t('home.heroOn')}
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground">
-            <span className="h-2.5 w-2.5 rounded-full bg-destructive" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high/60 px-2.5 py-1 text-[11px] font-medium text-on-surface">
+            <svg className="h-3 w-3 text-destructive" viewBox="0 0 12 12" aria-hidden focusable="false">
+              <rect width="12" height="12" rx="3" fill="currentColor" className="opacity-25" />
+              <rect width="12" height="12" rx="3" fill={`url(#${hatchId})`} />
+            </svg>
             {t('home.heroOff')}
           </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-foreground">
-            <span className="h-2.5 w-2.5 rounded-full bg-muted" />
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high/60 px-2.5 py-1 text-[11px] font-medium text-on-surface">
+            <span className="h-2.5 w-2.5 rounded-full bg-surface-container-highest" />
             {t('timeline.noScheduleShort')}
           </span>
         </div>
 
         {timeMarker && (
-          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Info className="h-3 w-3" aria-hidden />
+          <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
+            <Info className="h-3 w-3" strokeWidth={2.3} aria-hidden />
             {t('timeline.useArrowsHint')}
           </span>
         )}

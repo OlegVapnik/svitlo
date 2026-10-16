@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { CircleAlert, CloudOff, Database, RefreshCw, RotateCw } from 'lucide-react';
+import { CloudCheck, CloudOff, Database, RefreshCw, RotateCw, WifiOff } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useSyncStatus } from '../../hooks/useOfflineSync.js';
@@ -24,11 +24,11 @@ import type { SyncState } from '../../api/offline-sync.js';
  * запроса на каждое событие.
  */
 const STYLES = {
-  fresh: { icon: Database, className: 'text-success' },
-  syncing: { icon: RotateCw, className: 'text-muted-foreground' },
-  stored: { icon: Database, className: 'text-warning' },
-  offline: { icon: CloudOff, className: 'text-warning' },
-  idle: { icon: CircleAlert, className: 'text-muted-foreground' },
+  fresh: { icon: CloudCheck, className: 'text-success', animation: null },
+  syncing: { icon: RotateCw, className: 'text-on-surface-variant', animation: 'animate-spin' },
+  stored: { icon: Database, className: 'text-warning', animation: null },
+  offline: { icon: WifiOff, className: 'text-warning', animation: 'animate-pulse-soft' },
+  idle: { icon: CloudOff, className: 'text-on-surface-variant', animation: null },
 } as const;
 
 function labelFor(state: SyncState, t: TFunction): string {
@@ -68,27 +68,28 @@ export const SyncIndicator = () => {
 
   return (
     <span className="hidden items-center gap-0.5 sm:inline-flex">
+      {/* M3 Assist Chip: иконка состояния + подпись, а внутри чипа — кнопка «оновити».
+          Раньше это были отдельные «метка» и кнопка, и кнопку искали отдельно от состояния. */}
       <span
         title={tooltip || undefined}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium',
+          'inline-flex items-center gap-1.5 rounded-full border border-outline-variant/60 bg-surface-container py-1 pl-2.5 pr-1 text-[11px] font-semibold',
           style.className,
         )}
       >
-        <Icon className={cn('h-3.5 w-3.5', state.phase === 'syncing' && 'animate-spin')} aria-hidden />
+        <Icon className={cn('h-3.5 w-3.5', style.animation)} strokeWidth={2.2} aria-hidden />
         <span className="max-w-[12rem] truncate">{label}</span>
+        <button
+          type="button"
+          onClick={() => void syncNow(currentRegion)}
+          disabled={state.phase === 'syncing'}
+          title={t('offline.syncNow')}
+          aria-label={t('offline.syncNow')}
+          className="ml-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-on-surface disabled:opacity-50"
+        >
+          <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} aria-hidden />
+        </button>
       </span>
-      {/* Кнопка всегда рядом с индикатором: «оновити» ищут именно здесь, у надписи о состоянии. */}
-      <button
-        type="button"
-        onClick={() => void syncNow(currentRegion)}
-        disabled={state.phase === 'syncing'}
-        title={t('offline.syncNow')}
-        aria-label={t('offline.syncNow')}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-      >
-        <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-      </button>
     </span>
   );
 };

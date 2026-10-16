@@ -34,7 +34,7 @@ const VISIBLE_GROUPS_LIMIT = 6;
 const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
   const { t } = useTranslation();
   return (
-    <article className="rounded-2xl border border-border bg-card p-4 shadow-xs">
+    <article className="rounded-[28px] border border-outline-variant/50 bg-surface-container p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span
@@ -232,11 +232,11 @@ export const HomePage: React.FC = () => {
       <HomeHeroSection />
 
 
-      <section className="space-y-4 rounded-2xl border border-border bg-card p-4 shadow-card sm:p-6">
+      <section className="rounded-[32px] border border-outline-variant/60 bg-surface-container-low p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('home.title')}</h1>
-            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">{currentRegionData.nameUa || t('home.subtitle')}</p>
+            <h1 className="text-xl font-bold tracking-tight text-on-surface sm:text-2xl">{t('home.title')}</h1>
+            <p className="mt-0.5 text-xs text-on-surface-variant sm:text-sm">{currentRegionData.nameUa || t('home.subtitle')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {status?.lastUpdatedAt && <LastUpdated timestamp={status.lastUpdatedAt} />}
@@ -264,13 +264,18 @@ export const HomePage: React.FC = () => {
             ремонтні відключення: саме групове відключення люди називають «відключенням», а
             ремонтних записів одиниці — з ними показники зerahivалися в нуль навіть за наявності
             повного графіку в базі. Підказка пояснює джерело числа. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <StatCard to="/queues" icon={Zap} tone="danger" label={t('home.statActive')} value={status?.activeGroups ?? status?.activeOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
-          <StatCard to="/queues" icon={CalendarDays} tone="info" label={t('home.statScheduled')} value={status?.scheduledGroups ?? status?.scheduledOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
-          <StatCard to="/incidents" icon={TriangleAlert} tone="warning" label={t('home.statIncidents')} value={status?.totalIncidents ?? 0} isLoading={statusLoading} hint={`${t('incidents.active')}: ${status?.activeIncidents ?? 0}`} />
-        </div>
+        {/* Bento-сетка M3: на широком экране плитки-статистика занимают 2/3 ширины, а сводка
+            электропитания за сутки — оставшуюся треть. Раньше это была вертикальная колонка:
+            на десктопе половина ширины пустовала, и карточки не читались как набор. */}
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-2">
+            <StatCard to="/queues" icon={Zap} tone="danger" label={t('home.statActive')} value={status?.activeGroups ?? status?.activeOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
+            <StatCard to="/queues" icon={CalendarDays} tone="info" label={t('home.statScheduled')} value={status?.scheduledGroups ?? status?.scheduledOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
+            <StatCard to="/incidents" icon={TriangleAlert} tone="warning" label={t('home.statIncidents')} value={status?.totalIncidents ?? 0} isLoading={statusLoading} hint={`${t('incidents.active')}: ${status?.activeIncidents ?? 0}`} />
+          </div>
 
-        <PowerSummaryCard summary={status?.powerSummary} isLoading={statusLoading} />
+          <PowerSummaryCard summary={status?.powerSummary} isLoading={statusLoading} />
+        </div>
       </section>
 
       <SourceHealthBanner />
@@ -297,7 +302,7 @@ export const HomePage: React.FC = () => {
               <Skeleton className="h-28 w-full rounded-2xl" />
             ) : groupOutages.length === 0 ? (
               outages.length === 0 ? (
-                <div className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card/50 px-6 py-8 text-sm text-muted-foreground">
+                <div className="flex items-center justify-center gap-2 rounded-[28px] bg-surface-container-high/50 px-6 py-8 text-sm text-on-surface-variant">
                   <ZapOff className="h-4 w-4" aria-hidden />
                   {t('outages.noOutages')}
                 </div>

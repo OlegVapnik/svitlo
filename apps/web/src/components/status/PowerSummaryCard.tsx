@@ -54,11 +54,11 @@ export const PowerSummaryCard: React.FC<PowerSummaryCardProps> = ({ summary, isL
   const poweredWidth = windowMinutes > 0 ? Math.min(100, Math.max(0, (powered / windowMinutes) * 100)) : 100;
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 space-y-3">
+    <div className="h-full space-y-3 rounded-[28px] border border-outline-variant/50 bg-surface-container p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className={`p-2 rounded-lg ${level.chip}`}>
-            <ShieldCheck className="w-4 h-4" />
+          <div className={`rounded-2xl p-2 ${level.chip}`}>
+            <ShieldCheck className="h-4 w-4" strokeWidth={2.3} />
           </div>
           <div>
             <div className="text-sm font-semibold text-foreground">Електропостачання за 24 години</div>
@@ -81,7 +81,7 @@ export const PowerSummaryCard: React.FC<PowerSummaryCardProps> = ({ summary, isL
         )}
       </div>
 
-      <div className="h-2.5 w-full rounded-full bg-red-500/25 overflow-hidden" role="img" aria-label="Частка часу зі світлом">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-destructive/25" role="img" aria-label="Частка часу зі світлом">
         <div className={`h-full rounded-full ${level.bar} transition-all`} style={{ width: `${poweredWidth}%` }} />
       </div>
 

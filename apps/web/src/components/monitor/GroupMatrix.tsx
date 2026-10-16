@@ -42,7 +42,7 @@ export const GroupMatrix: React.FC<GroupMatrixProps> = ({ queues, outages, onSel
 
   if (queues.length === 0) {
     return (
-      <p className="rounded-2xl border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+      <p className="rounded-[28px] bg-surface-container px-4 py-6 text-center text-sm text-on-surface-variant">
         {t('monitor.noQueues')}
       </p>
     );
@@ -59,25 +59,28 @@ export const GroupMatrix: React.FC<GroupMatrixProps> = ({ queues, outages, onSel
             type="button"
             onClick={() => onSelect?.(queue)}
             className={cn(
-              'flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-2xl border p-2 transition-colors',
+              // Плитка-сквиркл M3 Expressive: радиус 22px в покое и сжатие при нажатии —
+              // нажатие чувствуется даже на плохом экране под солнцем.
+              'flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-[22px] border p-2',
+              'transition-[border-radius,background-color,border-color,transform] duration-200 ease-[var(--ease-m3-expressive-fast)] active:scale-[0.94] active:rounded-[14px]',
               off
                 ? 'border-destructive/40 bg-destructive/10'
                 : state === 'unknown'
-                  ? 'border-border bg-card'
-                  : 'border-border bg-card hover:bg-card-raised',
+                  ? 'border-outline-variant/50 bg-surface-container'
+                  : 'border-outline-variant/50 bg-surface-container hover:bg-surface-container-high',
             )}
           >
             <StatusDot state={state} />
             <span
               className={cn(
-                'font-timer text-lg font-bold leading-none',
-                off ? 'text-destructive' : state === 'unknown' ? 'text-unknown' : 'text-foreground',
+                'font-timer text-lg font-bold leading-none tabular',
+                off ? 'text-destructive' : state === 'unknown' ? 'text-unknown' : 'text-on-surface',
               )}
             >
               {queue}
             </span>
             {/* Подпись состояния обязательна: цвет и точка — не единственный носитель смысла. */}
-            <span className="flex items-center gap-1 text-[10px] leading-tight text-muted-foreground">
+            <span className="flex items-center gap-1 text-[10px] leading-tight text-on-surface-variant">
               {off && <ZapOff className="h-3 w-3" aria-hidden />}
               {off
                 ? t('monitor.stateOff')

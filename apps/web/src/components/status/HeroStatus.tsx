@@ -1,8 +1,10 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BatteryCharging, PlugZap, SunDim, Zap, ZapOff } from 'lucide-react';
-import { ProgressBar } from '../ui/ProgressBar.js';
+import { BatteryCharging, Clock } from 'lucide-react';
+import { ExpressiveShapeBadge, ShapeOutline, type ExpressiveShape } from '../ui/ExpressiveShapeBadge.js';
 import { StatusDot, type NetworkState } from '../ui/StatusDot.js';
+import { WavyDivider, WavyProgressBar, type WaveTone } from '../ui/WavyProgressBar.js';
+import { formatMinutesUk, slotProgress } from '../../lib/scheduleWindow.js';
 import { cn } from '../../lib/cn.js';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
@@ -29,8 +31,18 @@ const GLOW: Record<NetworkState, string> = {
   unknown: 'var(--glow-unknown)',
 };
 
+/** Фирменная M3-фигура статуса: силуэт читается даже там, где цвет выгорел. */
+const SHAPE: Record<NetworkState, ExpressiveShape> = {
+  on: 'scallop',
+  soon: 'clover',
+  off: 'polygon',
+  unknown: 'scallop',
+};
+
 export interface HeroStatusProps {
   intervals: ScheduleIntervalUtc[];
+  /** Киевская дата YYYY-MM-DD, на которую запрошен график: по ней считаются минуты суток. */
+  date: string;
   /** true, если сейчас идёт отключение. */
   isOff: boolean;
   /** Минут до следующего отключения (свет есть). */
@@ -49,6 +61,7 @@ export interface HeroStatusProps {
 
 export const HeroStatus: React.FC<HeroStatusProps> = ({
   intervals,
+  date,
   isOff,
   nextInMinutes,
   backInMinutes,
@@ -65,88 +78,110 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
   const SOON_MINUTES = 60;
   const isSoon = !isOff && nextInMinutes != null && nextInMinutes <= SOON_MINUTES;
   const state: NetworkState = !hasData ? 'unknown' : isOff ? 'off' : isSoon ? 'soon' : 'on';
+  /** Тон волны повторяет статус: форма полосы — часть ответа, а не украшение. */
+  const tone: WaveTone = state === 'off' ? 'off' : state === 'soon' ? 'warning' : state === 'on' ? 'on' : 'unknown';
 
-  // Прогресс текущего слота: сколько отключения уже прошло. Считаем из интервалов,
-  // новый API для этого не нужен.
-  const progress = useMemo(() => {
-    const current = intervals.find((item) => {
-      const from = Date.parse(item.startsAt);
-      const to = Date.parse(item.endsAt);
-      return from <= Date.now() && Date.now() < to;
-    });
-    if (!current) return null;
-    const from = Date.parse(current.startsAt);
-    const to = Date.parse(current.endsAt);
-    if (to <= from) return null;
-    return Math.round(((Date.now() - from) / (to - from)) * 100);
-  }, [intervals]);
+  // Прогресс текущего слота считает lib/scheduleWindow — та же математика, что у полосы суток:
+  // дублировать её здесь нельзя, иначе герой и таймлайн разойдутся в цифрах.
+  const slot = useMemo(() => (hasData ? slotProgress(intervals, date) : null), [hasData, intervals, date]);
+  const clock = splitClock(isOff ? backInMinutes : nextInMinutes);
 
-  const Icon = state === 'off' ? ZapOff : state === 'on' ? PlugZap : SunDim;
+  const title =
+    state === 'unknown'
+      ? t('home.heroUnknown')
+      : state === 'off'
+        ? t('home.heroTitleOff')
+        : state === 'soon'
+          ? t('home.heroTitleSoon')
+          : t('home.heroTitleOn');
+  const caption = isOff ? t('home.countdownToOn') : t('home.countdownToOff');
 
   return (
     <section
-      className="status-glow relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 sm:p-7"
+      className="status-glow relative isolate overflow-hidden rounded-[40px] border border-outline-variant/70 bg-surface-container-low p-5 sm:p-7"
       style={{ ['--glow-color' as string]: GLOW[state] }}
     >
-      <div className="relative z-10 space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {/* Иконка дублирует цвет: статус не держится на одном лишь цвете. */}
-            <Icon
-              className={cn(
-                'h-6 w-6',
-                state === 'off' ? 'text-destructive' : state === 'unknown' ? 'text-unknown' : 'text-success',
-              )}
-              aria-hidden
-            />
-            <h2 className="font-display text-lg font-bold text-foreground sm:text-xl">
-              {state === 'unknown'
-                ? t('home.heroUnknown')
-                : state === 'off'
-                  ? t('home.heroTitleOff')
-                  : t('home.heroTitleOn')}
-            </h2>
-          </div>
+      {/* Гигантский контур M3-фигуры: декоративная подложка, а не информация — поэтому почти
+          прозрачна и не мешает читать цифры. */}
+      <ShapeOutline
+        kind={SHAPE[state]}
+        className={cn(
+          'pointer-events-none absolute -right-20 -top-24 h-80 w-80 text-primary opacity-[0.06]',
+          state !== 'unknown' && 'animate-shape-spin',
+        )}
+      />
 
-          <div className="flex flex-col items-end gap-1.5">
-            <StatusDot state={state} size="lg" />
+      <div className="relative z-10 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Капсула статуса: фигура + текст. Цвет и силуэт работают вместе — статус не держится
+              на одном лишь цвете (доступность на солнце и при дальтонизме). */}
+          <span className="inline-flex min-h-12 items-center gap-2.5 rounded-full bg-surface-container-high/70 py-1.5 pl-1.5 pr-4">
+            <ExpressiveShapeBadge state={state} size="sm" />
+            <span className="text-sm font-bold text-on-surface sm:text-base">{title}</span>
+          </span>
+
+          <div className="flex items-center gap-2">
             {fromCache && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+              <span className="rounded-full bg-surface-container-high px-3 py-1 text-[11px] font-semibold text-on-surface-variant">
                 {t('home.heroFromCache', {
                   time: cachedAt ? new Date(cachedAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) : '',
                 })}
               </span>
             )}
+            <StatusDot state={state} size="lg" />
           </div>
         </div>
 
         {state === 'unknown' ? (
-          <p className="text-sm text-muted-foreground">{t('home.heroUnknownDesc')}</p>
+          <p className="text-sm leading-relaxed text-on-surface-variant">{t('home.heroUnknownDesc')}</p>
         ) : (
           <>
-            {/* Обратный отсчёт крупным моноширинным: цифры не прыгают по ширине благодаря
-                tabular-nums, установленному глобально. */}
-            <p className="font-timer text-4xl font-bold leading-none text-foreground sm:text-5xl">
-              {state === 'off' && backInMinutes != null
-                ? t('home.heroBackBig', { time: formatDuration(backInMinutes) })
-                : nextInMinutes != null
-                  ? t('home.heroNextBig', { time: formatDuration(nextInMinutes) })
-                  : t('home.heroNoNextBig')}
-            </p>
+            {/* Обратный отсчёт: крупные цифры с мигающим векторным разделителем. Двоеточие
+                пульсирует, потому что это единственный «живой» элемент на экране — так видно,
+                что данные обновляются, а не застыли. */}
+            {clock ? (
+              <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+                <div className="min-w-0">
+                  <p
+                    className="font-timer flex items-baseline text-5xl font-black leading-none tracking-tight tabular-nums text-on-surface sm:text-7xl"
+                    aria-label={`${clock.hours}:${clock.minutes} ${caption}`}
+                  >
+                    <span>{clock.hours}</span>
+                    <span className="mx-1 animate-pulse-soft text-primary sm:mx-2" aria-hidden>
+                      :
+                    </span>
+                    <span>{clock.minutes}</span>
+                  </p>
+                  <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant sm:text-xs">
+                    {caption}
+                  </p>
+                </div>
 
-            {nextBoundaryAt && (
-              <p className="text-xs text-muted-foreground">
-                {t('home.heroBoundary', { time: formatTime(nextBoundaryAt) })}
+                {nextBoundaryAt && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high/60 px-3 py-1.5 text-xs text-on-surface-variant">
+                    <Clock className="h-3.5 w-3.5 text-primary" strokeWidth={2.2} aria-hidden />
+                    {t('home.heroBoundary', { time: formatTime(nextBoundaryAt) })}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="font-display text-3xl font-bold tracking-tight text-on-surface sm:text-4xl">
+                {t('home.heroNoNextBig')}
               </p>
             )}
 
-            {progress !== null && (
-              <div className="space-y-1.5">
-                <ProgressBar value={progress} tone="destructive" />
-                <p className="text-xs text-muted-foreground">
-                  {t('home.heroProgress', { percent: progress })}
-                </p>
-              </div>
+            <WavyDivider />
+
+            {/* Волнистая змейка прогресса слота: сколько уже прошло и сколько осталось. */}
+            {slot && (
+              <WavyProgressBar
+                progress={slot.percent}
+                tone={tone}
+                elapsedLabel={t('home.waveElapsed', { time: formatMinutesUk(slot.elapsedMinutes) })}
+                remainingLabel={t('home.waveRemaining', { time: formatMinutesUk(slot.remainingMinutes) })}
+                percentLabel={t('home.wavePercent', { percent: slot.percent })}
+                aria-label={t('home.heroProgress', { percent: slot.percent })}
+              />
             )}
           </>
         )}
@@ -154,9 +189,9 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
         {/* Бытовой совет: человек открывает приложение во время отключения и думает,
             что делать дальше, а не когда выключат. */}
         {isOff && (
-          <div className="flex items-start gap-2 rounded-2xl border border-border bg-card-raised p-3">
-            <BatteryCharging className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-            <p className="text-xs text-muted-foreground">{t('home.heroTipOff')}</p>
+          <div className="flex items-start gap-2.5 rounded-[22px] bg-surface-container-high/60 p-3">
+            <BatteryCharging className="mt-0.5 h-4 w-4 shrink-0 text-primary" strokeWidth={2.2} aria-hidden />
+            <p className="text-xs leading-relaxed text-on-surface-variant">{t('home.heroTipOff')}</p>
           </div>
         )}
       </div>
@@ -164,14 +199,14 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
   );
 };
 
-/** Минуты → «2 год 14 хв». Компактно: длинные формы не влезают в одну строку Hero. */
-function formatDuration(minutes: number): string {
-  if (!Number.isFinite(minutes) || minutes < 0) return '—';
-  const hours = Math.floor(minutes / 60);
-  const rest = Math.round(minutes % 60);
-  if (hours === 0) return `${rest} хв`;
-  if (rest === 0) return `${hours} год`;
-  return `${hours} год ${rest} хв`;
+/** Минуты → «02» и «14» для крупного отсчёта. null — отсчитывать нечего. */
+function splitClock(minutes: number | null): { hours: string; minutes: string } | null {
+  if (minutes == null || !Number.isFinite(minutes) || minutes < 0) return null;
+  const total = Math.round(minutes);
+  return {
+    hours: String(Math.floor(total / 60)).padStart(2, '0'),
+    minutes: String(total % 60).padStart(2, '0'),
+  };
 }
 
 /** Время интервала в киевской зоне — так же, как показывает оператор. */
