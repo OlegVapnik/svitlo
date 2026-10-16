@@ -6,7 +6,9 @@
  * PWA/Android-бандле история коммитов не нужна целиком. Поэтому чейджлог — маленький JSON,
  * который коммитится и раздаётся по сети (GET /api/v1/changelog). Благодаря этому фикс,
  * задеплоенный на сервере, виден в уже установленном приложении без пересборки APK.
- * Копия в apps/web/src/data используется только как офлайн-фолбэк.
+ * Копия в apps/web/src/data используется только как офлайн-фолбэк, а копия в cf-worker/src/data —
+ * для маршрута GET /api/v1/changelog в Cloudflare-воркере (в Workers нет файловой системы,
+ * поэтому JSON попадает в бандл на сборке).
  *
  * Что попадает в выдачу:
  *  - только пользовательские типы (feat/fix/security). Служебные chore/docs/misc в приложении
@@ -29,6 +31,9 @@ const repoRoot = path.resolve(here, '..');
 // Копия в web — офлайн-фолбэк на случай, когда сети нет (её же подхватывает кеш ответов).
 const outPath = path.join(repoRoot, 'apps/api/src/data/changelog.json');
 const webFallbackPath = path.join(repoRoot, 'apps/web/src/data/changelog.json');
+// Копия для воркера: он раздаёт чейнджлог тем же маршрутом, что и Node-бэкенд, а читать файлы
+// из рантайма Cloudflare Workers не умеет — JSON вшивается в бандл wrangler на сборке.
+const workerPath = path.join(repoRoot, 'cf-worker/src/data/changelog.json');
 
 const limitArgIndex = process.argv.indexOf('--limit');
 const limit = limitArgIndex > -1 ? Number(process.argv[limitArgIndex + 1]) : 30;
@@ -103,10 +108,13 @@ mkdirSync(path.dirname(outPath), { recursive: true });
 writeFileSync(outPath, serialized, 'utf8');
 mkdirSync(path.dirname(webFallbackPath), { recursive: true });
 writeFileSync(webFallbackPath, serialized, 'utf8');
+mkdirSync(path.dirname(workerPath), { recursive: true });
+writeFileSync(workerPath, serialized, 'utf8');
 
 console.log(`Записано ${entries.length} записей:`);
 console.log(`  канон (API):  ${path.relative(repoRoot, outPath)}`);
 console.log(`  фолбэк (web): ${path.relative(repoRoot, webFallbackPath)}`);
+console.log(`  воркер (CF):  ${path.relative(repoRoot, workerPath)}`);
 for (const entry of entries.slice(0, 5)) {
   console.log(`  ${entry.date} [${entry.label}] ${entry.text.slice(0, 78)}`);
 }

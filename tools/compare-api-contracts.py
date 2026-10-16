@@ -45,6 +45,9 @@ ROUTES = [
     ("reliability", "reliability?region=chernihivska-oblast", None),
     ("news", "news?limit=5", None),
     ("regions", "regions", None),
+    # Чейнджлог: его читает карточка «Що нового» на главной. В воркере маршрута раньше не было
+    # вовсе, и на Cloudflare-сборке карточка молча жила на устаревшей копии из бандла.
+    ("changelog", "changelog", None),
     ("queues", "queues?region=chernihivska-oblast", None),
     ("schedules", "schedules?region=chernihivska-oblast&queue=1/1", None),
     ("schedules/upcoming", "schedules/upcoming?region=chernihivska-oblast&days=2", None),
@@ -76,6 +79,9 @@ REQUIRED = {
     "reliability": ["data"],
     "news": ["data", "meta.count", "meta.stale"],
     "regions": ["data"],
+    # Чейнджлог отдаётся конвертом { data: { generatedAt, entries } }: компонент читает список
+    # записей, а пустой entries — это честное «мы ещё ничего не писали», а не ошибка сервера.
+    "changelog": ["data.entries", "data.generatedAt"],
     "queues": ["data"],
     "schedules": ["data.queue", "data.date", "data.intervals"],
     # Поля localTimeFrom/localTimeTo обязательны внутри интервалов: без них карточка

@@ -13,6 +13,9 @@
 import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeQueue } from './address.js';
 import { searchSettlements } from './settlements.js';
 import { collectChernihivOutages, fetchCityIds, type ChernihivOutage } from './chernihiv.js';
+// Чейнджлог генерирует tools/gen_changelog.mjs из истории git — воркер получает ту же копию,
+// что и Node-бэкенд, поэтому список «Що нового» одинаков на обоих серверах.
+import changelog from './data/changelog.json';
 
 export interface Env {
   DB: D1Database;
@@ -1706,6 +1709,18 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
   if (path === '/health') {
     return json({ status: 'ok' });
+  }
+
+  if (path === '/changelog') {
+    // Конверт и заголовки — как у Node-бэкенда (apps/api/src/routes/changelog.ts): приложение не
+    // должно знать, кто именно отдал список. Раньше маршрута здесь не было, и карточка «Що
+    // нового» на Cloudflare-сборке молча получала 404: серверные фиксы не доходили до людей,
+    // у которых уже установлено приложение. ETag считаем от содержимого файла — он меняется
+    // только с выкаткой, а не с каждым запросом, поэтому кеш браузера работает как надо.
+    return json({ data: changelog }, 200, {
+      'cache-control': 'public, max-age=300',
+      etag: `W/"changelog-${changelog.entries.length}-${changelog.entries[0]?.hash ?? '0'}"`,
+    });
   }
 
   await ensureSchedule(env);

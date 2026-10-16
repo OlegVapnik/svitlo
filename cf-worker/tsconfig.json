@@ -11,9 +11,13 @@
     "noUnusedParameters": true,
     "noEmit": true,
     "skipLibCheck": true,
+    // JSON-модули: воркер раздаёт чейнджлог (cf-worker/src/data/changelog.json) прямо из бандла.
+    // Файл генерирует tools/gen_changelog.mjs, поэтому он всегда в репозитории и попадает в сборку
+    // wrangler — без чтения file system, которого в Workers нет.
+    "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.json"]
 }
