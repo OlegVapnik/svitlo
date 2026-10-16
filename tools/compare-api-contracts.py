@@ -7,6 +7,12 @@
 поэтому сравниваем не тексты, а СТРУКТУРУ: какие ключи есть, каких не хватает и где типы
 различаются. Диффы текстов бесполезны — значения зависят от данных и времени.
 
+Форму сверяем внутри обязательных полей (REQUIRED): полное сравнение всего тела давало ложные
+расхождения там, где контракт цел, потому что в локальной базе лежат одни данные, а в облачной
+— другие. Типы приводим к JSON (`99` и `99.0` — одно и то же число), а `null` считаем пустой
+веткой, а не другим типом. Расхождения, зависящие от данных, печатаются только с --verbose:
+по умолчанию отчёт должен читаться однозначно — «контракт цел» или «контракт сломан».
+
 Запуск:
     python3 tools/compare-api-contracts.py
     python3 tools/compare-api-contracts.py --only status,incidents
@@ -143,9 +149,36 @@ def dig(payload, dotted):
     return current
 
 
+# `null` — это не «другой тип», а пустая ветка: в облачной базе нет расписания, и
+# `nextAttemptAt: null` там честнее выдуманной даты. Считаем такой скелет допустимым.
+NULL_WILDCARD = "null"
+
+
+def _json_kind(value):
+    """Имя JSON-типа значения — именно JSON, а не Python.
+
+    `99` и `99.0` в JSON — одно и то же число, а Python различает int и float. Без этого
+    приведения сверка ругалась бы на `reliabilityPct: 97.3` против `97`, то есть на разные
+    ЗНАЧЕНИЯ, а не на разные типы, и настоящая поломка контракта тонула бы в этих строках.
+    """
+    if value is None:
+        return NULL_WILDCARD
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    return type(value).__name__
+
+
 def _type_name(value):
     """Имя типа для отчёта; MISSING — «нет ключа»."""
-    return "нет ключа" if value is MISSING else type(value).__name__
+    return "нет ключа" if value is MISSING else _json_kind(value)
 
 
 def shape(value, depth=0):
@@ -159,7 +192,40 @@ def shape(value, depth=0):
         # одинаковую форму в обоих ответах по первому элементу и различаться дальше,
         # а простой list[0] этого не показывал.
         return [shape(item, depth + 1) for item in value[:5]]
-    return type(value).__name__
+    return _json_kind(value)
+
+
+def diff_shapes(reference, worker, path, notes):
+    """Расхождения ФОРМ внутри поддерева обязательного поля.
+
+    Возвращает список проблем, а в `notes` складывает расхождения, зависящие от данных:
+    ключ есть только в одном источнике, разная длина списков. Их в счётчик проблем не берём —
+    иначе разные базы (локальная с одной областью и облачная) выглядели бы как сломанный
+    контракт, и настоящий сигнал тонул бы в шуме. Ровно это и давало прежние «проблем: 13»
+    на полностью исправных ответах.
+    """
+    if reference == NULL_WILDCARD or worker == NULL_WILDCARD:
+        return []
+    if isinstance(reference, dict) and isinstance(worker, dict):
+        problems = []
+        for key in sorted(set(reference) | set(worker)):
+            child = f"{path}.{key}"
+            if key not in reference or key not in worker:
+                side = "воркере" if key not in reference else "эталоне"
+                notes.append(f"{child}: ключ только в {side}")
+                continue
+            problems += diff_shapes(reference[key], worker[key], child, notes)
+        return problems
+    if isinstance(reference, list) and isinstance(worker, list):
+        if len(reference) != len(worker):
+            notes.append(f"{path}[]: элементов эталон={len(reference)} воркер={len(worker)}")
+        problems = []
+        for index, (left, right) in enumerate(zip(reference, worker)):
+            problems += diff_shapes(left, right, f"{path}[{index}]", notes)
+        return problems
+    if reference != worker:
+        return [f"{path}: эталон={reference} воркер={worker}"]
+    return []
 
 
 def main():
@@ -185,26 +251,52 @@ def main():
             problems += 1
             continue
 
+        notes = []
+        shape_problems = []
         for field in REQUIRED.get(name, []):
             ref_value = dig(reference, field)
             wrk_value = dig(worker, field)
             if wrk_value is MISSING:
                 problems += 1
                 print(f"  ✗ {field}: КЛЮЧА НЕТ в воркере (эталон: {_type_name(ref_value)})")
-            else:
-                ref_kind = "нет ключа" if ref_value is MISSING else _type_name(ref_value)
-                kind = "нет ключа" if ref_value is MISSING else _type_name(wrk_value)
-                mark = "  " if (ref_value is MISSING or _type_name(ref_value) == kind) else "~ "
-                print(f"  {mark}{field}: эталон={ref_kind} воркер={kind}")
+                continue
+            if ref_value is MISSING:
+                # Обратная сторона тоже расхождение: поле, которого нет в эталоне, появилось в
+                # воркере — значит контракты разъехались, и это стоит увидеть.
+                notes.append(f"{field}: ключ только в воркере")
+                print(f"  ? {field}: есть только в воркере")
+                continue
 
-        if shape(reference) != shape(worker):
-            problems += 1
-            print("  ! СТРУКТУРЫ РАЗЛИЧАЮТСЯ")
-            if args.verbose:
-                print(f"    эталон: {json.dumps(shape(reference), ensure_ascii=False)[:600]}")
-                print(f"    воркер: {json.dumps(shape(worker), ensure_ascii=False)[:600]}")
+            ref_kind, kind = _type_name(ref_value), _type_name(wrk_value)
+            if ref_kind == kind and kind not in ("dict", "list"):
+                print(f"  ✓ {field}: {ref_kind}")
+                continue
+
+            # Форму сверяем внутри ОБЯЗАТЕЛЬНОГО поля, а не по всему телу: значения зависят от
+            # данных (в локальной базе одна область, в облачной — другая), и полное сравнение
+            # тела давало ложные «проблемы» на исправных ответах.
+            field_problems = diff_shapes(shape(ref_value), shape(wrk_value), field, notes)
+            if field_problems:
+                shape_problems += field_problems
+                print(f"  ✗ {field}: эталон={ref_kind} воркер={kind}")
+            elif ref_kind != kind:
+                print(f"  ≈ {field}: эталон={ref_kind} воркер={kind} (null на пустой ветке)")
+            else:
+                print(f"  ✓ {field}: {ref_kind}")
+
+        if shape_problems:
+            problems += len(shape_problems)
+            for problem in shape_problems:
+                print(f"    ✗ {problem}")
+            print("  ! ФОРМЫ ОБЯЗАТЕЛЬНЫХ ПОЛЕЙ РАЗЛИЧАЮТСЯ")
         else:
-            print("  ✓ структуры совпадают")
+            print("  ✓ формы обязательных полей совпадают")
+
+        # Зависимые от данных расхождения показываем только по --verbose: по умолчанию отчёт
+        # должен читаться как «контракт цел / контракт сломан».
+        if notes and args.verbose:
+            for note in notes:
+                print(f"    · {note} (зависит от данных)")
 
         # ETag: клиент присылает его в If-None-Match и ждёт 304 без тела. Без этой проверки обещание
         # «не тратим трафик» держится только на честном слове: 200 с тем же содержимым тоже выглядит
