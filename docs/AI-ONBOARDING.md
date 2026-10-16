@@ -74,6 +74,14 @@ python3 tools/compare-api-contracts.py
 ./tools/build-android-apk.sh "https://svitlo-api.olegvapnik45.workers.dev/api/v1"
 ```
 
+Шаг 1 `./deploy-cf.sh` переносит в D1 справочник адресов (НП из реестра КОАТУУ и GeoNames,
+черги, привязки) — без него облачный мастер адреса знает одно село из тысячи. Отдельный запуск
+того же шага (идемпотентен, community-записи в D1 не перетирает):
+
+```bash
+node tools/sync-directory-to-d1.mjs --apply --verify
+```
+
 ## Жёсткие ограничения
 
 1. **Никаких выдуманных данных.** Пустой ответ — честный EmptyState. Зелёное «Світло є»

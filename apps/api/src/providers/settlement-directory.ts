@@ -44,8 +44,15 @@ interface DirectoryFile {
   regions: Record<string, RegionDirectory>;
 }
 
-/** cpu области приложения → код области в КОАТТГ. */
-const REGION_KATOTTG: Record<string, string> = {
+/**
+ * cpu области приложения → код области в КОАТТГ.
+ *
+ * Экспортируется не «на всякий случай»: этим же списком пользуется
+ * `tools/sync-directory-to-d1.mjs`, который переносит справочник в продовую D1. Второй,
+ * отдельно написанный список рано или поздно разошёлся бы с этим — и облако перестало бы
+ * находить НП, которые находит Node-бэкенд.
+ */
+export const REGION_KATOTTG: Record<string, string> = {
   'chernihivska-oblast': 'UA74000000000025378',
 };
 
