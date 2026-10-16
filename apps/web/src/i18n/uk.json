@@ -18,6 +18,11 @@
     "monitorOutages": "Відключення",
     "monitorIncidents": "Події"
   },
+  "theme": {
+    "label": "Тема оформлення",
+    "toLight": "Увімкнути світлу тему",
+    "toDark": "Увімкнути темну тему"
+  },
   "status": {
     "stable": "Стабільно",
     "warning": "Можливі збої",

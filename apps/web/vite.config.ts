@@ -30,8 +30,11 @@ export default defineConfig({
         lang: 'uk',
         start_url: '/',
         display: 'standalone',
-        theme_color: '#050807',
-        background_color: '#050807',
+        // Цвета манифеста видит система ДО загрузки CSS: по ним окрашивается строка состояния
+        // установленного приложения и фон окна при запуске. Здесь — фон тёмной темы из
+        // globals.css (--md-surface-dim), иначе при старте мелькала бы старая болотная заливка.
+        theme_color: '#09090b',
+        background_color: '#09090b',
         icons: [
           {
             src: '/icons/icon.svg',

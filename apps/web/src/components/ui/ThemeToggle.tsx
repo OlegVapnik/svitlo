@@ -1,52 +1,55 @@
-import { Monitor, Moon, Sun } from 'lucide-react';
-import { useTheme, type ThemePreference } from '@/hooks/useTheme';
+import { Moon, Sun } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/lib/cn';
 
 /**
- * Переключатель темы: Авто / Світла / Темна.
+ * Переключатель темы — одна кнопка: світла ↔ темна.
  *
- * Три кнопки в ряд, а не иконка-переключатель: режим «Авто» нельзя выразить двумя
- * состояниями, и человек, который выбрал его один раз, не должен его терять. Каждая
- * кнопка — обычная кнопка с aria-pressed, поэтому работает и с клавиатуры.
- *
- * Класс .font-timer НЕ используем: подписи короткие, моноширинный здесь смотрелся бы
- * как чужеродный.
+ * ПОЧЕМУ НЕ ТРИ КНОПКИ. Раньше здесь стоял сегмент «Авто / Світла / Темна» из трёх кнопок по
+ * 44px: вместе с логотипом и чипом области он переставал помещаться в ширину телефона, и
+ * элементы шапки налезали друг на друга. Режим «Авто» при этом дублировал системную настройку и
+ * делал поведение невидимым. Одна кнопка показывает текущую тему иконкой (солнце/луна) и
+ * переключает её одним касанием: состояние читается и по иконке, и по aria-pressed, поэтому
+ * цвет не единственный сигнал.
  */
-const OPTIONS: Array<{ value: ThemePreference; label: string; Icon: typeof Sun }> = [
-  { value: 'auto', label: 'Авто', Icon: Monitor },
-  { value: 'light', label: 'Світла', Icon: Sun },
-  { value: 'dark', label: 'Темна', Icon: Moon },
-];
-
 export const ThemeToggle = () => {
-  const { preference, setPreference } = useTheme();
+  const { t } = useTranslation();
+  const { theme, setPreference } = useTheme();
+  const isDark = theme === 'dark';
+  const label = isDark ? t('theme.toLight') : t('theme.toDark');
 
   return (
-    <div
-      role="group"
-      aria-label="Тема оформлення"
-      className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5"
+    <button
+      type="button"
+      onClick={() => setPreference(isDark ? 'light' : 'dark')}
+      aria-pressed={isDark}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
+        'border border-border bg-card text-on-surface-variant transition-colors',
+        'hover:bg-surface-container-highest hover:text-on-surface',
+        'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring',
+      )}
     >
-      {OPTIONS.map(({ value, label, Icon }) => {
-        const active = preference === value;
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setPreference(value)}
-            aria-pressed={active}
-            title={label}
-            className={cn(
-              'inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-2.5',
-              'text-xs font-semibold transition-colors',
-              active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
-            )}
-          >
-            <Icon className="h-4 w-4" aria-hidden />
-            <span className="sr-only sm:not-sr-only">{label}</span>
-          </button>
-        );
-      })}
-    </div>
+      {/* Обе иконки стоят в одной точке: смена — кроссфейд, без «моргания» пустого места. */}
+      <Sun
+        className={cn(
+          'absolute h-4 w-4 transition-[opacity,transform] duration-200',
+          isDark ? 'scale-50 opacity-0' : 'scale-100 opacity-100',
+        )}
+        strokeWidth={2.2}
+        aria-hidden
+      />
+      <Moon
+        className={cn(
+          'absolute h-4 w-4 transition-[opacity,transform] duration-200',
+          isDark ? 'scale-100 opacity-100' : 'scale-50 opacity-0',
+        )}
+        strokeWidth={2.2}
+        aria-hidden
+      />
+    </button>
   );
 };

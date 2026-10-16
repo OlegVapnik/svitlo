@@ -42,12 +42,11 @@
   --animate-fade-in: fade-in 220ms ease-out both;
   --animate-rise: rise 260ms ease-out both;
   --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
-  /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны (24px, см.
+  /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны (28px, см.
      WAVELENGTH в WavyProgressBar) делает цикл бесшовным — тайл повтора встаёт сам в себя.
      Скорость приходит с элемента через inline animationDuration: у спокойных состояний
      волна течёт медленнее, но форма и высота не меняются, поэтому полоса не «дёргается». */
   --animate-wave-slide: wave-slide 1.3s linear infinite;
-  --animate-pin-in: pin-in 320ms var(--ease-m3-standard) both;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -66,15 +65,9 @@
      волну, и затухающий пунктир — разной остаётся только скорость. */
   @keyframes wave-slide {
     from { transform: translateX(0); }
-    to { transform: translateX(var(--wave-shift, -24px)); }
-  }
-  /* Пин «Зараз HH:MM» на 24-часовой шкале: влетает пружинкой, чтобы его заметили. */
-  @keyframes pin-in {
-    from { opacity: 0; transform: translateY(6px) scale(0.9); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    to { transform: translateX(var(--wave-shift, -28px)); }
   }
 }
-
 /* Семантические цвета привязаны к переменным темы. `inline` обязателен: утилита получает ровно
    hsl(var(--background)), поэтому .dark подменяет значение в рантайме, а не на этапе сборки.
    Как следствие работают и модификаторы прозрачности: bg-primary/10, border-primary/40. */
@@ -381,6 +374,12 @@
   }
 
   html {
+    /* Безопасные зоны телефона в CSS-пикселях. В браузере их знает env(safe-area-inset-*),
+       а Android-WebView (нативная обёртка) inset'ы строки состояния в CSS НЕ отдаёт — поэтому
+       нативная сторона измеряет их сама (MainActivity → window.SvitloInsets) и пишет сюда,
+       см. src/hooks/useSafeAreaInsets.ts. По умолчанию 0 — тогда работает только env(). */
+    --safe-top: 0px;
+    --safe-bottom: 0px;
     scroll-behavior: smooth;
     color-scheme: light;
     background-color: var(--md-surface-dim);
@@ -394,8 +393,9 @@
   }
 
   body {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+    /* Верх і низ безпечних зон живут на самих панелях (`.pt-safe` у шапки, `.pb-safe` у нижньої
+       навігації), а не тут. Причина: шапка `sticky` — padding предка її не зсуває, і при
+       прокручуванні вона прилипала до y=0 та налазила на строку стану телефона. */
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
     -webkit-font-smoothing: antialiased;
@@ -509,8 +509,15 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Верхний отступ под строку состояния телефона: максимум из системного значения браузера
+     и измеренного нативной обёрткой (--safe-top). Нужен на sticky-шапке: только так её
+     содержимое уезжает ниже часов/иконок батареи, а её фон закрашивает саму зону. */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), var(--safe-top, 0px));
+  }
+
   /* Нижний отступ под мобильную навигацию с учётом «жеста» iPhone/Android. */
   .pb-safe {
-    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+    padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom, 0px)) + 0.5rem);
   }
 }

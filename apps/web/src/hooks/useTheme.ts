@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 
 /**
- * Тема оформления: три режима, а не два.
+ * Тема оформления: ровно две — світла и темна.
  *
- * Почему «Авто» отдельным режимом, а не просто значением по умолчанию: у человека,
- * который днём ходит со светлой темой (батарея на максимуме ради читаемости на солнце),
- * а ночью — с тёмной (OLED экономит батарею, блики не бьют в глаза), переключать вручную
- * нужно каждый раз. Режим «Авто» берёт системную настройку и следит за её сменой.
+ * Почему убран режим «Авто». Он выглядел удобным, но переключатель из-за него состоял из трёх
+ * кнопок, и на телефоне шапка (логотип + область + три кнопки) переставала помещаться в ширину
+ * экрана — элементы налезали друг на друга. Плюс поведение «само следует за системой» было
+ * невидимым: два телефона с одинаковыми настройками выглядели по-разному, и человек не понимал,
+ * почему. Одна кнопка «світла/темна» отвечает на один вопрос и не врёт: что выбрано, то и стоит.
+ *
+ * Старое сохранённое значение 'auto' не выбрасываем: при чтении превращаем его в системную тему
+ * и сохраняем как явный выбор (миграция без потери поведения) — см. readPreference.
  */
 
 const THEME_KEY = 'theme';
@@ -14,10 +18,11 @@ const THEME_KEY = 'theme';
 /**
  * По умолчанию — тёмная тема: приложение открывают ночью и в темноте, а на AMOLED
  * чистый чёрный физически выключает пиксели. Если у человека в системе выбрана светлая,
- * «Авто» всё равно даст светлую — но явного выбора пользователя мы не перебиваем.
+ * первый запуск всё равно даст тёмную — но дальше решает только его выбор.
  */
-export type ThemePreference = 'auto' | 'light' | 'dark';
-export type ResolvedTheme = 'light' | 'dark';
+export type ThemePreference = 'light' | 'dark';
+/** Разрешённая тема совпадает с предпочтением: промежуточного режима больше нет. */
+export type ResolvedTheme = ThemePreference;
 
 /**
  * Цвета строки состояния телефона — ровно фон приложения (--md-surface-dim): тёмная тема #09090B
@@ -27,36 +32,40 @@ export type ResolvedTheme = 'light' | 'dark';
  */
 export const THEME_VALUES: Record<ResolvedTheme, string> = { light: '#f1f5f9', dark: '#09090b' };
 
-/** Читаемое сохранённое значение; битое или отсутствующее — «auto». */
-function readPreference(): ThemePreference {
-  try {
-    const stored = localStorage.getItem(THEME_KEY);
-    return stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto';
-  } catch {
-    // Приватный режим: хранилище недоступно — считаем, что выбора не было.
-    return 'auto';
-  }
-}
-
 function prefersDark(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
 }
 
-export function resolveTheme(preference: ThemePreference): ResolvedTheme {
-  return preference === 'auto' ? (prefersDark() ? 'dark' : 'light') : preference;
+/**
+ * Читаемое сохранённое значение.
+ *
+ * 'auto' — наследие прошлых версий: превращаем его в системную тему и тут же сохраняем как
+ * явный выбор, чтобы решение не пересчитывалось на каждом запуске (иначе казалось бы, что
+ * переключатель снова «сам» переключился).
+ */
+function readPreference(): ThemePreference {
+  const system: ThemePreference = prefersDark() ? 'dark' : 'light';
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === 'light' || stored === 'dark') return stored;
+    localStorage.setItem(THEME_KEY, system);
+    return system;
+  } catch {
+    // Приватный режим: хранилище недоступно — считаем, что выбора не было.
+    return system;
+  }
 }
 
 /** Применяет тему вне React: класс на <html> и цвет строки состояния телефона. */
 export function applyTheme(preference: ThemePreference): ResolvedTheme {
-  const resolved = resolveTheme(preference);
-  document.documentElement.classList.toggle('dark', resolved === 'dark');
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_VALUES[resolved]);
+  document.documentElement.classList.toggle('dark', preference === 'dark');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_VALUES[preference]);
   try {
     localStorage.setItem(THEME_KEY, preference);
   } catch {
     // Хранилище недоступно — тема применится, но не переживёт перезагрузку. Это не повод падать.
   }
-  return resolved;
+  return preference;
 }
 
 /**
@@ -65,33 +74,26 @@ export function applyTheme(preference: ThemePreference): ResolvedTheme {
  * Первое применение делает инлайн-скрипт в index.html ДО отрисовки: иначе на холодной
  * загрузке страница мигает светлой, а на телефоне цвет строки состояния остаётся от
  * прошлой темы. Событие `svitlo:theme` нужно потому, что хук используют независимо
- * несколько компонентов (переключатель в шапке, графики): без него они разошлись бы по теме.
+ * несколько компонентов (кнопка в шапке, графики): без него они разошлись бы по теме.
  *
- * В режиме «Авто» подписываемся на смену системной настройки — переключение темы в
- * системе должно отражаться в приложении сразу, без перезапуска.
+ * Подписки на смену системной настройки больше нет: тема не «следует за системой», её
+ * выбирает человек. Иначе системное переключение ночью молча перебивало бы выбор.
  */
 export function useTheme() {
   const [preference, setPreferenceState] = useState<ThemePreference>(readPreference);
-  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(readPreference()));
+  const [resolved, setResolved] = useState<ResolvedTheme>(() => readPreference());
 
   useEffect(() => {
     setResolved(applyTheme(preference));
 
     const sync = (event: Event) => {
       const next = (event as CustomEvent<ThemePreference>).detail;
-      if (next === 'light' || next === 'dark' || next === 'auto') setPreferenceState(next);
+      if (next === 'light' || next === 'dark') setPreferenceState(next);
     };
     window.addEventListener('svitlo:theme', sync);
 
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const onSystemChange = () => {
-      if (readPreference() === 'auto') setResolved(applyTheme('auto'));
-    };
-    media?.addEventListener('change', onSystemChange);
-
     return () => {
       window.removeEventListener('svitlo:theme', sync);
-      media?.removeEventListener('change', onSystemChange);
     };
   }, [preference]);
 

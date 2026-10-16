@@ -3,6 +3,8 @@ import { useBatterySaver } from '../../hooks/useBatterySaver.js';
 import { useOfflineSync } from '../../hooks/useOfflineSync.js';
 import { useOutageNotifications } from '../../hooks/useOutageNotifications.js';
 import { usePowerState } from '../../hooks/usePowerState.js';
+import { useSafeAreaInsets } from '../../hooks/useSafeAreaInsets.js';
+import { useSwipeTabs } from '../../hooks/useSwipeTabs.js';
 import { Header } from './Header.js';
 import { BottomNav } from './BottomNav.js';
 import { Sidebar } from './Sidebar.js';
@@ -19,6 +21,9 @@ import { Sidebar } from './Sidebar.js';
  * от которого зависит цвет акцентов состояния (бейдж, таймер, линия прогресса, свечение).
  * Один писатель на приложение: если бы статус красил каждый экран сам, цвет «мигал» бы при
  * переходах между страницами.
+ *
+ * Свайп между табами висит на этом же контейнере: жест должен работать и над контентом, и над
+ * шапкой, а не только внутри <main>.
  */
 export const AppShell = () => {
   // Один вызов на всё приложение: класс ставится на <html> и гасит анимации разом.
@@ -30,9 +35,13 @@ export const AppShell = () => {
   // Акценты состояния: статус сети больше не перекрашивает оболочку — только бейдж, таймер,
   // линию прогресса и свечение (см. --md-status* в globals.css).
   usePowerState();
+  // Безопасные зоны для нативной обёртки: в WebView env(safe-area-inset-*) нет.
+  useSafeAreaInsets();
+  // Горизонтальный свайп переключает нижние табы — на телефоне это быстрее, чем целиться в иконку.
+  const swipe = useSwipeTabs();
 
   return (
-  <div className="flex min-h-dvh flex-col bg-surface-dim">
+  <div className="flex min-h-dvh flex-col bg-surface-dim" {...swipe}>
     <a
       href="#main"
       className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-60 focus:rounded-lg focus:bg-surface-container-high focus:px-4 focus:py-2 focus:text-sm focus:shadow-pop"

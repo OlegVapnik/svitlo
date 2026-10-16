@@ -11,18 +11,22 @@
     <title>Svitlo — Чернігів</title>
     <script>
       /* Тема применяется ДО первой отрисовки. Иначе на холодной загрузке мигает светлая тема,
-         а на телефоне цвет строки состояния остаётся от прошлой. По умолчанию — «auto»,
-         а при первом запуске (нет сохранённого выбора) — тёмная: приложение открывают ночью,
-         и на AMOLED чёрный физически выключает пиксели.
+         а на телефоне цвет строки состояния остаётся от прошлой. Режимов ровно два — світла и
+         темна: «Авто» убран, потому что переключатель стал одной кнопкой, а поведение «само
+         следует за системой» путало: приложение выглядело по-разному на двух телефонах
+         с одинаковыми настройками. Старое сохранённое 'auto' мигрируем один раз в системную
+         тему и записываем как явный выбор — так поведение остаётся прежним, но становится
+         видимым и переключаемым.
          Значения цветов должны совпадать с палитрой в src/styles/globals.css. */
       (function () {
         try {
           var stored = localStorage.getItem('theme');
-          var pref = stored === 'light' || stored === 'dark' || stored === 'auto' ? stored : 'auto';
           var dark =
-            pref === 'auto'
-              ? window.matchMedia('(prefers-color-scheme: dark)').matches
-              : pref === 'dark';
+            stored === 'dark' ||
+            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (stored !== 'light' && stored !== 'dark') {
+            localStorage.setItem('theme', dark ? 'dark' : 'light');
+          }
           document.documentElement.classList.toggle('dark', dark);
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) meta.setAttribute('content', dark ? '#09090b' : '#f1f5f9');

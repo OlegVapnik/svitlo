@@ -2,12 +2,13 @@ import React, { useId } from 'react';
 import { cn } from '../../lib/cn.js';
 
 /**
- * Линия прогресса слота — тонкая волнистая змейка состояния (M3 wavy progress).
+ * Линия прогресса слота — волнистая змейка состояния (M3 wavy progress).
  *
- * ГЕОМЕТРИЯ. Волна низкая и ровная: амплитуда 3px, длина волны 24px, толщина линии 2.5px,
- * высота полосы 24px. Раньше линия была вдвое толще, а амплитуда «дышала» от состояния —
- * на телефоне это читалось как дрожание. Теперь форма волны одна на все состояния: меняются
- * только цвет (токены состояния) и скорость течения (проп `tone`).
+ * ГЕОМЕТРИЯ. Волна спокойная, но заметная: амплитуда 4.5px, длина волны 28px, толщина линии
+ * 3.5px, высота полосы 32px. Раньше линия была вдвое тоньше и ниже (2.5px / 24px) — на телефоне
+ * её приходилось разглядывать, а рядом стоящий таймер визуально её перевешивал. Амплитуда не
+ * зависит от состояния: форма одна на все состояния, меняются только цвет (токены состояния) и
+ * скорость течения (проп `tone`), иначе полоса «дышала» и читалась как дрожание.
  *
  * ПОЧЕМУ ТАЙЛ, А НЕ ОДНА ДЛИННАЯ КРИВАЯ. Ширина слота неизвестна (телефон 320px, десктоп
  * 1200px). Одна кривая на всю ширину потребовала бы либо растяжки
@@ -23,10 +24,10 @@ import { cn } from '../../lib/cn.js';
 export type WaveTone = 'on' | 'warning' | 'off' | 'unknown';
 
 /** Длина волны, высота полосы, толщина линии и амплитуда — в пикселях. Сдвиг волны = длина. */
-const WAVELENGTH = 24;
-const STRIP_HEIGHT = 24;
-const STROKE = 2.5;
-const AMPLITUDE = 3;
+const WAVELENGTH = 28;
+const STRIP_HEIGHT = 32;
+const STROKE = 3.5;
+const AMPLITUDE = 4.5;
 
 /** Скорость течения волны: у спокойных состояний медленнее — тревога не «несётся». */
 const SPEED: Record<WaveTone, number> = { on: 1.3, warning: 1.8, off: 2.4, unknown: 3 };
@@ -77,7 +78,7 @@ export const WavyProgressBar: React.FC<WavyProgressBarProps> = ({
 
   return (
     <div className={cn('w-full', className)} {...rest}>
-      <div className="relative h-6">
+      <div className="relative h-8">
         {/* Оставшаяся часть — спокойная прямая линия на всю ширину. */}
         <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 rounded-full bg-track" aria-hidden />
 
@@ -87,7 +88,7 @@ export const WavyProgressBar: React.FC<WavyProgressBarProps> = ({
           style={{ width: `${clamped}%` }}
           aria-hidden
         >
-          <svg className="absolute left-0 top-0 h-6 w-full">
+          <svg className="absolute left-0 top-0 h-8 w-full">
             <defs>
               <pattern id={waveId} width={WAVELENGTH} height={STRIP_HEIGHT} patternUnits="userSpaceOnUse">
                 {/* Копия волны со сдвигом ровно на длину волны: за время цикла группа уезжает
@@ -113,14 +114,14 @@ export const WavyProgressBar: React.FC<WavyProgressBarProps> = ({
 
         {/* Риска-ползунок на стыке: белая, с ореолом цвета состояния. */}
         <span
-          className="absolute top-1/2 z-10 h-4 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white text-status shadow-[0_0_10px_currentColor] transition-[left] duration-700 ease-[var(--ease-m3-standard)]"
+          className="absolute top-1/2 z-10 h-5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white text-status shadow-[0_0_10px_currentColor] transition-[left] duration-700 ease-[var(--ease-m3-standard)]"
           style={{ left: `${clamped}%` }}
           aria-hidden
         />
       </div>
 
       {(elapsedLabel || percentLabel || remainingLabel) && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-on-surface-variant">
+        <div className="mt-2.5 flex items-center justify-between gap-2 text-xs font-semibold text-on-surface-variant">
           <span className="truncate">{elapsedLabel}</span>
           {percentLabel && <span className="shrink-0 tabular text-on-surface">{percentLabel}</span>}
           <span className="truncate text-right">{remainingLabel}</span>

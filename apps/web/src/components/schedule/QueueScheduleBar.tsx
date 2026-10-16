@@ -104,24 +104,14 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
           );
         })}
 
-        {/* Пин «Зараз HH:MM»: единственная подвижная точка полосы, поэтому у него есть подпись
-            и иконка часов — искать бегунок глазами не приходится. */}
+        {/* Линия «зараз» — только линия: раньше на ней же висела белая плашка с временем и
+            закрывала сегменты графика. Время переехало текстом в строку легенды под полосой. */}
         {nowMinutes != null && nowMinutes >= 0 && nowMinutes <= 1440 && (
-          <>
-            <span
-              className="pointer-events-none absolute inset-y-0 z-10 w-px -translate-x-1/2 bg-white/80"
-              style={{ left: `${(nowMinutes / 1440) * 100}%` }}
-              aria-hidden
-            />
-            <span
-              className="pointer-events-none absolute top-1/2 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 animate-pin-in items-center gap-1 rounded-md bg-white px-1.5 py-1 text-[10px] font-bold leading-none text-zinc-900 shadow-pop"
-              style={{ left: `${(nowMinutes / 1440) * 100}%` }}
-              aria-label={t('schedule.now')}
-            >
-              <Clock className="h-3 w-3" strokeWidth={2.6} aria-hidden />
-              {t('schedule.now')} {minutesToHm(nowMinutes)}
-            </span>
-          </>
+          <span
+            className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 rounded-full bg-white/85"
+            style={{ left: `${(nowMinutes / 1440) * 100}%` }}
+            aria-hidden
+          />
         )}
       </div>
 
@@ -134,7 +124,7 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
         <span>24:00</span>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {legend.map((item) => (
           <span
             key={`${item.name}-${item.code}`}
@@ -144,6 +134,16 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
             {item.name}
           </span>
         ))}
+
+        {/* Время «зараз» — текстом рядом с легендой, а не белой плашкой на полосе: плашка
+            закрывала сегменты графика, хотя точку «сейчас» и так отмечает белая риска. */}
+        {nowMinutes != null && nowMinutes >= 0 && nowMinutes <= 1440 && (
+          <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
+            <span className="h-3.5 w-[2px] rounded-full bg-white/85" aria-hidden />
+            <Clock className="h-3 w-3" strokeWidth={2.4} aria-hidden />
+            {t('schedule.now')} {minutesToHm(nowMinutes)}
+          </span>
+        )}
       </div>
 
       {showSummary && (

@@ -195,24 +195,16 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             );
           })}
 
-          {/* Линия «зараз» внутри шкалы + пин с временем: раньше бегунок выходил за пределы
-              полосы и налезал на подписи часов, поэтому теперь он живёт внутри сегмента. */}
+          {/* Линия «зараз» — только линия. Подпись «Зараз HH:MM» раньше висела белой плашкой
+              ровно на шкале и закрывала сегменты: на телефоне это выглядело как дыра в графике.
+              Теперь время стоит текстом в строке легенды под шкалой, а на самой шкале остаётся
+              тонкая белая риска — видно, где сейчас, и ничего не перекрыто. */}
           {timeMarker && (
-            <>
-              <span
-                className="pointer-events-none absolute inset-y-0 z-10 w-px -translate-x-1/2 bg-white/80"
-                style={{ left: `${timeMarker.percent}%` }}
-                aria-hidden
-              />
-              <span
-                className="pointer-events-none absolute top-1/2 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 animate-pin-in items-center gap-1 rounded-md bg-white px-1.5 py-1 text-[10px] font-bold leading-none text-zinc-900 shadow-pop"
-                style={{ left: `${timeMarker.percent}%` }}
-                aria-hidden
-              >
-                <Clock className="h-3 w-3" strokeWidth={2.6} />
-                {t('schedule.now')} {timeMarker.timeFormatted}
-              </span>
-            </>
+            <span
+              className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 rounded-full bg-white/85"
+              style={{ left: `${timeMarker.percent}%` }}
+              aria-hidden
+            />
           )}
         </div>
 
@@ -307,9 +299,16 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         </div>
 
         {timeMarker && (
-          <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
-            <Info className="h-3 w-3" strokeWidth={2.3} aria-hidden />
-            {t('timeline.useArrowsHint')}
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
+              <span className="h-3.5 w-[2px] rounded-full bg-white/85" aria-hidden />
+              <Clock className="h-3 w-3" strokeWidth={2.4} aria-hidden />
+              {t('schedule.now')} {timeMarker.timeFormatted}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
+              <Info className="h-3 w-3" strokeWidth={2.3} aria-hidden />
+              {t('timeline.useArrowsHint')}
+            </span>
           </span>
         )}
       </div>
