@@ -5,12 +5,12 @@
 
 ---
 
-## 1. Текущий снимок состояния (на 2026-10-14 / продолжаем сессию)
+## 1. Текущий снимок состояния (на 2026-10-16 / продолжаем сессию)
 
 | Показатель | Состояние |
 |---|---|
-| **Последний проверенный коммит** | `3af1936` (мобильная шапка, статус-бар и свайп табов, v2.7.0; тесты API — `6c8706e`) |
-| **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. Безопасные зоны телефона — утилиты `.pt-safe`/`.pb-safe` (максимум из `env()` и нативных инсетов `window.SvitloInsets` от `MainActivity`); табы листаются свайпом (`lib/swipe-tabs.ts`). Тема — ровно две (світла/темна), режима «Авто» нет. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
+| **Последний проверенный коммит** | `580cc24` (зум, отступ от статус-бара и переходы табов; CORS офлайн-пакета — `5f791ea`, v2.8.0) |
+| **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. Безопасные зоны телефона — утилиты `.pt-safe`/`.pb-safe` (максимум из `env()` и нативных инсетов `window.SvitloInsets` от `MainActivity`); табы листаются свайпом (`lib/swipe-tabs.ts`), смена раздела проявляется мягко (`.tab-enter` + `lib/tab-transition.ts`), зум в APK выключен. Тема — ровно две (світла/темна), режима «Авто» нет. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
 | **Масштаб продукта** | **Вся Украина**: мультирегиональный каталог областей (`GET /api/v1/regions`), автоимпорт ГПВ с всеукраинского зеркала (`source='mirror'`) + Telegram (`source='telegram'`) + агрегатор новостей + **5 провайдеров** (mirror, YASNO, DTEK, e-svitlo, chernihivoblenergo) в `apis/api/src/providers/*.ts` |
 | **Язык интерфейса** | Единый украинский (`uk.json`); `ru.json`, `en.json` и переключатель языков удалены |
 | **Безопасность** | Порт БД закрыт на `127.0.0.1:5432`; `ADMIN_TOKEN` проверяется через `timingSafeEqual` + запрет слабых токенов (<16) в проде; CORS закрыт по умолчанию (`CORS_ORIGINS`); `TRUST_PROXY` настроен; админка вынесена в `ADMIN_ITEMS` |
@@ -82,6 +82,47 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers (Что осталось следующей смене)
 1. ...
 ```
+
+---
+
+## Сессия 2026-10-16: зум, отступ от строки состояния и данные из облака (v2.8.0)
+
+- **Ветка / HEAD:** `redesign/wow-ui` — `5f791ea` (CORS и маршруты воркера) + `580cc24` (зум, инсеты, переходы табов); снимок ниже и чейнджлог — последним коммитом `docs(tools)`
+- **Бэкап БД:** не снимался (схема БД и контракты API не менялись: правки в `apps/web`, `cf-worker` и `tools`)
+- **Релиз:** `./deploy-cf.sh` → воркер `svitlo-api` + Pages `svitlo-ua` (бандл `index-DIxLmv3R.js` / `index-3T5yzZR_.css`); APK `versionCode 112` / `versionName 2.8.0` (`BUILD SUCCESSFUL in 20s`, 4,7 МБ), собран `./tools/build-android-apk.sh https://svitlo-api.olegvapnik45.workers.dev/api/v1`
+
+### Done (Что сделано)
+- **Главное: «данные с сервера не прилетают» — это CORS-preflight, а не отсутствие связи.** Офлайн-пакет `/sync` уходит с `If-None-Match`, а этот заголовок не «простой»: браузер сначала спрашивает `OPTIONS`, и воркер отклонял его, потому что в `ALLOWED_HEADERS` был только `Content-Type` (и не было `POST`). `fetch` падал с сетевой ошибкой, приложение молча жило на данных первой синхронизации. Теперь preflight отвечает тем, о чём спросили (`access-control-request-headers`), методы — `GET, POST, OPTIONS`, а `json()` и ответ 304 отдают расширенный список.
+- **В воркере закрыты дыры маршрутов**, которые фронтенд звал, а зеркало отдавало как 404 «Немає маршруту»: `/news/sources` (по нему на «Інфо» видно, кого читаем), `/street-queues/schedule` и `/places/:account`. Последние два отвечают контрактом эталона («вулиця не прив’язана», `PLACE_NOT_FOUND`) — справочники улиц и лицевых счетов ведёт только Node, зеркало не должно выдумывать привязки.
+- **Шапка в APK больше не залезает под часы.** Инсеты измерялись один раз листенером, а система сообщает их после первой раскладки: пришедший ноль «залипал» в поле, и отступ уже не возвращался. Теперь зоны читаются в момент запроса (`getRootWindowInsets()` → `insetCssPx()`), а мост `window.SvitloInsets` стал `public static class InsetsBridge` с `WeakReference<MainActivity>` (WebView вызывает методы через рефлексию, Activity при этом не течёт). Второй канал — запись `--safe-top`/`--safe-bottom` из `evaluateJavascript` при `onStart`/`onResume`.
+- **Зум в приложении выключен** (`setSupportZoom(false)` + `setBuiltInZoomControls(false)` + `setDisplayZoomControls(false)`): «щипок» и двойной тап больше не уводят панели за край экрана. В браузере зум остался — там это требование доступности.
+- **Смена таба стала мягкой** (это был пункт Next прошлой смены): `.tab-enter` + `lib/tab-transition.ts` (чистая функция направления, 6 кейсов в тесте) + хук `useTabTransition` на двойном `requestAnimationFrame`. Направление выводится из порядка табов, а не из жеста, поэтому тап по нижней панели и свайп выглядят одинаково; `prefers-reduced-motion` и «Економія заряду» гасят переход целиком.
+- **Виден источник списка «Що нового»:** под карточкой стоит «оновлено з сервера <дата>», «з кешу телефону» или «вбудований список» (`ChangelogCard`, ключи `changelog.source*`). Список и раньше приходил с сервера, но по нему нельзя было отличить «фиксы не доехали» от «телефон офлайн».
+- **`deploy-cf.sh` обновляет чейнджлог перед деплоем воркера** (новый шаг 2/5, `gen_changelog.mjs --limit 20`). Раньше файл переписывался только сборкой APK, поэтому деплой без APK публиковал застывший список.
+
+---
+
+### Changed (Ключевые файлы и миграции)
+- Нативное: `apps/web/android/app/src/main/java/ua/com/svitlo/app/MainActivity.java` (`InsetsBridge`, `insetCssPx()`, `observeInsets()`/`onStart`/`onResume`, выключенный зум, канал `--safe-top`/`--safe-bottom`)
+- Новые: `apps/web/src/lib/tab-transition.ts` (+ `tab-transition.test.ts`), `apps/web/src/hooks/useTabTransition.ts`
+- Правленые: `apps/web/src/hooks/useSafeAreaInsets.ts` (живой мост, guard и try/catch, `pageshow`/`visibilitychange`), `components/layout/AppShell.tsx`, `components/changelog/ChangelogCard.tsx`, `styles/globals.css` (`.tab-enter`), `i18n/uk.json` (`changelog.source*`), `apps/web/src/version.ts` (2.7.0 → 2.8.0), `cf-worker/src/index.ts` (CORS + три маршрута), `deploy-cf.sh` (шаг 2/5 — чейнджлог)
+- Миграций БД нет.
+
+### Verified (Чем проверено)
+- `tsc --noEmit` из каталогов `apps/api`, `apps/web`, `cf-worker`: 0 ошибок; `vitest run` (apps/web): **13 файлов, 103/103 passed** (включая 6 новых кейсов `tab-transition`); `check_tailwind_tokens.py` — OK; `scan_secrets.py` — 0 findings
+- **Живой деплой, CORS:** preflight `OPTIONS /sync` с `Access-Control-Request-Headers: if-none-match` → `204` и `access-control-allow-headers: if-none-match`, `access-control-allow-methods: GET, POST, OPTIONS`; preflight `OPTIONS /addresses/contribute` (`POST` + `content-type`) → `204`; `GET /sync?since=0` с `If-None-Match` → `200`, 43 935 байт, `etag W/"9f2b3ad3"` — приложение теперь получает данные, а не отказ
+- **Живые данные:** `/sync?region=chernihivska-oblast&since=0` → 12 групп со слотами (4–5 слотов на группу), справочник НП области, 12 бакетов графика на 16–17.10 (`days: ['2026-10-16','2026-10-17']`); `/news/sources` → 3 источника (ukrenergo — успех в 16:40, chernigivoblenergo — 13:20, dtek_ua — 09:01); `/street-queues/schedule?street=Хрещатик` → честная «вулиця не прив’язана»; `/places/00000000` → `VALIDATION_ERROR` («Особовий рахунок — 9–12 цифр»); `/changelog` → `generatedAt 2026-10-16T17:38:52Z`, верхняя запись `580cc24`
+- **D1 (прод):** `schedule_slots` 658, `news` 76, `directory_settlements` 2284, `directory_streets` 20, `address_queues` 6, `outage_events` **0**
+- **Pages:** в бандле `index-DIxLmv3R.js` есть `2.8.0` и адрес воркера, в `index-3T5yzZR_.css` — `.tab-enter` с `data-nav-direction=next|prev`
+- **APK:** `versionCode 112` / `versionName 2.8.0`, 4 691 685 байт; внутри `assets/public/assets/index-BHs6XKi2.js` с адресом воркера и версией `2.8.0`, в CSS — `.tab-enter`
+- **Не проверено «пальцем»:** зум, зона строки состояния и переходы на живом телефоне — в среде нет устройства, проверка только по коду и по совпадению собранных артефактов с исходниками
+
+### Next / Blockers (Что осталось следующей смене)
+1. Установить APK `2.8.0` (`adb install -r apps/web/android-apk/app-debug.apk`) и проверить: шапка вышла из-под часов, «щипок» и двойной тап не масштабируют, таб появляется мягко, свайп не спорит с прокруткой графика на `monitor`.
+2. **История отключений в облаке пуста** (`outage_events` — 0 строк): таблицу наполняет только обход оператора `runChernihiv`, а `chernihivoblenergo.com.ua` недоступен и с домашней машины, и с границы Cloudflare. Экран истории на облачном пути будет пустым; расписание ГПВ при этом живо (`schedule_slots` 658). Это известное ограничение, а не регресс — см. таблицу «НЕ сделано» в `docs/AI-ONBOARDING.md`.
+3. **Привязки улиц к группам в облаке почти пусты** (6 строк `address_queues`, часть — демо «вул. Тестова»): поиск по улице на облачном пути найдёт справочник НП, но не группу. Ждём географии от источника либо наполнения через `POST /addresses/contribute` (теперь этот метод CORS не блокирует).
+4. `.vscode/settings.json` остаётся локально правленым (`java.configuration.updateBuildConfiguration`: `interactive` → `automatic`) — к продукту отношения не имеет, в коммиты не попал.
+5. Переход между табами — уже CSS-анимация; если захочется «морфинга» разделов, есть запасной путь `document.startViewTransition`, но текущего хватает.
 
 ---
 
