@@ -30,8 +30,8 @@ export default defineConfig({
         lang: 'uk',
         start_url: '/',
         display: 'standalone',
-        theme_color: '#f3efe6',
-        background_color: '#f3efe6',
+        theme_color: '#050807',
+        background_color: '#050807',
         icons: [
           {
             src: '/icons/icon.svg',

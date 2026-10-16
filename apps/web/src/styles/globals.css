@@ -19,17 +19,32 @@
      подставить самохостинг одной строкой, без правки разметки). */
   --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  /* Панели grok плоские: 1px тёплая рамка + поверхность, тени нет. Оставляем едва заметную
-     нижнюю «склейку» для светлого фона; настоящая высота — только у попапов/шторок.
-     Вернуть прежние тени: две строки (см. HANDOFF §16). */
-  --shadow-card: 0 1px 0 0 hsl(var(--shadow-color) / 0.04);
-  --shadow-pop: 0 18px 40px -24px hsl(var(--shadow-color) / 0.5);
+  /* Высота панелей — тональная (см. surface-container-*), тень осталась только у всплывающих
+     слоёв: на OLED тень не видна и стоит перерисовки, поэтому вместо неё работает тон. */
+  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.16);
+  --shadow-pop: 0 18px 40px -24px rgb(0 0 0 / 0.55);
 
   /* Цвета статуса сети переехали в палитру темы: см. @theme inline ниже (--color-status-*). */
+
+  /* --- M3 Expressive: пружинная физика движения ---
+     Material 3 Expressive заменяет линейные ease на «spring»-кривые с перебегом: короткий
+     overshoot даёт ощущение физического предмета, который докатился и остановился. Быстрая
+     кривая — для смены формы и цвета (морфинг кнопки, выбор группы), обычная — для появления
+     и перемещения блоков. Значения — из спеки M3 Expressive motion. */
+  --ease-m3-expressive-fast: cubic-bezier(0.42, 1.67, 0.21, 0.9);
+  --ease-m3-expressive-default: cubic-bezier(0.22, 1.25, 0.36, 1);
+  --ease-m3-standard: cubic-bezier(0.2, 0, 0, 1);
 
   --animate-fade-in: fade-in 220ms ease-out both;
   --animate-rise: rise 260ms ease-out both;
   --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+  /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны делает цикл
+     бесшовным (тайл повтора в WavyProgressBar). Значение сдвига приходит с элемента через
+     --wave-shift: 22px у полной волны, 33px — у «спокойного» технического ритма. */
+  --animate-wave-slide: wave-slide 1.05s linear infinite;
+  --animate-shape-spin: shape-spin 26s linear infinite;
+  --animate-shape-breathe: shape-breathe 4.2s var(--ease-m3-expressive-default) infinite;
+  --animate-pin-in: pin-in 520ms var(--ease-m3-expressive-fast) both;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -43,74 +58,120 @@
     0%, 100% { opacity: 0.55; }
     50% { opacity: 1; }
   }
+  /* Непрерывное движение волнистой змейки (M3 Wavy progress): сдвигаем тайл волны на одну
+     длину. Сдвиг берём из --wave-shift, поэтому одна и та же анимация обслуживает и бодрую
+     волну, и затухающий пунктир — разной остаётся только скорость. */
+  @keyframes wave-slide {
+    from { transform: translateX(0); }
+    to { transform: translateX(var(--wave-shift, -22px)); }
+  }
+  @keyframes shape-spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes shape-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+  /* Пин «Зараз HH:MM» на 24-часовой шкале: влетает пружинкой, чтобы его заметили. */
+  @keyframes pin-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.9); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
 }
 
 /* Семантические цвета привязаны к переменным темы. `inline` обязателен: утилита получает ровно
    hsl(var(--background)), поэтому .dark подменяет значение в рантайме, а не на этапе сборки.
    Как следствие работают и модификаторы прозрачности: bg-primary/10, border-primary/40. */
 @theme inline {
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-success: hsl(var(--success));
-  --color-success-foreground: hsl(var(--success-foreground));
-  --color-warning: hsl(var(--warning));
-  --color-warning-foreground: hsl(var(--warning-foreground));
-  --color-info: hsl(var(--info));
-  --color-info-foreground: hsl(var(--info-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
+  /* --- M3 Expressive: тональные роли поверхностей ---
+     Уровни разделяются светлотой (surface-container-*), а не тенью: на OLED тень не видна и
+     стоит перерисовки. Значения живут в :root/.dark как --md-* — одна точка правки на тему. */
+  --color-surface: var(--md-surface);
+  --color-surface-dim: var(--md-surface-dim);
+  --color-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+  --color-on-surface: var(--md-on-surface);
+  --color-on-surface-variant: var(--md-on-surface-variant);
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
 
-  /* Статус сети. Было: «сырые» #10b981/#f59e0b/#ef4444 — одинаковые в обеих темах, поэтому
-     в тёмной теме тёплые оттенки не читались на свету. Теперь идут из палитры и меняются
-     вместе с темой. */
-  --color-card-raised: hsl(var(--card-raised));
-  --color-border-strong: hsl(var(--border-strong));
-  --color-unknown: hsl(var(--unknown));
-  --color-unknown-soft: hsl(var(--unknown-soft));
-  --color-success-glow: hsl(var(--glow-success) / var(--glow-strength));
-  --color-warning-glow: hsl(var(--glow-warning) / var(--glow-strength));
-  --color-destructive-glow: hsl(var(--glow-destructive) / var(--glow-strength));
-  --color-unknown-glow: hsl(var(--glow-unknown) / var(--glow-strength));
-  --color-status-stable: hsl(var(--success));
-  --color-status-warning: hsl(var(--warning));
-  --color-status-emergency: hsl(var(--destructive));
+  /* --- M3 Primary-группа. Меняется ЦЕЛИКОМ от data-power-state на <html>:
+     «світло є» — изумруд, «скоро вимкнуть» — янтарь, «світла немає» — рубин, нет данных —
+     графит. Это единственная «краска» приложения, поэтому смена статуса перекрашивает
+     интерфейс целиком, а не только бейдж. */
+  --color-primary: var(--md-primary);
+  --color-on-primary: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+
+  /* --- Legacy-роли → те же M3-переменные. Утилиты bg-card / text-muted-foreground /
+     border-border остались в разметке десятков компонентов: пусть указывают на M3-тон, тогда
+     редизайн не превращается в переписывание всех файлов. --- */
+  --color-background: var(--md-surface-dim);
+  --color-foreground: var(--md-on-surface);
+  --color-card: var(--md-surface-container-low);
+  --color-card-foreground: var(--md-on-surface);
+  --color-card-raised: var(--md-surface-container);
+  --color-popover: var(--md-surface-container-high);
+  --color-popover-foreground: var(--md-on-surface);
+  --color-primary-foreground: var(--md-on-primary);
+  --color-secondary: var(--md-surface-container-high);
+  --color-secondary-foreground: var(--md-on-surface);
+  --color-muted: var(--md-surface-container);
+  --color-muted-foreground: var(--md-on-surface-variant);
+  --color-accent: var(--md-surface-container-high);
+  --color-accent-foreground: var(--md-on-surface);
+  --color-border: var(--md-outline-variant);
+  --color-input: var(--md-outline-variant);
+  --color-ring: var(--md-primary);
+  --color-border-strong: var(--md-outline);
+
+  /* Статусы сети — отдельные роли, а не производные от primary: «скоро вимкнуть» не должен
+     красить кнопки так же, как «світла немає». */
+  --color-destructive: var(--md-destructive);
+  --color-destructive-foreground: var(--md-on-destructive);
+  --color-success: var(--md-success);
+  --color-success-foreground: var(--md-on-success);
+  --color-warning: var(--md-warning);
+  --color-warning-foreground: var(--md-on-warning);
+  --color-info: var(--md-info);
+  --color-info-foreground: var(--md-on-info);
+  --color-unknown: var(--md-unknown);
+  --color-unknown-soft: var(--md-unknown-soft);
+  --color-level-high: var(--md-level-high);
+  --color-info-soft: var(--md-info-soft);
+  --color-status-stable: var(--md-success);
+  --color-status-warning: var(--md-warning);
+  --color-status-emergency: var(--md-destructive);
+  --color-success-glow: var(--glow-success);
+  --color-warning-glow: var(--glow-warning);
+  --color-destructive-glow: var(--glow-destructive);
+  --color-unknown-glow: var(--glow-unknown);
 
   /* Псевдонимы «сырых» оттенков Tailwind, которые остались в 8 компонентах статусов
      (PowerSummaryCard, ReliabilityCard, IncidentBanner, OutageCalendar, OutageTimeline,
-     OutageMap, QueueScheduleBar, IncidentsPage). Значение ведёт в палитру grok, поэтому
-     `text-emerald-600 dark:text-emerald-400` — теперь один токен, который сам меняется
-     с темой. Постепенная замена на семантические классы — отдельным шагом. */
-  --color-emerald-400: hsl(var(--success));
-  --color-emerald-500: hsl(var(--success));
-  --color-emerald-600: hsl(var(--success));
-  --color-lime-400: hsl(var(--level-high));
-  --color-lime-500: hsl(var(--level-high));
-  --color-lime-600: hsl(var(--level-high));
-  --color-amber-400: hsl(var(--warning));
-  --color-amber-500: hsl(var(--warning));
-  --color-amber-600: hsl(var(--warning));
-  --color-red-400: hsl(var(--destructive));
-  --color-red-500: hsl(var(--destructive));
-  --color-red-600: hsl(var(--destructive));
-  --color-blue-100: hsl(var(--info-soft));
-  --color-blue-200: hsl(var(--info));
-  --color-blue-800: hsl(var(--info));
-  --color-blue-900: hsl(var(--info-soft));
+     OutageMap, QueueScheduleBar, IncidentsPage). Значение ведёт в M3-роль, поэтому
+     `text-emerald-600 dark:text-emerald-400` — теперь один токен, меняющийся с темой.
+     Постепенная замена на семантические классы — отдельным шагом. */
+  --color-emerald-400: var(--md-success);
+  --color-emerald-500: var(--md-success);
+  --color-emerald-600: var(--md-success);
+  --color-lime-400: var(--md-level-high);
+  --color-lime-500: var(--md-level-high);
+  --color-lime-600: var(--md-level-high);
+  --color-amber-400: var(--md-warning);
+  --color-amber-500: var(--md-warning);
+  --color-amber-600: var(--md-warning);
+  --color-red-400: var(--md-destructive);
+  --color-red-500: var(--md-destructive);
+  --color-red-600: var(--md-destructive);
+  --color-blue-100: var(--md-info-soft);
+  --color-blue-200: var(--md-info);
+  --color-blue-800: var(--md-info);
+  --color-blue-900: var(--md-info-soft);
 }
 
 @layer base {
@@ -121,119 +182,167 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: hsl(var(--border));
+    border-color: var(--md-outline-variant);
   }
 
-  /* Палитра grok-workspace (grok-workspace/src/styles.css): тёплая «бумага» + глубокий зелёный.
-     HEX оттуда переведён в HSL-триплеты (формат токенов этого проекта) скриптом, поэтому
-     значения воспроизводятся: `--background` = grok `--bg`, `--card` = `--surface` и т.д.
-     Контраст светлой темы проверен по WCAG AA (мин. 4.85:1 для мелкого текста). */
-  /* Светлая тёплая тема. Фон #f3efe6 сохранён из прежней версии — он хорошо переносит
-     солнечный свет на улице и не «слепит» ночью. Меняется палитра статуса: на тёплом фоне
-     чистые #34d399 / #fbbf24 / #f43f5e не читаются (контраст падает до ~1.6:1), поэтому
-     для светлой темы взяты затемнённые варианты тех же оттенков — все не ниже AA. */
+  /* --- M3 Expressive: светлая тема (Light) ---
+     Тональная палитра Material 3: поверхности — нейтрально-зеленоватая «бумага» (тон выведен из
+     акцентного изумруда), разделение уровней — светлотой. Контраст: on-surface #1a1c19 на
+     surface #f7f8f4 — 15.8:1, on-surface-variant #424940 — 8.9:1, primary #00674a на surface —
+     6.2:1 (все выше AA для мелкого текста). Светлые роли primary намеренно темнее спеки тёмной
+     темы: на светлом фоне светлый изумруд #6EE7B7 дал бы 1.7:1 и текст был бы нечитаем. */
   :root {
-    --background: 42 35% 93%; /* #f3efe6 */
-    --foreground: 38 17% 9%; /* #1c1914 */
-    --card: 43 100% 99%; /* #fffdf8 */
-    --card-foreground: 38 17% 9%;
-    --card-raised: 40 40% 97%; /* #faf7f0 — «приподнятая» поверхность бенто */
-    --popover: 43 100% 99%;
-    --popover-foreground: 38 17% 9%;
-    --primary: 28 84% 38%; /* #d16a12 — тёплый янтарный акцент, «свет и тепло» */
-    --primary-foreground: 43 100% 99%;
-    --secondary: 40 34% 88%; /* #ebe4d6 */
-    --secondary-foreground: 38 17% 9%;
-    --muted: 40 34% 88%;
-    --muted-foreground: 35 9% 40%; /* #6f675c */
-    --accent: 40 34% 88%;
-    --accent-foreground: 38 17% 9%;
-    --destructive: 350 74% 40%; /* #c22540 — рубин, затемнён под тёплый фон */
-    --destructive-foreground: 43 100% 99%;
-    --success: 158 72% 26%; /* #12805a — изумруд, затемнён под тёплый фон */
-    --success-foreground: 147 100% 98%;
-    --warning: 32 92% 36%; /* #b8690a — янтарь, затемнён */
-    --warning-foreground: 43 100% 99%;
-    --info: 201 62% 27%; /* #1a5270 */
-    --info-foreground: 147 100% 98%;
-    --level-high: 102 45% 30%; /* #3f6f2a — «майже зі світлом», між success і warning */
-    --info-soft: 201 44% 92%; /* #e3eef4 */
-    /* «Немає даних» — намеренно графит, а не серый «не знаю»: отличим от «світло є». */
-    --unknown: 35 6% 46%;
-    --unknown-soft: 40 20% 90%;
-    --border: 37 25% 82%; /* #ddd4c6 */
-    --border-strong: 35 18% 68%;
-    --input: 37 25% 82%;
-    --ring: 28 84% 38%;
-    --shadow-color: 38 17% 9%;
+    /* Тональные поверхности */
+    --md-surface: #f7f8f4;
+    --md-surface-dim: #edefe9;
+    --md-surface-container-lowest: #ffffff;
+    --md-surface-container-low: #f2f4ef;
+    --md-surface-container: #ecefe8;
+    --md-surface-container-high: #e5e9e1;
+    --md-surface-container-highest: #dee3da;
+    --md-on-surface: #1a1c19;
+    --md-on-surface-variant: #424940;
+    --md-outline: #727970;
+    --md-outline-variant: #c2c9be;
+
+    /* Primary-группа по умолчанию = состояние «світло є» (фирменный изумруд) */
+    --md-primary: #00674a;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #a7f3d0;
+    --md-on-primary-container: #003824;
+
+    /* Статусы сети */
+    --md-success: #047857;
+    --md-on-success: #ffffff;
+    --md-warning: #b45309;
+    --md-on-warning: #ffffff;
+    --md-destructive: #be123c;
+    --md-on-destructive: #ffffff;
+    --md-info: #0e7490;
+    --md-on-info: #ffffff;
+    --md-unknown: #6b7280;
+    --md-unknown-soft: #e2e5e1;
+    --md-level-high: #4d7c0f;
+    --md-info-soft: #e0f2fe;
 
     /* Свечение статуса под Hero: мягкий радиальный градиент, а не тень. */
-    --glow-success: 158 72% 26%;
-    --glow-warning: 32 92% 36%;
-    --glow-destructive: 350 74% 40%;
-    --glow-unknown: 35 6% 46%;
-    --glow-strength: 0.14;
+    --glow-success: #047857;
+    --glow-warning: #b45309;
+    --glow-destructive: #be123c;
+    --glow-unknown: #6b7280;
+    --glow-strength: 0.16;
 
     --radius: 1rem;
   }
 
-  /* OLED-тема. Фон — чистый #050507: на AMOLED такие панели физически выключаются и
-     экономят заряд, а не просто «выглядят чёрными». Поверхности светлее фона ровно на
-     3–5% — этого хватает, чтобы границы читались, но панель не «светится».
-     Контраст текста #f4f5f7 на #050507 — 17.8:1, приглушённый #9aa0aa — 7.1:1 (AA с запасом). */
+  /* --- M3 Expressive: динамическая палитра от состояния сети ---
+     data-power-state ставится на <html> хуком usePowerState (единственный писатель, чтобы
+     порядок монтирования компонентов не влиял на цвет). Значения для светлой темы — тёмные
+     тона тех же оттенков (иначе текст на светлом фоне не читается). */
+  :root[data-power-state='on'] {
+    --md-primary: #00674a;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #a7f3d0;
+    --md-on-primary-container: #003824;
+  }
+  :root[data-power-state='warning'] {
+    --md-primary: #7a5300;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #fde68a;
+    --md-on-primary-container: #3e2700;
+  }
+  :root[data-power-state='off'] {
+    --md-primary: #a1143f;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #fecdd3;
+    --md-on-primary-container: #4c0519;
+  }
+  /* Нет данных — графит. Никогда не зелёный: пустой график нельзя показать как «світло є». */
+  :root[data-power-state='unknown'] {
+    --md-primary: #4a534d;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #dee3da;
+    --md-on-primary-container: #1a1c19;
+  }
+
+  /* --- M3 Expressive: тёмная тема (Dark OLED) ---
+     Поверхности — из спеки M3 Expressive: surface #0A0E0D, dim #050807, container-ramp от
+     #050706 до #2B3430. На AMOLED такие панели физически выключаются и экономят заряд, а
+     уровни различаются тоном, а не тенью. Контраст: on-surface #E0E6E2 на #050807 — 16.9:1,
+     on-surface-variant #BCC7C0 — 9.4:1 (выше AA). */
   .dark {
-    --background: 240 14% 2%; /* #050507 */
-    --foreground: 210 14% 96%; /* #f4f5f7 */
-    --card: 225 12% 6%; /* #0e0f13 */
-    --card-foreground: 210 14% 96%;
-    --card-raised: 220 10% 9%; /* #15171c — приподнятая поверхность бенто */
-    --popover: 225 12% 6%;
-    --popover-foreground: 210 14% 96%;
-    --primary: 28 84% 56%; /* #f59033 — тёплый янтарь, читается на чёрном */
-    --primary-foreground: 240 14% 2%;
-    --secondary: 222 10% 12%;
-    --secondary-foreground: 210 14% 96%;
-    --muted: 222 10% 12%;
-    --muted-foreground: 218 9% 63%; /* #9aa0aa */
-    --accent: 222 10% 12%;
-    --accent-foreground: 210 14% 96%;
-    --destructive: 350 89% 61%; /* #f43f5e — рубин */
-    --destructive-foreground: 240 14% 2%;
-    --success: 158 64% 52%; /* #34d399 — изумруд */
-    --success-foreground: 160 84% 6%;
-    --warning: 43 96% 69%; /* #fbbf24 — янтарь */
-    --warning-foreground: 43 96% 10%;
-    --info: 199 89% 74%;
-    --info-foreground: 199 46% 10%;
-    --level-high: 88 72% 62%;
-    --info-soft: 205 40% 12%;
-    /* Графит для «нет данных»: холодный и заметно темнее success, поэтому состояние
-       «Світло є» зелёным не подменяется никогда. */
-    --unknown: 220 6% 46%; /* #71767d */
-    --unknown-soft: 222 10% 11%;
-    /* Прозрачность встроена в само значение: токен подставляется как hsl(var(--border)),
-       поэтому «0 0% 100% / 0.08» корректно склеивается в hsl(0 0% 100% / 0.08).
-       Отдельная переменная с альфой потребовала бы менять все hsl() в шаблоне. */
-    --border: 0 0% 100% / 0.08; /* rgba(255,255,255,.08) */
-    --border-strong: 0 0% 100% / 0.16;
-    --input: 0 0% 100% / 0.12;
-    --ring: 28 84% 56%;
-    --shadow-color: 240 14% 2%;
+    /* Тональные поверхности */
+    --md-surface: #0a0e0d;
+    --md-surface-dim: #050807;
+    --md-surface-container-lowest: #050706;
+    --md-surface-container-low: #111715;
+    --md-surface-container: #161d1a;
+    --md-surface-container-high: #202825;
+    --md-surface-container-highest: #2b3430;
+    --md-on-surface: #e0e6e2;
+    --md-on-surface-variant: #bcc7c0;
+    --md-outline: #87928b;
+    --md-outline-variant: #3d4742;
 
-    --glow-success: 158 64% 52%;
-    --glow-warning: 43 96% 69%;
-    --glow-destructive: 350 89% 61%;
-    --glow-unknown: 220 6% 46%;
+    /* Primary-группа по умолчанию = «світло є» (изумруд из спеки) */
+    --md-primary: #6ee7b7;
+    --md-on-primary: #003824;
+    --md-primary-container: #005236;
+    --md-on-primary-container: #a7f3d0;
+
+    /* Статусы сети */
+    --md-success: #6ee7b7;
+    --md-on-success: #003824;
+    --md-warning: #fcd34d;
+    --md-on-warning: #3e2700;
+    --md-destructive: #fda4af;
+    --md-on-destructive: #4c0519;
+    --md-info: #7dd3fc;
+    --md-on-info: #04222e;
+    --md-unknown: #9ca3af;
+    --md-unknown-soft: #202825;
+    --md-level-high: #bef264;
+    --md-info-soft: #0b3143;
+
+    --glow-success: #6ee7b7;
+    --glow-warning: #fcd34d;
+    --glow-destructive: #fda4af;
+    --glow-unknown: #9ca3af;
     --glow-strength: 0.3;
-
     --radius: 1rem;
+  }
+
+  /* Динамическая палитра в тёмной теме — ровно значения спеки M3 Expressive. */
+  .dark[data-power-state='on'] {
+    --md-primary: #6ee7b7;
+    --md-on-primary: #003824;
+    --md-primary-container: #005236;
+    --md-on-primary-container: #a7f3d0;
+  }
+  .dark[data-power-state='warning'] {
+    --md-primary: #fcd34d;
+    --md-on-primary: #3e2700;
+    --md-primary-container: #5c3d00;
+    --md-on-primary-container: #fde68a;
+  }
+  .dark[data-power-state='off'] {
+    --md-primary: #fda4af;
+    --md-on-primary: #4c0519;
+    --md-primary-container: #5f1422;
+    --md-on-primary-container: #fecdd3;
+  }
+  .dark[data-power-state='unknown'] {
+    --md-primary: #bdc9c2;
+    --md-on-primary: #1b211d;
+    --md-primary-container: #2b3430;
+    --md-on-primary-container: #dde3df;
   }
 
   html {
     scroll-behavior: smooth;
     color-scheme: light;
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: var(--md-surface-dim);
+    color: var(--md-on-surface);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -267,7 +376,8 @@
 
   /* Радиальное свечение статуса за Hero. Цвет приходит токеном и меняется плавно —
      transition на переменной не работает, поэтому анимируем opacity у псевдоэлемента,
-     а сам цвет переключаем через data-атрибут на контейнере. */
+     а сам цвет переключаем через data-атрибут на контейнере. Прозрачность считает color-mix:
+     альфу к hex-переменной иначе не добавить. */
   .status-glow::before {
     content: "";
     position: absolute;
@@ -276,10 +386,10 @@
     pointer-events: none;
     background: radial-gradient(
       60% 55% at 50% 35%,
-      hsl(var(--glow-color, var(--glow-unknown)) / var(--glow-strength)) 0%,
+      color-mix(in oklab, var(--glow-color, var(--glow-unknown)) calc(var(--glow-strength) * 100%), transparent) 0%,
       transparent 70%
     );
-    transition: background 700ms ease, opacity 700ms ease;
+    transition: background 700ms var(--ease-m3-expressive-default), opacity 700ms ease;
   }
 
   /* Режим «Економія заряду»: гасим анимации и свечение, оставляем чистый чёрный фон.
@@ -313,12 +423,12 @@
 
   /* Фокус виден всегда — интерфейсом пользуются и с клавиатуры, и с ТВ-пульта. */
   :focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    outline: 2px solid var(--md-primary);
     outline-offset: 2px;
   }
 
   ::selection {
-    background-color: hsl(var(--primary) / 0.25);
+    background-color: color-mix(in oklab, var(--md-primary) 25%, transparent);
   }
 
   @media (prefers-reduced-motion: reduce) {

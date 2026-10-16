@@ -17,15 +17,15 @@ import { THEME_VALUES } from './useTheme';
 export type StatusTone = 'on' | 'off' | 'unknown';
 
 const TONE_COLOR: Record<StatusTone, string> = {
-  on: '#050507',
-  off: '#1a0508',
-  unknown: '#0b0b0e',
+  on: '#050807',
+  off: '#160b0d',
+  unknown: '#0d1110',
 };
 
 const TONE_LIGHT: Record<StatusTone, string> = {
-  on: '#f3efe6',
-  off: '#f3efe6',
-  unknown: '#f3efe6',
+  on: '#edefe9',
+  off: '#edefe9',
+  unknown: '#edefe9',
 };
 
 export interface DynamicChromeProps {
@@ -51,6 +51,9 @@ export function useDynamicChrome({ status, theme, statusLabel, minutesLabel }: D
   useEffect(() => {
     const brand = t('nav.home');
     const parts = [statusLabel, minutesLabel].filter(Boolean);
-    document.title = parts.length > 0 ? `💡 ${parts.join(' · ')} · ${brand}` : brand;
+    // Префикс-пиктограмма убрана: эмодзи в заголовке вкладки подменяется системным шрифтом и
+    // на Android, и на Windows — вместо узнаваемого значка в списке вкладок появлялся чужой
+    // глиф. Статус и без него читается первым словом («Світло є · 2 год · Головна»).
+    document.title = parts.length > 0 ? `${parts.join(' · ')} · ${brand}` : brand;
   }, [statusLabel, minutesLabel, t]);
 }

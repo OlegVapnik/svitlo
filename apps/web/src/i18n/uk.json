@@ -94,6 +94,12 @@
     "heroNoNextBig": "відключень не планується",
     "heroBoundary": "{{time}}",
     "heroProgress": "{{percent}}% відключення позаду",
+    "heroTitleSoon": "Скоро вимкнуть",
+    "countdownToOn": "до увімкнення",
+    "countdownToOff": "до відключення",
+    "waveElapsed": "Пройшло {{time}}",
+    "waveRemaining": "Залишилось {{time}}",
+    "wavePercent": "пройдено {{percent}}%",
     "heroTipOff": "Встигніть зарядити телефон або попрати — це найкращий час для важливих справ.",
     "heroFromCache": "Дані з кешу · {{time}}",
     "chromeMinutes": "через {{time}}"

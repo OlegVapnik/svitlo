@@ -19,7 +19,7 @@ const THEME_KEY = 'theme';
 export type ThemePreference = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
-export const THEME_VALUES: Record<ResolvedTheme, string> = { light: '#f3efe6', dark: '#050507' };
+export const THEME_VALUES: Record<ResolvedTheme, string> = { light: '#edefe9', dark: '#050807' };
 
 /** Читаемое сохранённое значение; битое или отсутствующее — «auto». */
 function readPreference(): ThemePreference {

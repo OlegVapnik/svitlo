@@ -9,7 +9,8 @@
 
 | Показатель | Состояние |
 |---|---|
-| **Последний проверенный коммит** | `0dfa737` (все изменения — working tree, не коммичено) |
+| **Последний проверенный коммит** | `25ed660` (далее — сессия M3 Expressive, коммит этой сессии) |
+| **Дизайн-система** | **Material 3 Expressive**: тональные поверхности (`@theme inline` → `--md-*` в `globals.css`), динамическая палитра от статуса сети (`data-power-state` на `<html>`, единственный писатель — хук `usePowerState` в `AppShell`), волнистый прогресс `WavyProgressBar` + `WavyDivider`, фигуры-бейджи `ExpressiveShapeBadge` / `ShapeOutline`, M3 Navigation Bar (mobile) и Navigation Rail (desktop), шкала-капсулы со штриховкой, Bento-сетка на главной. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
 | **Масштаб продукта** | **Вся Украина**: мультирегиональный каталог областей (`GET /api/v1/regions`), автоимпорт ГПВ с всеукраинского зеркала (`source='mirror'`) + Telegram (`source='telegram'`) + агрегатор новостей + **5 провайдеров** (mirror, YASNO, DTEK, e-svitlo, chernihivoblenergo) в `apis/api/src/providers/*.ts` |
 | **Язык интерфейса** | Единый украинский (`uk.json`); `ru.json`, `en.json` и переключатель языков удалены |
 | **Безопасность** | Порт БД закрыт на `127.0.0.1:5432`; `ADMIN_TOKEN` проверяется через `timingSafeEqual` + запрет слабых токенов (<16) в проде; CORS закрыт по умолчанию (`CORS_ORIGINS`); `TRUST_PROXY` настроен; админка вынесена в `ADMIN_ITEMS` |
@@ -81,6 +82,44 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers (Что осталось следующей смене)
 1. ...
 ```
+
+---
+
+## Сессия 2026-10-16: Редизайн интерфейса в стиле Material 3 Expressive (v2.6.0)
+
+- **Ветка / HEAD:** `redesign/wow-ui`
+- **Бэкап БД:** не снимался (схема БД и API не менялись — правки только в `apps/web` и проверочном скрипте)
+
+### Done (Что сделано)
+- **Токены M3 Expressive** в `globals.css`: тональные поверхности (Dark OLED `#0A0E0D`…`#2B3430` и светло-зеленоватая «бумага» для светлой темы), primary-группа (`primary` / `on-primary` / `primary-container` / `on-primary-container`), статусы сети как отдельные роли, outline-пара, пружинные кривые `--ease-m3-expressive-fast|default`, анимации `wave-slide` / `shape-spin` / `shape-breathe` / `pin-in`. Все внутренние `hsl(var(--…))` переведены на hex + `color-mix()`.
+- **Динамическая палитра:** новый хук `usePowerState` (единственный вызов — `AppShell`) ставит `data-power-state="on|warning|off|unknown"`; изумруд → янтарь → рубин → графит. Пустой график даёт `unknown` (графит), правило «зелёный при отсутствии данных запрещён» сохранено.
+- **Примитивы:** `components/ui/WavyProgressBar.tsx` (бегущая волна на SVG `<path>` в `<pattern>`, пилл-ползунок, затухание амплитуды при отключении и «оживание» к концу слота) + `WavyDivider`; `components/ui/ExpressiveShapeBadge.tsx` (8-лепестковый cookie / клевер / скруглённый полигон, считаются полярной функцией) + `ShapeOutline` для фона Hero.
+- **Главный экран:** Hero-кокпит `rounded-[40px]` с декоративным контуром M3-фигуры, капсулой статуса, огромным отсчётом `text-5xl sm:text-7xl` с мигающим разделителем и волнистым прогрессом с подписями «Пройшло / Залишилось / %». Новая функция `slotProgress()` в `lib/scheduleWindow.ts` (слот отключения или окна «світло є»).
+- **Навигация:** M3 Navigation Bar (`h-20`, раскрывающаяся овальная пилюля, `strokeWidth` 2.5 у активной иконки), десктопный Navigation Rail (96 px, подписи под иконками), M3 Top App Bar, Bento-сетка на главной (2/3 статистика + 1/3 сводка электропитания).
+- **Шкала 24 часа:** капсулы `rounded-full` с зазором, векторная SVG-штриховка часов отключения, пин «Зараз HH:MM» с иконкой `Clock` внутри полосы (раньше бегунок вылезал за границы и перекрывал подписи).
+- **Морфинг формы:** кнопки групп `1/1…6/2` — сквиркл 22px → сжатие `scale-[0.92]` при нажатии → капсула `bg-primary` с иконкой `Check` у активной; плитки матрицы групп — то же поведение.
+- **Эмодзи вычищены полностью** (включая `💡` из `document.title`): закладки локаций получили иконки `Home` / `Briefcase` / `Heart` / `MapPin` / `Sparkles` в M3 Filter Chips, статус — `Zap` / `Timer` / `ZapOff` / `FileQuestion`.
+- **Скрипт проверки** `check_tailwind_tokens.py` ужесточён: проверяет 6 базовых ролей-утилит, 14 ролей M3 и наличие палитры для всех четырёх состояний сети (раньше искал «сырые» `--primary`, которых в M3-слоях больше нет).
+- **Документация:** в `docs/AI-ONBOARDING.md` добавлен раздел «Дизайн-система: Material 3 Expressive».
+
+### Changed (Ключевые файлы)
+- Токены/стили: `apps/web/src/styles/globals.css`, `apps/web/index.html`, `apps/web/vite.config.ts`
+- Новые: `apps/web/src/components/ui/WavyProgressBar.tsx`, `apps/web/src/components/ui/ExpressiveShapeBadge.tsx`, `apps/web/src/hooks/usePowerState.ts`
+- Правленые: `components/status/{HeroStatus,HomeHeroSection,PowerSummaryCard,SyncIndicator}.tsx`, `components/schedule/{Timeline24h,QueueScheduleBar}.tsx`, `components/layout/{AppShell,BottomNav,Sidebar,Header}.tsx`, `components/queue/QueueSelector.tsx`, `components/monitor/GroupMatrix.tsx`, `components/ui/StatCard.tsx`, `pages/HomePage.tsx`, `lib/scheduleWindow.ts`, `hooks/{useTheme,useDynamicChrome,useBookmarks}.ts`, `i18n/uk.json`
+- Инструменты/доки: `skills/frontend-ui-change/scripts/check_tailwind_tokens.py`, `docs/AI-ONBOARDING.md`, `HANDOFF.md`, `apps/web/src/version.ts` (2.5.1 → 2.6.0)
+
+### Verified (Чем проверено)
+- `tsc --noEmit` (api / web / cf-worker): 0 ошибок
+- `vite build`: ✓ built, стартовый чанк 198.7 kB gzip
+- `vitest run` (apps/web): 90/90 passed (11 файлов)
+- `check_tailwind_tokens.py .`: OK (6 базовых + 14 M3-токенов, 4 состояния сети)
+- `scan_secrets.py .`: 0 findings
+- `grep -rnP "[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]" apps/web/src`: совпадений нет
+
+### Next / Blockers
+1. Проверить визуально на живом сайте и в APK после `./deploy-cf.sh` (важно: PWA отдаёт старый бандл — нужен Hard Reload).
+2. Hero и Timeline24h отрисовываются из офлайн-снимка — сверить цифры «Пройшло / Залишилось» с графиком оператора при первом же отключении.
+3. Контраст светлой темы проверен расчётом (AA+), но не глазами на солнце — отдельный прогон при случае.
 
 ---
 

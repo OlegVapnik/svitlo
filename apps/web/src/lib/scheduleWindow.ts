@@ -98,3 +98,59 @@ export function scheduleWindow(intervals: ScheduleIntervalUtc[], date: string, n
     offMinutes,
   };
 }
+
+export interface SlotProgress {
+  /** Доля пройденного слота, 0..100. */
+  percent: number;
+  /** Минут с начала слота. */
+  elapsedMinutes: number;
+  /** Минут до конца слота. */
+  remainingMinutes: number;
+}
+
+/**
+ * Прогресс текущего слота суток — основа волнистой полосы M3 в Hero.
+ *
+ * Слот — это «отключение» (пока света нет) либо окно «світло є»: от конца предыдущего
+ * отключения до начала следующего. Второй случай нужен, чтобы полоса не исчезала, когда всё
+ * хорошо: человек видит, сколько ещё осталось спокойного времени.
+ *
+ * Возвращает null, если считать нечего: графика нет, показаны не сегодняшние сутки или
+ * отключений впереди больше не будет (тогда честнее не рисовать процент, чем выдумать слот).
+ */
+export function slotProgress(
+  intervals: ScheduleIntervalUtc[],
+  date: string,
+  now: Date = new Date(),
+): SlotProgress | null {
+  const summary = scheduleWindow(intervals, date, now);
+  const nowMinutes = summary.nowMinutes;
+  if (nowMinutes == null || intervals.length === 0) return null;
+
+  if (summary.isOff && summary.current) {
+    return buildSlot(
+      minutesOfDay(summary.current.startsAt, date),
+      minutesOfDay(summary.current.endsAt, date),
+      nowMinutes,
+    );
+  }
+
+  if (!summary.nextStartsAt) return null;
+  const nextStart = minutesOfDay(summary.nextStartsAt, date);
+  // Начало окна «світло є» — конец последнего закончившегося интервала, либо 00:00.
+  const previousEnds = intervals
+    .map((interval) => minutesOfDay(interval.endsAt, date))
+    .filter((end) => end <= nowMinutes);
+  const from = previousEnds.length > 0 ? Math.max(...previousEnds) : 0;
+  return buildSlot(from, nextStart, nowMinutes);
+}
+
+function buildSlot(from: number, to: number, nowMinutes: number): SlotProgress | null {
+  if (to <= from) return null;
+  const point = Math.max(from, Math.min(to, nowMinutes));
+  return {
+    percent: Math.round(((point - from) / (to - from)) * 100),
+    elapsedMinutes: Math.round(point - from),
+    remainingMinutes: Math.round(to - point),
+  };
+}
