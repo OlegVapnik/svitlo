@@ -87,8 +87,9 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 
 ## Сессия 2026-10-16: Редизайн интерфейса в стиле Material 3 Expressive (v2.6.0)
 
-- **Ветка / HEAD:** `redesign/wow-ui`
+- **Ветка / HEAD:** `redesign/wow-ui` — `c1eb5cf` (палитра и примитивы) + `cdadc91` (экраны и навигация)
 - **Бэкап БД:** не снимался (схема БД и API не менялись — правки только в `apps/web` и проверочном скрипте)
+- **Релиз:** `./deploy-cf.sh` → воркер `svitlo-api` + Pages `svitlo-ua` (https://svitlo-ua-4ze.pages.dev); APK `versionCode 102` / `versionName 2.6.0`, build `20261016-1514`
 
 ### Done (Что сделано)
 - **Токены M3 Expressive** в `globals.css`: тональные поверхности (Dark OLED `#0A0E0D`…`#2B3430` и светло-зеленоватая «бумага» для светлой темы), primary-группа (`primary` / `on-primary` / `primary-container` / `on-primary-container`), статусы сети как отдельные роли, outline-пара, пружинные кривые `--ease-m3-expressive-fast|default`, анимации `wave-slide` / `shape-spin` / `shape-breathe` / `pin-in`. Все внутренние `hsl(var(--…))` переведены на hex + `color-mix()`.
@@ -115,11 +116,15 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 - `check_tailwind_tokens.py .`: OK (6 базовых + 14 M3-токенов, 4 состояния сети)
 - `scan_secrets.py .`: 0 findings
 - `grep -rnP "[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]" apps/web/src`: совпадений нет
+- **Живой деплой** (`https://svitlo-ua-4ze.pages.dev`): в `assets/index-CUVhZZky.css` найдены все четыре палитры `data-power-state` (`on|warning|off|unknown`), роли `--md-*` и анимации `wave-slide` / `shape-spin` / `shape-breathe` / `pin-in`; в JS-бандле — версия `2.6.0` и новые подписи Hero («Пройшло», «Залишилось», «Світло є», «Зараз», «Наступне»). То есть редизайн доехал до прода, а не остался в исходниках.
+- **API:** `GET /api/v1/health` → `{"status":"ok"}`
+- **APK:** `BUILD SUCCESSFUL` (Gradle, 20 s), 4.5 МБ → `apps/web/android-apk/app-debug.apk`
 
 ### Next / Blockers
-1. Проверить визуально на живом сайте и в APK после `./deploy-cf.sh` (важно: PWA отдаёт старый бандл — нужен Hard Reload).
+1. Визуальный прогон живого сайта и APK глазами: PWA отдаёт старый бандл, нужен Hard Reload; APK ставится `adb install -r apps/web/android-apk/app-debug.apk`.
 2. Hero и Timeline24h отрисовываются из офлайн-снимка — сверить цифры «Пройшло / Залишилось» с графиком оператора при первом же отключении.
 3. Контраст светлой темы проверен расчётом (AA+), но не глазами на солнце — отдельный прогон при случае.
+4. **Находка прошлых сессий, не блокер:** у CF-воркера нет маршрута `/api/v1/changelog` (`404 NOT_FOUND`), хотя у Fastify-API он есть (`apps/api/src/routes/changelog.ts`, с `ETag`). На CF-сборке карточка «Що нового» живёт на встроенной копии из бандла, поэтому серверные записи чейнджлога до пользователя не доезжают. Чинить отдельной задачей — отдать в воркере `apps/api/src/data/changelog.json`.
 
 ---
 
