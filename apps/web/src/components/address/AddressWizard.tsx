@@ -255,6 +255,10 @@ export const AddressWizard: React.FC = () => {
 
           {schedule && intervals.length > 0 ? (
             <QueueScheduleBar intervals={intervals} date={schedule.date} />
+          ) : schedule?.allClear ? (
+            // График на этот день опубликован, но часов отключения в нём нет: «графіку немає» было бы
+            // неправдой, а человек как раз пришёл узнать, есть ли свет (см. /schedules, поле allClear).
+            <p className="text-xs font-medium text-success">{t('schedule.allClearTitle')}</p>
           ) : (
             <p className="text-xs text-muted-foreground">{t('addressWizard.noScheduleToday')}</p>
           )}

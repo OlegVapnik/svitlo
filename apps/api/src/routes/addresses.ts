@@ -11,6 +11,7 @@ import {
   type ImportRow,
 } from '../services/address-lookup.service.js';
 import { getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
+import { isAllClear, mirrorDayCoverage, peekMirrorSnapshot } from '../services/mirror-schedule.service.js';
 import { readRegionParam } from '../services/regions.service.js';
 import { AppError } from '../utils/errors.js';
 
@@ -130,6 +131,13 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
       getQueueScheduleMeta(resolved.queue, today, region),
     ]);
 
+    // Ровно та же разница, что и в `/schedules`: пустые интервалы могут значить «оператор ГПВ
+    // опубликовал, отключений на сегодня нет». Иначе мастер поиска писал «графіку на сьогодні
+    // немає» про группу, у которой график есть. Кеш зеркала — без сети, холодный кеш даёт false.
+    const snapshot = peekMirrorSnapshot();
+    const coverage = snapshot ? mirrorDayCoverage(snapshot.payload, region, today) : null;
+    const covered = (coverage?.queues.includes(resolved.queue) ?? false) || meta.source !== null;
+
     return {
       data: {
         queue: resolved.queue,
@@ -142,6 +150,8 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
           intervals,
           source: meta.source,
           lastImportedAt: meta.lastImportedAt,
+          covered,
+          allClear: isAllClear(coverage, resolved.queue, intervals.length),
         },
       },
     };

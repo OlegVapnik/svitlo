@@ -14,6 +14,14 @@ export interface RegionSummary {
   queues: string[];
   slots: number;
   lastDate: string | null;
+  /**
+   * На сьогодні оператор опублікував ГПВ, і жодної години відключення в ньому немає.
+   *
+   * Разом із `slots === 0` це «відключень за графіком немає», а не «даних немає»: у такої області
+   * в БД нуль слотів, бо зберігати нічого. Без цього поля UI писав «Немає даних» там, де оператор
+   * графік опублікував (див. `shared/src/index.ts`, `RegionSummary.allClear`).
+   */
+  allClear?: boolean;
 }
 
 export interface RegionListResponse {
@@ -65,4 +73,20 @@ export function formatRegionOption(region: RegionSummary): string {
     return `${region.nameUa} (${queuesCount})`;
   }
   return region.nameUa;
+}
+
+/** Що показувати в бейджі області. */
+export type RegionDataBadge = 'slots' | 'allClear' | 'noData';
+
+/**
+ * Стан області для бейджа: є слоти → «N слотів»; ГПВ опубліковано без відключень → «світло за
+ * графіком»; інакше — «немає даних». Остання гілка означає саме «не знаємо»: оператор на сьогодні
+ * нічого не публікував або фід про цю область мовчить.
+ *
+ * Слоти мають пріоритет над `allClear`: якщо в БД є години відключень, показуємо саме їх (у такому
+ * разі `allClear` з бекенду = false, але й порядок гілок робить це явним).
+ */
+export function regionDataBadge(region: Pick<RegionSummary, 'slots' | 'allClear'>): RegionDataBadge {
+  if ((region.slots ?? 0) > 0) return 'slots';
+  return region.allClear === true ? 'allClear' : 'noData';
 }

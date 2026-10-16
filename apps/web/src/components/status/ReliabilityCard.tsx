@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
-import type { ReliabilityBucket, ReliabilityReport } from '@svitlo/shared';
+import type { ReliabilityBucket, ReliabilityRegionSummary, ReliabilityReport } from '@svitlo/shared';
 import { Skeleton } from '../ui/Skeleton.js';
 import { formatMinutes } from './PowerSummaryCard.js';
 
-type Granularity = 'days' | 'weeks' | 'months' | 'groups';
+type Granularity = 'days' | 'weeks' | 'months' | 'groups' | 'regions';
 
 const TABS: Array<{ id: Granularity; label: string }> = [
   { id: 'days', label: 'Дні' },
@@ -12,6 +12,9 @@ const TABS: Array<{ id: Granularity; label: string }> = [
   { id: 'months', label: 'Місяці' },
   // Розбиття по групах: люди найчастіше питають «а скільки в МОЄЙ групі», а не загальне по области.
   { id: 'groups', label: 'Групи' },
+  // Той самий розрахунок по всіх областях: «як у мене і як поруч» видно без вигаданих цифр по
+  // областях, де графіка немає — такі в список не потрапляють.
+  { id: 'regions', label: 'Області' },
 ];
 
 function barColor(pct: number): string {
@@ -28,7 +31,14 @@ const ReliabilityRow: React.FC<{ bucket: ReliabilityBucket }> = ({ bucket }) => 
     : 100;
   return (
     <div className="flex items-center gap-3">
-      <span className="w-24 shrink-0 text-xs text-muted-foreground">{bucket.label}</span>
+      <span className="flex w-24 shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        <span className="truncate">{bucket.label}</span>
+        {/* Завтрашній день порахований за вже опублікованим ГПВ, а не за фактом: без позначки
+            людина читала б прогноз як «так і було». */}
+        {bucket.isForecast && (
+          <span className="shrink-0 rounded bg-muted px-1 text-[10px] uppercase tracking-wide">прогноз</span>
+        )}
+      </span>
       <div className="h-2 flex-1 overflow-hidden rounded-full bg-red-500/20">
         <div className={`h-full rounded-full ${barColor(bucket.reliabilityPct)}`} style={{ width: `${width}%` }} />
       </div>
@@ -37,6 +47,34 @@ const ReliabilityRow: React.FC<{ bucket: ReliabilityBucket }> = ({ bucket }) => 
       </span>
       <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
         {bucket.hasData ? formatMinutes(bucket.outageMinutes) : '—'}
+      </span>
+    </div>
+  );
+};
+
+/** Рядок «по областях»: назва, смуга надійності, відсоток і час без світла. */
+const RegionRow: React.FC<{
+  summary: ReliabilityRegionSummary;
+  isCurrent: boolean;
+}> = ({ summary, isCurrent }) => {
+  const width = summary.windowMinutes > 0
+    ? Math.min(100, Math.max(0, (summary.poweredMinutes / summary.windowMinutes) * 100))
+    : 100;
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        className={`w-24 shrink-0 truncate text-xs ${isCurrent ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+      >
+        {summary.nameUa}
+      </span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-red-500/20">
+        <div className={`h-full rounded-full ${barColor(summary.reliabilityPct)}`} style={{ width: `${width}%` }} />
+      </div>
+      <span className="w-14 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
+        {summary.hasData ? `${summary.reliabilityPct}%` : '—'}
+      </span>
+      <span className="w-20 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+        {summary.hasData ? formatMinutes(summary.outageMinutes) : '—'}
       </span>
     </div>
   );
@@ -69,18 +107,22 @@ const GroupRow: React.FC<{
 interface ReliabilityCardProps {
   report?: ReliabilityReport | null;
   isLoading?: boolean;
+  /** `cpu` обраної області: у списку областей її рядок має бути впізнаваний з першого погляду. */
+  currentRegion?: string;
 }
 
 /**
  * Статистика електропостачання з початку поточного місяця: по днях, тижнях і місяцях.
  * Рахує лише фактичні (вже минулі) інтервали — у майбутнє не заглядає.
  */
-export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoading }) => {
+export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoading, currentRegion }) => {
   const [granularity, setGranularity] = useState<Granularity>('days');
   const groups = report?.groups ?? [];
-  // Найсвіжіші періоди — зверху. Режим «Групи» рендерится окремо (GroupRow), тож у бакетах
-  // завжди ReliabilityBucket — інакше типи мішалися б.
-  const timeGranularity = granularity === 'groups' ? 'days' : granularity;
+  const regionSummaries = report?.byRegionSummary ?? [];
+  // Найсвіжіші періоди — зверху. Режими «Групи» та «Області» рендеряться окремо (GroupRow,
+  // RegionRow), тож у бакетах завжди ReliabilityBucket — інакше типи мішалися б.
+  const timeGranularity: 'days' | 'weeks' | 'months' =
+    granularity === 'groups' || granularity === 'regions' ? 'days' : granularity;
   const buckets = useMemo(
     () => [...(report?.[timeGranularity] ?? [])].reverse(),
     [report, timeGranularity],
@@ -92,6 +134,13 @@ export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoad
   const totalOutage = buckets.reduce((sum, bucket) => sum + bucket.outageMinutes, 0);
   const overallPct = totalWindow > 0 ? Math.round((1 - totalOutage / totalWindow) * 1000) / 10 : 100;
   const hasAnyData = buckets.some((bucket) => bucket.hasData);
+  // Список областей довгий (27 рядків), тому показуємо найгірші й завжди — свою область:
+  // саме її людина шукає, і без неї порівняння втрачає сенс.
+  const visibleRegions = useMemo(() => {
+    const current = regionSummaries.filter((summary) => summary.region === currentRegion);
+    const rest = regionSummaries.filter((summary) => summary.region !== currentRegion).slice(0, 8);
+    return [...current, ...rest];
+  }, [regionSummaries, currentRegion]);
 
   const fromLabel = report?.from
     ? new Intl.DateTimeFormat('uk-UA', { timeZone: 'Europe/Kyiv', day: 'numeric', month: 'long' }).format(new Date(report.from))
@@ -138,6 +187,20 @@ export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoad
         <div className="space-y-2">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-4 w-full" />)}
         </div>
+      ) : granularity === 'regions' ? (
+        visibleRegions.length === 0 ? (
+          <p className="text-xs text-muted-foreground">За цей період немає жодної області з графіком.</p>
+        ) : (
+          <div className="space-y-2">
+            {visibleRegions.map((summary) => (
+              <RegionRow
+                key={summary.region}
+                summary={summary}
+                isCurrent={summary.region === currentRegion}
+              />
+            ))}
+          </div>
+        )
       ) : buckets.length === 0 ? (
         <p className="text-xs text-muted-foreground">Даних за цей період ще немає.</p>
       ) : (
@@ -161,7 +224,9 @@ export const ReliabilityCard: React.FC<ReliabilityCardProps> = ({ report, isLoad
       )}
 
       <p className="text-[11px] text-muted-foreground">
-        Рахуємо лише фактично минулі інтервали. Майбутні відключення — у розділі «Відключення».
+        {granularity === 'regions'
+          ? 'Порівняння областей за той самий період. Області без опублікованого графіка в список не потрапляють.'
+          : 'Рахуємо фактично минулі інтервали; завтрашній день — прогноз за вже опублікованим ГПВ.'}
       </p>
     </div>
   );

@@ -212,7 +212,11 @@ export const StreetsPage: React.FC = () => {
                   {t('streets.addToBookmarks')}
                 </Button>
               </div>
-              <QueueScheduleBar intervals={schedule.intervals} date={date} />
+              <QueueScheduleBar
+                intervals={schedule.intervals}
+                date={date}
+                allClear={schedule.allClear === true}
+              />
               {schedule.intervals.length > 0 && (
                 <ul className="grid gap-1.5 text-sm sm:grid-cols-2">
                   {schedule.intervals.map((interval, index) => (

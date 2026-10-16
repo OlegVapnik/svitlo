@@ -13,6 +13,25 @@ CREATE TABLE IF NOT EXISTS schedule_slots (
   PRIMARY KEY (region, queue, date, time_from)
 );
 
+-- Покрытие ГПВ: одна строка = «на эту дату оператор опубликовал график, и эта очередь в нём есть».
+--
+-- Зачем отдельная таблица, а не вывод из schedule_slots: в опубликованном ГПВ коды «светло по
+-- графику» (1) и «отключение» (2) равноправны, а мы храним только отключения. Без покрытия
+-- невозможно отличить «оператор опубликовал график без отключений» от «оператор ничего не
+-- публиковал» — и приложение честно, но неверно писало «Немає даних» (Немає даних = нет данных)
+-- областям, где график есть, а отключений нет.
+CREATE TABLE IF NOT EXISTS schedule_coverage (
+  region TEXT NOT NULL,
+  date TEXT NOT NULL,
+  queue TEXT NOT NULL,
+  has_outages INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'mirror',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (region, date, queue)
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_region_date ON schedule_coverage (region, date);
+
 -- Снимок с последнего успешного обхода зеркала.
 CREATE TABLE IF NOT EXISTS snapshot_meta (
   key TEXT PRIMARY KEY,

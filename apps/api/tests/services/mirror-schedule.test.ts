@@ -241,3 +241,98 @@ describe('кеш payload: TTL, дедуплікація, stale-while-revalidate'
   });
 });
 
+/**
+ * Покриття області на дату. Навіщо: порожній `intervals` має два різні смисли — «оператор
+ * опублікував ГПВ, відключень немає» і «на цю дату нічого не публікували». Раніше обидва виглядали
+ * як `slots = 0`, і області на кшталт `dnipro-cek` (12 черг, усі «світло є») писали «даних немає».
+ */
+describe('mirrorDayCoverage', () => {
+  test('код 2 у комірці дня → черга покрита і в offlineQueues', () => {
+    const coverage = service.mirrorDayCoverage(innerPayload(), 'chernihivska-oblast', '2026-10-10');
+    expect(coverage).not.toBeNull();
+    expect(coverage?.queues).toEqual(['2/2', '3']);
+    expect(coverage?.offlineQueues).toEqual(['2/2', '3']);
+  });
+
+  test('опублікований ГПВ без відключень → покрито, але offlineQueues порожній', () => {
+    const payload = {
+      date_today: '2026-10-17',
+      date_tomorrow: '2026-10-18',
+      regions: [
+        {
+          cpu: 'dnipro-cek',
+          name_ua: 'Дніпропетровська область',
+          schedule: { '2.2': { '2026-10-17': { '00:00': 1, '08:00': 0, '23:30': 1 } } },
+        },
+      ],
+    };
+    expect(service.mirrorDayCoverage(payload, 'dnipro-cek', '2026-10-17')).toEqual({
+      date: '2026-10-17',
+      queues: ['2/2'],
+      offlineQueues: [],
+    });
+  });
+
+  test('порожня мапа дня — не покриття (kyiv публікує лише назви, без погодинних мап)', () => {
+    const payload = { date_today: '2026-10-17', regions: [{ cpu: 'kyiv', schedule: { '1': { '2026-10-17': {} } } }] };
+    expect(service.mirrorDayCoverage(payload, 'kyiv', '2026-10-17')).toBeNull();
+  });
+
+  test('немає області у фіді або немає дати → null («не знаємо»), а не «відключень немає»', () => {
+    expect(service.mirrorDayCoverage(innerPayload(), 'lvivska-oblast', '2026-10-10')).toBeNull();
+    expect(service.mirrorDayCoverage(innerPayload(), 'chernihivska-oblast', '2026-10-12')).toBeNull();
+  });
+
+  test('компактний формат (group + today/tomorrow) теж дає покриття', () => {
+    const payload = {
+      date_today: '2026-10-17',
+      date_tomorrow: '2026-10-18',
+      regions: [
+        {
+          cpu: 'ivano-frankivska-oblast',
+          group: '3.1',
+          today: Array.from({ length: 48 }, () => 1),
+          tomorrow: Array.from({ length: 48 }, (_, index) => (index === 30 ? 2 : 1)),
+        },
+      ],
+    };
+    expect(service.mirrorDayCoverage(payload, 'ivano-frankivska-oblast', '2026-10-17')).toEqual({
+      date: '2026-10-17',
+      queues: ['3/1'],
+      offlineQueues: [],
+    });
+    expect(service.mirrorDayCoverage(payload, 'ivano-frankivska-oblast', '2026-10-18')).toEqual({
+      date: '2026-10-18',
+      queues: ['3/1'],
+      offlineQueues: ['3/1'],
+    });
+  });
+});
+
+/**
+ * Итоговый вопрос экрана: пустой график — это «світло за графіком» или «даних немає»? Ошибка в любую
+ * сторону стоит дорого: «немає даних» рядом с опубликованным графиком пугает человека зря, а «світло
+ * за графіком» при реальном отключении вводит в заблуждение.
+ */
+describe('isAllClear', () => {
+  const coverage = { date: '2026-10-17', queues: ['2/2', '3'], offlineQueues: ['3'] };
+
+  test('черга є у фіді й відключень у ній немає → світло за графіком', () => {
+    expect(service.isAllClear(coverage, '2/2', 0)).toBe(true);
+  });
+
+  test('у черги є слоти графіка → не «немає відключень», навіть якщо фід чистий', () => {
+    expect(service.isAllClear(coverage, '2/2', 4)).toBe(false);
+  });
+
+  test('фід бачить відключення, а слотів ще немає (імпорт відстав) → чесне «не знаємо»', () => {
+    expect(service.isAllClear(coverage, '3', 0)).toBe(false);
+  });
+
+  test('черга не в покритті або покриття порожнє → «не знаємо»', () => {
+    expect(service.isAllClear(coverage, '5/1', 0)).toBe(false);
+    expect(service.isAllClear(null, '2/2', 0)).toBe(false);
+    expect(service.isAllClear({ date: '2026-10-17', queues: [], offlineQueues: [] }, '2/2', 0)).toBe(false);
+  });
+});
+

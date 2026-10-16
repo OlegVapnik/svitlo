@@ -636,6 +636,87 @@ export function regionsFromPayload(payload: Record<string, unknown>): Array<{ cp
   return [...seen.entries()].map(([cpu, nameUa]) => ({ cpu, nameUa }));
 }
 
+/** Що саме оператор опублікував на дату — за знімком дзеркала. */
+export type MirrorDayCoverage = {
+  /** Дата, для якої пораховано покриття (`YYYY-MM-DD`). */
+  date: string;
+  /** Черги, для яких у фіді є комірки на цю дату (навіть якщо всі — «світло є»). */
+  queues: string[];
+  /** Черги, у яких на цю дату є хоч один інтервал відключення (код 2). */
+  offlineQueues: string[];
+};
+
+/**
+ * Чи означає порожній графік «світло за графіком», а не «даних немає»?
+ *
+ * Три умови разом, і кожна обов'язкова: у базі слотів немає (інакше питання не стоїть); у фіді на
+ * цю дату черга взагалі є — оператор щось опублікував; жодного інтервалу відключення в фіді немає.
+ *
+ * Третя умова — запобіжник від прямої брехні: коли імпорт відстав і слотів ще немає, а фід уже
+ * показує відключення для цієї черги, «світло за графіком» було б неправдою. Тоді чесніше лишити
+ * «даних немає» і почекати наступного імпорту.
+ */
+export function isAllClear(coverage: MirrorDayCoverage | null, queue: string, intervalCount: number): boolean {
+  if (intervalCount > 0 || !coverage) return false;
+  return coverage.queues.includes(queue) && !coverage.offlineQueues.includes(queue);
+}
+
+/**
+ * Покриття області на дату за payload дзеркала. Чиста функція — тестується без мережі й БД.
+ *
+ * Навіщо: дзеркало віддає і «світло за графіком» (коди 0/1), і порожні мапи дня. Без цієї різниці
+ * область із опублікованим ГПВ без відключень (`slots = 0` у БД) виглядала як «даних немає» — саме
+ * так було 17.10.2026 з `dnipro-cek`, `dnipro-dnem` і `ivano-frankivska-oblast`: 12 черг, 48 комірок
+ * на кожну, усі «світло є». Наше «не знаємо» і «оператор опублікував, відключень немає» — різні речі.
+ *
+ * `null` — на цю дату в області не опубліковано нічого (область відсутня у фіді, день порожній,
+ * як у `kyiv` без погодинних мап). Це «не знаємо», а не «відключень немає».
+ */
+export function mirrorDayCoverage(
+  payload: Record<string, unknown>,
+  regionCpu: string,
+  date: string,
+): MirrorDayCoverage | null {
+  const region = (regionsOf(payload) ?? []).find((item) => isJsonObject(item) && item['cpu'] === regionCpu);
+  if (!isJsonObject(region)) return null;
+
+  const queues = new Set<string>();
+  const offline = new Set<string>();
+
+  // Формат 1 (реальний): `schedule[groupKey][date][HH:MM] = code`.
+  const schedule = region['schedule'];
+  if (isJsonObject(schedule)) {
+    for (const [groupKey, byDate] of Object.entries(schedule)) {
+      const queue = queueFromGroupKey(groupKey);
+      if (!queue || !isJsonObject(byDate)) continue;
+      const day = byDate[date];
+      // Порожня мапа дня — оператор нічого не публікував (так віддає `kyiv`): це не покриття.
+      if (!isJsonObject(day) || Object.keys(day).length === 0) continue;
+      queues.add(queue);
+      if (offIntervalsFromDayMap(day).length > 0) offline.add(queue);
+    }
+  }
+
+  // Формат 2: черга лежить у `group`, дні — у `today`/`tomorrow` (48 кодів кожен).
+  if (Array.isArray(region['today'])) {
+    const queue = queueFromGroupKey(String(region['group'] ?? ''));
+    const dateToday = typeof payload['date_today'] === 'string' ? payload['date_today'] : null;
+    const dateTomorrow = typeof payload['date_tomorrow'] === 'string' ? payload['date_tomorrow'] : null;
+    const compact = date === dateToday ? region['today'] : date === dateTomorrow ? region['tomorrow'] : null;
+    if (queue && Array.isArray(compact) && compact.length > 0) {
+      queues.add(queue);
+      if (offIntervalsFromCompactArray(compact).length > 0) offline.add(queue);
+    }
+  }
+
+  if (queues.size === 0) return null;
+  return {
+    date,
+    queues: [...queues].sort(compareQueueCodes),
+    offlineQueues: [...offline].sort(compareQueueCodes),
+  };
+}
+
 /**
  * Коди черг області у форматі застосунку (`2.2` → `2/2`). Беремо і з розібраних слотів, і з ключів
  * `schedule`: черга з самими лише «світло є» (коди 0/1) слотів відключень не дає, але в списку черг

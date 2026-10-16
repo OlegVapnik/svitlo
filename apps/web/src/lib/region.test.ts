@@ -7,6 +7,7 @@ import {
   getStoredRegion,
   isRegionCpu,
   normalizeRegionCpu,
+  regionDataBadge,
   setStoredRegion,
   type RegionSummary,
 } from './region';
@@ -74,5 +75,16 @@ describe('multi-region helper', () => {
       lastDate: null,
     };
     expect(formatRegionOption(regionNoQueues)).toBe('Львівська область');
+  });
+
+  test('regionDataBadge розрізняє «є слоти», «світло за графіком» і «не знаємо»', () => {
+    // Є імпортовані слоти — показуємо саме їх, навіть якщо оператор уже опублікував «без відключень».
+    expect(regionDataBadge({ slots: 96, allClear: true })).toBe('slots');
+    expect(regionDataBadge({ slots: 2, allClear: false })).toBe('slots');
+    // Слотів немає, але ГПВ на сьогодні опубліковано без годин відключення (dnipro-cek 17.10.2026).
+    expect(regionDataBadge({ slots: 0, allClear: true })).toBe('allClear');
+    // Ні слотів, ні публікації: «даних немає» — це «не знаємо», а не «світло є».
+    expect(regionDataBadge({ slots: 0, allClear: false })).toBe('noData');
+    expect(regionDataBadge({ slots: 0 })).toBe('noData');
   });
 });

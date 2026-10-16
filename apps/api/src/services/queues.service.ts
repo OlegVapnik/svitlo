@@ -37,11 +37,18 @@ export function compareQueueCodes(a: string, b: string): number {
  * `places` — реальная география групп из settlement_queues/street_queues. Её может не быть вовсе:
  * зеркало ГПВ отдаёт номера групп без привязки к районам и улицам, и тогда списки пустые.
  * Пустой список — честный ответ «источник не отдал географию», а не повод придумать районы.
+ *
+ * `coveredQueues` — группы, которые оператор ОПУБЛИКОВАЛ в ГПВ, но у которых нет ни часа отключения
+ * (`schedule_slots` пуст, потому что коды «світло є» мы не храним). Без них список групп в таких
+ * областях пустой, и человек читает «графік не імпортовано» там, где график есть: именно так было
+ * 17.10.2026 в `dnipro-cek`, где в ГПВ 12 черг и ни одного отключения. Коды — реальные из фида,
+ * выдуманных групп в списке нет.
  */
 export function mergeQueues(
   slotsRows: QueueSlotRow[],
   streetRows: QueueStreetRow[],
   placesRows: QueuePlacesRow[] = [],
+  coveredQueues: string[] = [],
 ): QueueSummary[] {
   const byQueue = new Map<string, QueueSummary>();
   const create = (queue: string, slots: number, lastDate: string | null, streets: number): QueueSummary => ({
@@ -74,7 +81,46 @@ export function mergeQueues(
       byQueue.set(row.queue, created);
     }
   }
+  // Опубликованные, но «пустые» группы — последним проходом: у них могут быть слоты на другую
+  // дату или привязки улиц, тогда просто помечаем `covered`, иначе добавляем группу без слотов.
+  for (const queue of coveredQueues) {
+    const existing = byQueue.get(queue);
+    if (existing) {
+      existing.covered = true;
+      continue;
+    }
+    const created = create(queue, 0, null, 0);
+    created.covered = true;
+    byQueue.set(queue, created);
+  }
   return [...byQueue.values()].sort((a, b) => compareQueueCodes(a.queue, b.queue));
+}
+
+/** Киевская дата `YYYY-MM-DD`: «сегодня» для человека, а не для сервера (UTC). */
+function kyivToday(at: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+}
+
+/**
+ * Коды групп, которые оператор опубликовал на дату И в которых нет ни часа отключения.
+ *
+ * Зачем отдельная функция: `schedule_slots` хранит только «тёмные» слоты, поэтому в области, где
+ * график вышел, а отключений нет, список групп приходил пустым — и это читалось как «графік не
+ * імпортовано». Возвращаем именно `queues` минус `offlineQueues`: группа из `offlineQueues` без
+ * слотов означает отставший импорт, и объявлять её «без відключень» было бы неправдой.
+ *
+ * Читает ТОЛЬКО кеш зеркала: список групп — частый запрос, и ходить из него в сеть нельзя. Холодный
+ * кеш возвращает пустой список — это честное «не знаем», а не повод показать группы «на глазок».
+ * Импорт динамический: `mirror-schedule.service` импортирует `compareQueueCodes` из этого файла,
+ * и статический импорт замкнул бы цикл.
+ */
+async function publishedClearQueues(region: string, date: string = kyivToday()): Promise<string[]> {
+  const { mirrorDayCoverage, peekMirrorSnapshot } = await import('./mirror-schedule.service.js');
+  const snapshot = peekMirrorSnapshot();
+  if (!snapshot) return [];
+  const coverage = mirrorDayCoverage(snapshot.payload, region, date);
+  if (!coverage) return [];
+  return coverage.queues.filter((queue) => !coverage.offlineQueues.includes(queue));
 }
 
 /** Ключ для сравнения названий: регистр і пробіли не мають значення. */
@@ -144,6 +190,10 @@ export async function listQueueStreetNames(region: string): Promise<Map<string, 
  * отсутствующий `?region=` превращается в DEFAULT_REGION внутри `readRegionParam`, поэтому смесь
  * черг разных областей в одном ответе невозможна. `undefined` оставлен для внутренних вызовов
  * и юнит-тестов чистой сборки `mergeQueues`.
+ *
+ * Кроме слотов и привязок улиц список наполняют группы из ОПУБЛИКОВАННОГО ГПВ (`publishedQueues`):
+ * без них область, где оператор график опубликовал, а отключений нет, отдавала пустой список групп
+ * и человек видел «графік не імпортовано».
  */
 export async function listQueues(region?: string): Promise<QueueSummary[]> {
   const { db } = await import('../db/connection.js');
@@ -159,11 +209,14 @@ export async function listQueues(region?: string): Promise<QueueSummary[]> {
   const streetsQuery = db
     .select({ queue: streetQueues.queue, streets: sql<number>`count(*)::int` })
     .from(streetQueues);
-  const [slotsRows, streetRows, settlementNames, streetNames] = await Promise.all([
+  const [slotsRows, streetRows, settlementNames, streetNames, published] = await Promise.all([
     region ? slotsQuery.where(eq(scheduleSlots.region, region)).groupBy(scheduleSlots.queue) : slotsQuery.groupBy(scheduleSlots.queue),
     region ? streetsQuery.where(eq(streetQueues.region, region)).groupBy(streetQueues.queue) : streetsQuery.groupBy(streetQueues.queue),
     region ? listQueueSettlements(region) : Promise.resolve(new Map<string, string[]>()),
     region ? listQueueStreetNames(region) : Promise.resolve(new Map<string, string[]>()),
+    // Область без имени сюда не попадает: `?region=` роут всегда подставляет (readRegionParam),
+    // а гадать область по умолчанию для чужого запроса нельзя.
+    region ? publishedClearQueues(region) : Promise.resolve([]),
   ]);
   // Обе карты про один ключ `queue`, поэтому собираем по очереди, а не конкатенируем два ряда:
   // иначе вторая перезаписала бы первую, и один из списков молча потерялся бы.
@@ -173,5 +226,5 @@ export async function listQueues(region?: string): Promise<QueueSummary[]> {
     settlements: settlementNames.get(queue) ?? [],
     streetNames: streetNames.get(queue) ?? [],
   }));
-  return mergeQueues(slotsRows, streetRows, placesRows);
+  return mergeQueues(slotsRows, streetRows, placesRows, published);
 }

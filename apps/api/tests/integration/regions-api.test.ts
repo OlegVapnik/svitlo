@@ -147,10 +147,15 @@ describeWithDb('Мультирегіональний API: каталог обл�
     const lviv = await app.inject({ method: 'GET', url: `/api/v1/queues?region=${LVIV}` });
     expect(lviv.statusCode).toBe(200);
     // Вулиці не приписуємо Львівській: адресний довідник поки чернігівський, тож 0 — чесніше, ніж чужі дані.
-    expect(lviv.json()).toEqual({ data: [{ queue: '2/2', slots: 1, lastDate: '2026-10-11', streets: 0 }] });
+    // `settlements`/`streetNames` порожні з тієї ж причини: географії групи для Львівщини в БД немає.
+    expect(lviv.json()).toEqual({
+      data: [{ queue: '2/2', slots: 1, lastDate: '2026-10-11', streets: 0, settlements: [], streetNames: [] }],
+    });
 
     const chernihiv = await app.inject({ method: 'GET', url: `/api/v1/queues?region=${CHERNIHIV}` });
-    expect(chernihiv.json()).toEqual({ data: [{ queue: '1/1', slots: 1, lastDate: '2026-10-11', streets: 0 }] });
+    expect(chernihiv.json()).toEqual({
+      data: [{ queue: '1/1', slots: 1, lastDate: '2026-10-11', streets: 0, settlements: [], streetNames: [] }],
+    });
 
     // Без region — область за замовчуванням (env.MIRROR_SCHEDULE_REGION = chernihivska-oblast),
     // а НЕ суміш усіх областей: людина з Чернігова не має бачити чужі черги (2/2 зі Львова).

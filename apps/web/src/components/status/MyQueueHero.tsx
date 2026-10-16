@@ -35,12 +35,22 @@ export const MyQueueHero: React.FC<Props> = ({ queue, address, date, schedule, i
   const { t } = useTranslation();
   const sched = schedule ? scheduleWindow(schedule.intervals, date) : null;
   const hasIntervals = (schedule?.intervals.length ?? 0) > 0;
+  /** Оператор опубликовал ГПВ на эту дату, а часов отключения в нём нет (поле `allClear` из API). */
+  const allClear = schedule?.allClear === true;
   const isOff = hasIntervals && (sched?.isOff ?? false);
   /**
    * Что показывать крупно. Когда графика нет, нельзя утверждать ни «світло є», ни «світла немає»:
-   * это выдумка о реальном отключении, поэтому третье состояние — «даних немає» (нейтральный цвет).
+   * это выдумка о реальном отключении, поэтому состояние — «даних немає» (нейтральный цвет).
+   * Но у пустого графика есть и второй, проверяемый смысл: график опубликован и отключений в нём нет —
+   * тогда честный крупный ответ «світло за графіком» (нейтральное «даних немає» тут просто неправда).
    */
-  const state: 'on' | 'off' | 'unknown' = !hasIntervals ? 'unknown' : isOff ? 'off' : 'on';
+  const state: 'on' | 'off' | 'clear' | 'unknown' = !hasIntervals
+    ? allClear
+      ? 'clear'
+      : 'unknown'
+    : isOff
+      ? 'off'
+      : 'on';
 
   /** Строка-отсчёт: отключение сейчас, когда следующее, либо «на добу нічого». */
   function headline(): string {
@@ -90,7 +100,13 @@ export const MyQueueHero: React.FC<Props> = ({ queue, address, date, schedule, i
                 state === 'unknown' ? 'text-muted-foreground' : isOff ? 'text-destructive' : 'text-success',
               )}
             >
-              {state === 'unknown' ? t('home.heroNoData') : isOff ? t('home.heroOff') : t('home.heroOn')}
+              {state === 'unknown'
+                ? t('home.heroNoData')
+                : state === 'clear'
+                  ? t('schedule.allClearTitle')
+                  : isOff
+                    ? t('home.heroOff')
+                    : t('home.heroOn')}
             </h2>
           )}
 
@@ -109,6 +125,9 @@ export const MyQueueHero: React.FC<Props> = ({ queue, address, date, schedule, i
                   <p className="pt-2 text-xs text-muted-foreground">{t('home.offToday', { time: formatMinutesUk(sched.offMinutes) })}</p>
                 )}
               </>
+            ) : allClear ? (
+              // Сервер сказал «графік є, відключень немає» — значит «не імпортовано» тут неправда.
+              <p className="text-sm text-muted-foreground">{t('schedule.allClearHint')}</p>
             ) : (
               <p className="text-sm text-muted-foreground">{t('home.myScheduleEmpty')}</p>
             )}

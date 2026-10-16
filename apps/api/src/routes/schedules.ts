@@ -1,6 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
-import { ensureMirrorSchedule } from '../services/mirror-schedule.service.js';
+import {
+  MIRROR_SCHEDULE_SOURCE,
+  ensureMirrorSchedule,
+  isAllClear,
+  mirrorDayCoverage,
+  peekMirrorSnapshot,
+} from '../services/mirror-schedule.service.js';
 import { listUpcomingGroupOutages } from '../services/upcoming-outages.service.js';
 import { readRegionParam } from '../services/regions.service.js';
 import { AppError } from '../utils/errors.js';
@@ -43,7 +49,28 @@ async function buildQueueSchedule(queue: string, date: string, region: string, l
     getQueueScheduleMeta(queue, date, region),
     getQueueSchedule(queue, date, region),
   ]);
-  return { data: { queue, date, intervals, source: meta.source, lastImportedAt: meta.lastImportedAt } };
+  // Порожній `intervals` має ДВІ різні смисли, і фронтенд мусить їх розрізняти: «оператор опублікував
+  // ГПВ, відключень немає» і «на цю дату нічого не публікували». Перший бачимо у знімку дзеркала:
+  // комірки дня є, але всі — «світло є» (коди 0/1). Дзеркало читаємо ЛИШЕ з кеша (без мережі — його
+  // щойно наповнив `ensureMirrorSchedule`), холодний кеш дає чесне «не знаємо» (`covered: false`).
+  const snapshot = peekMirrorSnapshot();
+  const coverage = snapshot ? mirrorDayCoverage(snapshot.payload, region, date) : null;
+  const covered = (coverage?.queues.includes(queue) ?? false) || meta.source !== null;
+  return {
+    data: {
+      queue,
+      date,
+      intervals,
+      // Джерело беремо у слотів; коли слотів немає, але графік опубліковано — джерело саме дзеркало:
+      // саме з нього ми знаємо, що на цю дату відключень немає.
+      source: meta.source ?? (covered ? MIRROR_SCHEDULE_SOURCE : null),
+      lastImportedAt: meta.lastImportedAt,
+      covered,
+      // «Світло за графіком» — не те саме, що `covered`: коли фід на цю добу вже показує відключення,
+      // а слотів ще немає (імпорт відстав), чесніше «даних немає», ніж «світло є» (див. `isAllClear`).
+      allClear: isAllClear(coverage, queue, intervals.length),
+    },
+  };
 }
 
 export default async function scheduleRoutes(fastify: FastifyInstance) {

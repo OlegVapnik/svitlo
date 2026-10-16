@@ -56,9 +56,11 @@ export const QueueSchedulePage: React.FC = () => {
     const parts: string[] = [];
     if (item.streets > 0) parts.push(t('queues.streetsCount', { n: item.streets }));
     if (item.lastDate) parts.push(t('queues.scheduleDate', { date: item.lastDate }));
-    return parts.length > 0
-      ? `${item.queue} — ${parts.join(' · ')}`
-      : `${item.queue} — ${t('queues.noSchedule')}`;
+    if (parts.length > 0) return `${item.queue} — ${parts.join(' · ')}`;
+    // Группа из опубликованного ГПВ без единого часа отключения: «графік не імпортовано» про неё —
+    // неправда, график как раз есть. Флаг приходит из API (`QueueSummary.covered`).
+    if (item.covered) return `${item.queue} — ${t('schedule.allClearTitle')}`;
+    return `${item.queue} — ${t('queues.noSchedule')}`;
   }
 
   const handleAdd = () => {
@@ -356,7 +358,7 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
         {isLoading ? (
           <Skeleton className="h-24 w-full rounded-xl" />
         ) : (
-          <QueueScheduleBar intervals={intervals} date={date} />
+          <QueueScheduleBar intervals={intervals} date={date} allClear={data?.data?.allClear === true} />
         )}
         {/* Що входить у цю групу в її області. Джерело географії груп не надсилає — тоді
             блок просто не малюється, без вигаданих районів. */}

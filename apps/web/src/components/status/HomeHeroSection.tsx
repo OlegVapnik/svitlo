@@ -306,6 +306,22 @@ export const HomeHeroSection: React.FC = () => {
             {t('common.retry')}
           </Button>
         </div>
+      ) : currentRegionData.allClear === true && selectedDayOffset === 0 ? (
+        /* «Оператор опублікував ГПВ на сьогодні, годин відключень у ньому немає» — це НЕ «даних
+           немає»: у такої області в БД нуль слотів (зберігати нічого), і раніше тут показувався
+           порожній стан. Тільки для «сьогодні»: на «завтра» фід міг нічого не опублікувати, і
+           обіцяти «світло за графіком» на завтра ми не маємо права. */
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-success/30 bg-success/5 px-4 py-8 text-center sm:py-10">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-success/10 text-success">
+            <Zap className="h-6 w-6" aria-hidden />
+          </div>
+          <h3 className="mt-3 text-base font-bold text-foreground">
+            {t('regions.allClearTitle')}
+          </h3>
+          <p className="mt-1 max-w-md text-xs text-muted-foreground sm:text-sm">
+            {t('regions.allClearDesc')}
+          </p>
+        </div>
       ) : !hasRegionData || availableQueues.length === 0 ? (
         /* Чесний порожній стан для області без даних (Ніколи не вигадуємо демо-дані) */
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center sm:py-10">

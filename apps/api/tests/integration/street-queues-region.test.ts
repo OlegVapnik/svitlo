@@ -207,15 +207,30 @@ describeWithDb('Мультирегіональний адресний довід
     const lvivQueuesRes = await app.inject({ method: 'GET', url: `/api/v1/queues?region=${LVIV}` });
     expect(lvivQueuesRes.statusCode).toBe(200);
     const lvivQueues = (lvivQueuesRes.json() as { data: Array<{ queue: string; streets: number; slots: number }> }).data;
+    // `streetNames` — та сама географія, що й `streets`: перелік реальних вулиць групи (за абеткою).
     expect(lvivQueues).toEqual([
-      { queue: '2/2', slots: 1, lastDate: '2026-10-11', streets: 2 },
+      {
+        queue: '2/2',
+        slots: 1,
+        lastDate: '2026-10-11',
+        streets: 2,
+        settlements: [],
+        streetNames: ['вул. Городоцька', 'вул. Личаківська'],
+      },
     ]);
 
     const chernihivQueuesRes = await app.inject({ method: 'GET', url: `/api/v1/queues?region=${CHERNIHIV}` });
     expect(chernihivQueuesRes.statusCode).toBe(200);
     const chernihivQueues = (chernihivQueuesRes.json() as { data: Array<{ queue: string; streets: number; slots: number }> }).data;
     expect(chernihivQueues).toEqual([
-      { queue: '1/1', slots: 1, lastDate: '2026-10-11', streets: 1 },
+      {
+        queue: '1/1',
+        slots: 1,
+        lastDate: '2026-10-11',
+        streets: 1,
+        settlements: [],
+        streetNames: ['вул. Миру'],
+      },
     ]);
 
     // Область без вулиць має чесний 0 (порожній список вулиць)

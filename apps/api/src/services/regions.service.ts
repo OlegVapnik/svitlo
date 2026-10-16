@@ -2,7 +2,7 @@ import type { RegionCoverageItem, RegionCoverageResponse, RegionSummary } from '
 import { isRegionCpu } from '@svitlo/shared';
 import { env } from '../config.js';
 import { AppError } from '../utils/errors.js';
-import { peekMirrorSnapshot, queueCodesOfRegion, regionsFromPayload } from './mirror-schedule.service.js';
+import { mirrorDayCoverage, peekMirrorSnapshot, queueCodesOfRegion, regionsFromPayload } from './mirror-schedule.service.js';
 import { kyivDayStart } from './power-summary.js';
 import { compareQueueCodes } from './queues.service.js';
 
@@ -34,6 +34,11 @@ export function readRegionParam(raw: unknown): string {
 
 type RegionRow = { cpu: string; nameUa: string; nameEn: string | null; isActive: boolean };
 type SlotRow = { cpu: string; queue: string; slots: number; lastDate: string | null };
+
+/** Київська дата `YYYY-MM-DD` — та сама, що дзеркало віддає у `date_today`. */
+function kyivYmd(at: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+}
 
 /** Знімок каталогу з БД: довідник областей + агрегати слотів. Два простих запити, без N+1. */
 async function readCatalogFromDb(): Promise<{ regions: RegionRow[]; slots: SlotRow[] }> {
@@ -88,14 +93,29 @@ export async function listRegions(): Promise<RegionSummary[]> {
   }
 
   if (snapshot) {
+    // Стан «оператор опублікував ГПВ, відключень немає» інакше не відрізнити від «даних немає»:
+    // у такої області нуль слотів у БД, бо зберігати нічого. Дата — сьогодні (як `date_today` фіда),
+    // бо саме про «зараз» людина й питає. Фід нічого не опублікував на цю дату → `allClear` не ставимо.
+    const todayYmd = kyivYmd(new Date());
     for (const feedRegion of regionsFromSnapshot(snapshot)) {
       if (inactive.has(feedRegion.cpu)) continue;
+      const coverage = mirrorDayCoverage(snapshot.payload, feedRegion.cpu, todayYmd);
+      const allClear = coverage ? coverage.offlineQueues.length === 0 : undefined;
       const existing = byCpu.get(feedRegion.cpu);
       if (existing) {
         existing.nameUa = feedRegion.nameUa;
+        if (allClear !== undefined) existing.allClear = allClear;
         for (const queue of feedRegion.queues) if (!existing.queues.includes(queue)) existing.queues.push(queue);
       } else {
-        byCpu.set(feedRegion.cpu, { cpu: feedRegion.cpu, nameUa: feedRegion.nameUa, nameEn: null, queues: feedRegion.queues, slots: 0, lastDate: null });
+        byCpu.set(feedRegion.cpu, {
+          cpu: feedRegion.cpu,
+          nameUa: feedRegion.nameUa,
+          nameEn: null,
+          queues: feedRegion.queues,
+          slots: 0,
+          lastDate: null,
+          allClear,
+        });
       }
     }
   }

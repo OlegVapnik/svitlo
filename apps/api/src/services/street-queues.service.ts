@@ -3,6 +3,7 @@ import { streetQueues } from '../db/schema.js';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { StreetQueuePair, StreetScheduleData } from '@svitlo/shared';
 import { getQueueSchedule, getQueueScheduleMeta } from './schedule-import.service.js';
+import { isAllClear, mirrorDayCoverage, peekMirrorSnapshot } from './mirror-schedule.service.js';
 import { DEFAULT_REGION } from './regions.service.js';
 
 function toPair(row: { streetNormalized: string; streetName: string; queue: string; updatedAt: Date | string; region?: string }): StreetQueuePair {
@@ -67,6 +68,10 @@ export async function removeStreetQueue(streetNormalized: string, region = DEFAU
 /**
  * Возвращает график привязанной к улице очереди. Если улица не привязана —
  * queue = null и пустые интервалы (страница покажет подсказку).
+ *
+ * `covered`/`allClear` повторяют логику `routes/schedules.ts`: пустой список интервалов значит либо
+ * «оператор опубликовал ГПВ, а отключений нет», либо «на эту дату не публиковали». Кеш зеркала
+ * читается без сети — холодный кеш честно даёт `covered: false`, то есть «не знаем».
  */
 export async function getStreetSchedule(street: string, date: string, region = DEFAULT_REGION): Promise<StreetScheduleData> {
   const normalized = normalizeAddressQuery(street);
@@ -79,6 +84,9 @@ export async function getStreetSchedule(street: string, date: string, region = D
     getQueueScheduleMeta(queue, date, region),
     getQueueSchedule(queue, date, region),
   ]);
+  const snapshot = peekMirrorSnapshot();
+  const coverage = snapshot ? mirrorDayCoverage(snapshot.payload, region, date) : null;
+  const covered = (coverage?.queues.includes(queue) ?? false) || meta.source !== null;
   return {
     street,
     streetNormalized: normalized,
@@ -88,5 +96,7 @@ export async function getStreetSchedule(street: string, date: string, region = D
     source: meta.source,
     lastImportedAt: meta.lastImportedAt,
     region,
+    covered,
+    allClear: isAllClear(coverage, queue, intervals.length),
   };
 }

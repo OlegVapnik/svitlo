@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, MapPin, Search, X } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
-import type { RegionSummary } from '../../lib/region.js';
+import { regionDataBadge, type RegionSummary } from '../../lib/region.js';
 import { cn } from '../../lib/cn.js';
 
 interface RegionPickerProps {
@@ -25,6 +25,8 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
   const listRef = useRef<HTMLUListElement>(null);
 
   const listboxId = useId();
+  // Бейдж області: слоти / «світло за графіком» / «немає даних» — логіка спільна зі списком.
+  const currentBadge = regionDataBadge(currentRegionData);
 
   // Фільтруємо області за пошуковим запитом
   const filteredRegions = useMemo(() => {
@@ -154,13 +156,18 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {variant === 'prominent' && currentRegionData.slots > 0 ? (
+          {variant === 'prominent' && currentBadge === 'slots' ? (
             <span className="hidden rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success sm:inline-block">
               {t('regions.slotsAvailable', { count: currentRegionData.slots })}
             </span>
           ) : variant === 'prominent' ? (
-            <span className="hidden rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-muted-foreground sm:inline-block">
-              {t('regions.noDataShort')}
+            <span
+              className={cn(
+                'hidden rounded-full px-2.5 py-0.5 text-xs font-semibold sm:inline-block',
+                currentBadge === 'allClear' ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {currentBadge === 'allClear' ? t('regions.allClearShort') : t('regions.noDataShort')}
             </span>
           ) : null}
           <ChevronDown
@@ -241,7 +248,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
               filteredRegions.map((region, idx) => {
                 const isSelected = region.cpu === currentRegion;
                 const isItemActive = idx === activeIndex;
-                const hasSlots = region.slots > 0;
+                const badge = regionDataBadge(region);
 
                 return (
                   <li
@@ -271,13 +278,18 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                     </div>
 
                     <div className="shrink-0 text-right">
-                      {hasSlots ? (
+                      {badge === 'slots' ? (
                         <span className="inline-block rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
                           {t('regions.slotsCount', { count: region.slots })}
                         </span>
                       ) : (
-                        <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          {t('regions.noDataShort')}
+                        <span
+                          className={cn(
+                            'inline-block rounded-full px-2 py-0.5 text-[11px]',
+                            badge === 'allClear' ? 'bg-success/10 font-semibold text-success' : 'bg-muted font-medium text-muted-foreground',
+                          )}
+                        >
+                          {badge === 'allClear' ? t('regions.allClearShort') : t('regions.noDataShort')}
                         </span>
                       )}
                     </div>

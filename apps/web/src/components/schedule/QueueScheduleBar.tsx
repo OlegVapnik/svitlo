@@ -11,6 +11,11 @@ type Props = {
   now?: Date;
   /** Переопределить текст пустой полосы (по умолчанию — t('schedule.notImported')). */
   emptyLabel?: string;
+  /**
+   * Оператор опубликовал ГПВ на эту дату, а часов отключения в нём нет (сервер отдаёт это полем
+   * `allClear`). Тогда пустая полоса — «світло за графіком», а не «графік не імпортовано».
+   */
+  allClear?: boolean;
   /** Показывать строку-итог под полосой. Герой главной выводит её сам, поэтому передаёт false. */
   showSummary?: boolean;
 };
@@ -45,12 +50,24 @@ function segmentTone(stateCode: number): string {
  *
  * Тексты — через i18n (раньше были захардкожены по-украински и не переводились вместе с интерфейсом).
  */
-export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new Date(), emptyLabel, showSummary = true }) => {
+export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new Date(), emptyLabel, allClear = false, showSummary = true }) => {
   const { t } = useTranslation();
   // Идентификатор SVG-паттерна: url(#…) не принимает «:» из useId().
   const hatchId = `queue-hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
   if (!intervals.length) {
+    // Пустая полоса имеет два разных смысла, и раньше они выглядели одинаково. «Світло за графіком» —
+    // утверждение об опубликованном ГПВ (все получасовые коды — «світло є»), «графік не імпортовано» —
+    // отсутствие данных. Сервер различает их полем `allClear`; если и тут написать «немає даних», экран
+    // группы будет противоречить бейджу области на главной, где статус уже честный.
+    if (allClear) {
+      return (
+        <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-6 text-center">
+          <p className="text-sm font-medium text-on-surface">{t('schedule.allClearTitle')}</p>
+          <p className="pt-1 text-xs text-on-surface-variant">{t('schedule.allClearHint')}</p>
+        </div>
+      );
+    }
     return (
       <div className="rounded-2xl border border-hairline bg-surface-container-high/50 p-6 text-center text-sm text-on-surface-variant">
         {emptyLabel ?? t('schedule.notImported')}

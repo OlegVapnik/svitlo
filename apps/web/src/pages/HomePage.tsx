@@ -341,7 +341,11 @@ export const HomePage: React.FC = () => {
           першому екрані на вибір міста та графіка. */}
       <ChangelogCard />
 
-      <ReliabilityCard report={reliabilityData?.data} isLoading={reliabilityLoading} />
+      <ReliabilityCard
+        report={reliabilityData?.data}
+        isLoading={reliabilityLoading}
+        currentRegion={currentRegionData.cpu}
+      />
 
       {/* Версия сборки: видно сразу, без поиска по меню. */}
       <BuildStamp />
