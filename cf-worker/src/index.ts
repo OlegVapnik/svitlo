@@ -1059,16 +1059,29 @@ function dedupePlaces<T extends { normalized: string }>(places: T[]): T[] {
 
 // ───────────────────────────── HTTP-часть ─────────────────────────────
 
+/**
+ * Заголовки, которые фронтенд реально отправляет.
+ *
+ * `If-None-Match` в списке обязателен: офлайн-пакет (`/sync`) уходит с ним, а по правилам CORS
+ * это НЕ простой заголовок — браузер делает preflight и требует разрешение в ответе. Пока здесь
+ * стоял только Content-Type, preflight отклонялся, `/sync` (графики, очереди, области, НП,
+ * новости одним запросом) не проходил вовсе, и приложение жило на данных первой синхронизации:
+ * «дані з сервера не прилітають». `POST` нужен народной привязке адреса (/addresses/contribute):
+ * метода POST в списке не было, поэтому и она отклонялась на preflight.
+ */
+const ALLOWED_HEADERS = 'Content-Type, If-None-Match';
+
 /** Конверт ответа совпадает с бэкендом: `{ data: … }`. Фронтенд читает именно его. */
 function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      // CORS: фронтенд живёт на Pages, воркер — на другом домене.
+      // CORS: фронтенд живёт на Pages (в приложении — на https://localhost), воркер — на другом
+      // домене, поэтому браузер обязан спросить разрешение перед каждым таким запросом.
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, OPTIONS',
-      'access-control-allow-headers': 'Content-Type',
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': ALLOWED_HEADERS,
       'access-control-max-age': '86400',
       ...headers,
     },
@@ -1402,8 +1415,8 @@ function notModified(headers: Record<string, string> = {}): Response {
     status: 304,
     headers: {
       'access-control-allow-origin': '*',
-      'access-control-allow-methods': 'GET, OPTIONS',
-      'access-control-allow-headers': 'Content-Type',
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': ALLOWED_HEADERS,
       ...headers,
     },
   });
@@ -1768,6 +1781,31 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return json({ data: items, meta: { count: items.length, limit, stale: items.length === 0 } });
   }
 
+  // Источники новостей: сколько записей собрано с каждой площадки и когда видели последнюю.
+  // Маршрут нужен приложению: на «Інфо» по нему видно, кого именно мы читаем и не заглох ли
+  // источник. Раньше здесь был 404, и подпись «Джерела: N» молча отсутствовала — выглядело как
+  // «данные с сервера не приходят», хотя лента работала.
+  if (path === '/news/sources') {
+    const rows = await env.DB.prepare(
+      `SELECT source_key, COUNT(*) AS items, MAX(first_seen_at) AS last_seen
+       FROM news GROUP BY source_key ORDER BY source_key`,
+    ).all<{ source_key: string; items: number; last_seen: string | null }>();
+    const data = (rows.results ?? []).map((row) => ({
+      sourceKey: row.source_key,
+      // Каналы операторов читаем как публичные веб-страницы Telegram — это и есть вид источника.
+      kind: 'telegram',
+      baseUrl: null,
+      regionCpu: null,
+      enabled: true,
+      lastOkAt: row.last_seen,
+      // Текста ошибки зеркало не хранит: сбой сбора видно по отсутствию свежих записей.
+      // Выдумывать сообщение нельзя — UI показал бы вымышленную причину.
+      lastError: null,
+      itemsCount: row.items,
+    }));
+    return json({ data }, 200, { 'cache-control': 'public, max-age=300' });
+  }
+
   if (path === '/addresses/settlements') {
     const query = (url.searchParams.get('q') ?? '').trim();
     if (query.length < 2) return json({ data: [] });
@@ -2125,6 +2163,44 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (path === '/street-queues') return json({ data: [] });
+
+  // График по улице. Привязки улиц к чергам зеркало не ведёт (это выверенный справочник
+  // бэкенда), поэтому отвечаем тем же контрактом, что Node для непривязанного адреса:
+  // «вулиця не прив'язана». 404 здесь выглядел бы как поломка приложения.
+  if (path === '/street-queues/schedule') {
+    const street = (url.searchParams.get('street') ?? '').trim();
+    if (street.length < 2) {
+      return json({ error: { code: 'VALIDATION_ERROR', message: 'street обовʼязковий (мінімум 2 символи)' } }, 400);
+    }
+    const date = (url.searchParams.get('date') ?? today).trim();
+    return json({
+      data: {
+        street,
+        streetNormalized: normalizeAddress(street),
+        queue: null,
+        date,
+        intervals: [],
+        source: null,
+        lastImportedAt: null,
+        region,
+      },
+    });
+  }
+
+  // Особовий рахунок: довідник ведёт только эталонный бэкенд (данные выверены вручную, это
+  // персональные данные абонентов). Отвечаем тем же кодом, что и он: приложение показывает
+  // человеческое «номера немає в довіднику», а не техническое «Немає маршруту».
+  if (path.startsWith('/places/')) {
+    const account = decodeURIComponent(path.slice('/places/'.length));
+    if (!/^\d{9,12}$/u.test(account)) {
+      return json({ error: { code: 'VALIDATION_ERROR', message: 'Особовий рахунок — 9–12 цифр' } }, 400);
+    }
+    return json(
+      { error: { code: 'PLACE_NOT_FOUND', message: 'Цього особового рахунку немає в довіднику' } },
+      404,
+    );
+  }
+
   if (path === '/addresses/suggest') {
     // Раньше здесь был пустой массив, и адресный поиск в облаке не предлагал ничего.
     // Теперь ищем по тому же, что уже есть в D1: справочник улиц и привязки к очередям.
@@ -2237,14 +2313,19 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // CORS preflight: браузер спрашивает это до любого GET с другого домена.
+    // CORS preflight: браузер спрашивает это до любого запроса с другого домена.
     if (request.method === 'OPTIONS') {
+      // Разрешаем ровно те заголовки, о которых спрашивает клиент: список приходится повторять,
+      // иначе preflight отклоняется целиком (см. ALLOWED_HEADERS).
+      const requested = request.headers.get('access-control-request-headers');
       return new Response(null, {
         status: 204,
         headers: {
           'access-control-allow-origin': '*',
-          'access-control-allow-methods': 'GET, OPTIONS',
-          'access-control-allow-headers': 'Content-Type',
+          'access-control-allow-methods': 'GET, POST, OPTIONS',
+          'access-control-allow-headers':
+            requested && requested.trim().length > 0 ? requested : ALLOWED_HEADERS,
+          'access-control-max-age': '86400',
         },
       });
     }
