@@ -1,8 +1,10 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Wrench, ChevronDown } from 'lucide-react';
+import { Sparkles, Wrench, ChevronDown, CloudCheck, CloudOff, Database } from 'lucide-react';
 import bundledChangelog from '../../data/changelog.json';
 import { useChangelog } from '../../api/queries.js';
+import { isOfflineServed } from '../../api/offline-cache.js';
+import { formatDateTime } from '../../lib/date.js';
 import { cn } from '../../lib/cn.js';
 
 type ChangelogEntry = {
@@ -35,9 +37,28 @@ const BUNDLED_ENTRIES = bundledChangelog.entries as ChangelogEntry[];
 export const ChangelogCard: React.FC = () => {
   const { t } = useTranslation();
   const { data } = useChangelog();
-  const entries = (data?.data?.entries as ChangelogEntry[] | undefined) ?? BUNDLED_ENTRIES;
+  const fromServer = data?.data;
+  const entries = (fromServer?.entries as ChangelogEntry[] | undefined) ?? BUNDLED_ENTRIES;
   // Данных нет только если генератор ещё не запускался — тогда блок просто не рисуем.
   if (entries.length === 0) return null;
+
+  /**
+   * Откуда список. Подпись обязательна: «Що нового» — единственное место, где по списку судят,
+   * доехали ли серверные исправления до установленного приложения. Без пометки встроенная копия
+   * выглядела бы как «фиксы не приходят», хотя на деле это отсутствие связи.
+   */
+  const offline = isOfflineServed();
+  // Дата сборки списка бывает не заполнена: генератор без git не пишет её вовсе. Тогда честнее
+  // сказать «оновлено з сервера» без выдуманного времени.
+  const generatedAt = fromServer?.generatedAt ? formatDateTime(fromServer.generatedAt) : null;
+  const sourceLabel = fromServer
+    ? offline
+      ? t('changelog.sourceCache')
+      : generatedAt
+        ? t('changelog.sourceServer', { when: generatedAt })
+        : t('changelog.sourceServerNoTime')
+    : t('changelog.sourceBundled');
+  const SourceIcon = fromServer ? (offline ? Database : CloudCheck) : CloudOff;
 
   return (
     <details className="group/change rounded-2xl border border-border bg-card p-4 shadow-xs">
@@ -52,7 +73,12 @@ export const ChangelogCard: React.FC = () => {
         </span>
       </summary>
 
-      <ul className="mt-3 space-y-2">
+      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <SourceIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span className="min-w-0">{sourceLabel}</span>
+      </p>
+
+      <ul className="mt-2 space-y-2">
         {entries.slice(0, 5).map((entry) => (
           <li key={entry.hash} className="flex gap-2.5">
             <span

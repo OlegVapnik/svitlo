@@ -29,25 +29,44 @@ declare global {
 export function useSafeAreaInsets(): void {
   useEffect(() => {
     const bridge = window.SvitloInsets;
-    if (!bridge?.top && !bridge?.bottom) return;
+    if (!bridge) return;
+
+    const style = document.documentElement.style;
+    const write = (name: string, value: number) => {
+      // Пишем только при изменении: нативную сторону (MainActivity.pushInsetsToPage) и этот хук
+      // связывает один и тот же источник, поэтому лишняя запись — это только лишняя работа
+      // раскладки на каждом кадре.
+      const next = `${value}px`;
+      if (style.getPropertyValue(name) !== next) style.setProperty(name, next);
+    };
 
     const apply = () => {
-      const style = document.documentElement.style;
-      const top = Math.max(0, Math.round(bridge.top?.() ?? 0));
-      const bottom = Math.max(0, Math.round(bridge.bottom?.() ?? 0));
-      style.setProperty('--safe-top', `${top}px`);
-      style.setProperty('--safe-bottom', `${bottom}px`);
+      try {
+        write('--safe-top', Math.max(0, Math.round(bridge.top?.() ?? 0)));
+        write('--safe-bottom', Math.max(0, Math.round(bridge.bottom?.() ?? 0)));
+      } catch {
+        // WebView отдаёт методы моста через рефлексию, и её отказ (смена версии WebView,
+        // пересозданный документ) выбрасывал бы исключение внутри эффекта — то есть ронял бы
+        // каркас приложения из-за отступа. В этом случае работают env() и нативный push.
+      }
     };
 
     apply();
     const timers = [150, 500, 1500].map((ms) => window.setTimeout(apply, ms));
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') apply();
+    };
     window.addEventListener('resize', apply);
     window.addEventListener('orientationchange', apply);
+    window.addEventListener('pageshow', apply);
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       for (const timer of timers) window.clearTimeout(timer);
       window.removeEventListener('resize', apply);
       window.removeEventListener('orientationchange', apply);
+      window.removeEventListener('pageshow', apply);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 }

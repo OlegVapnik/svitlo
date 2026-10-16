@@ -1,10 +1,12 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { useBatterySaver } from '../../hooks/useBatterySaver.js';
 import { useOfflineSync } from '../../hooks/useOfflineSync.js';
 import { useOutageNotifications } from '../../hooks/useOutageNotifications.js';
 import { usePowerState } from '../../hooks/usePowerState.js';
 import { useSafeAreaInsets } from '../../hooks/useSafeAreaInsets.js';
 import { useSwipeTabs } from '../../hooks/useSwipeTabs.js';
+import { useTabTransition } from '../../hooks/useTabTransition.js';
+import { cn } from '../../lib/cn.js';
 import { Header } from './Header.js';
 import { BottomNav } from './BottomNav.js';
 import { Sidebar } from './Sidebar.js';
@@ -39,6 +41,10 @@ export const AppShell = () => {
   useSafeAreaInsets();
   // Горизонтальный свайп переключает нижние табы — на телефоне это быстрее, чем целиться в иконку.
   const swipe = useSwipeTabs();
+  // Мягкий приход контента при смене таба: направление берём из порядка табов, а не из жеста,
+  // поэтому тап по нижней панели и свайп выглядят одинаково.
+  const { pathname } = useLocation();
+  const transition = useTabTransition(pathname);
 
   return (
   <div className="flex min-h-dvh flex-col bg-surface-dim" {...swipe}>
@@ -54,7 +60,12 @@ export const AppShell = () => {
       {/* pb-32 с запасом: M3 Navigation Bar теперь 80px (h-20) плюс safe-area, а прижатая
           вплотную панель обрезала последнюю карточку. */}
       <main id="main" className="min-w-0 flex-1 px-4 pb-32 pt-4 sm:px-6 md:pb-8 md:pt-6">
-        <Outlet />
+        <div
+          className={cn('tab-enter', transition.entered && 'tab-enter-shown')}
+          data-nav-direction={transition.direction}
+        >
+          <Outlet />
+        </div>
       </main>
     </div>
     <BottomNav />

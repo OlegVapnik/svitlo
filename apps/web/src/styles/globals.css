@@ -520,4 +520,36 @@
   .pb-safe {
     padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom, 0px)) + 0.5rem);
   }
+
+  /* Мягкий приход контента при переключении таба (свайпом или тапом по нижней панели).
+     Почему transition, а не @keyframes: анимация требует перезапуска при каждой смене
+     маршрута, а перезапуск через смену animation-name заставляет перемонтировать страницу
+     (терялись бы фильтры в ленте новостей). Переход же начинается с разного состояния —
+     его достаточно сбросить на кадр, и браузер сам доиграет движение.
+     Сдвиг 12px и 240ms — из шкалы движения M3: быстрее выглядит как рывок, медленнее —
+     как «подвисание» интерфейса. Отключение — общее: prefers-reduced-motion и «Економія
+     заряду» гасят длительность перехода (см. блоки выше). */
+  .tab-enter {
+    --tab-shift: 0px;
+    opacity: 0;
+    transform: translate3d(var(--tab-shift), 0, 0);
+    transition:
+      opacity 240ms var(--ease-m3-standard),
+      transform 240ms var(--ease-m3-standard);
+  }
+
+  /* Следующий таб приходит справа, предыдущий — слева: контент движется в ту же сторону,
+     куда «уехала» лента, и палец не теряет связь с экраном. */
+  .tab-enter[data-nav-direction='next'] {
+    --tab-shift: 12px;
+  }
+
+  .tab-enter[data-nav-direction='prev'] {
+    --tab-shift: -12px;
+  }
+
+  .tab-enter-shown {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
 }

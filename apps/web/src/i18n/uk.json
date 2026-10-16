@@ -407,7 +407,11 @@
     "noNewsLoading": "Шукаємо новини по Україні…"
   },
   "changelog": {
-    "entries": "змін"
+    "entries": "змін",
+    "sourceServer": "оновлено з сервера {{when}}",
+    "sourceServerNoTime": "оновлено з сервера",
+    "sourceCache": "з кешу телефону: сервер недоступний",
+    "sourceBundled": "вбудований список: звʼязку з сервером немає"
   },
   "powerSummary": {
     "perGroup": "у середньому по групах"
