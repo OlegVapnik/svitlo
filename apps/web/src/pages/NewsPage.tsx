@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '../lib/cn.js';
 import { ExternalLink, Globe2, Newspaper, Search, Zap } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card.js';
 import { Badge } from '../components/ui/Badge.js';
@@ -48,7 +49,8 @@ const sourceLabel = (sourceKey: string): string => {
  * які фоновий колектор складає в `news_items` (міграція 0014). Сторінка читає лише бекенд
  * (`GET /api/v1/news`) і не містить персональних даних — тільки текст публікації й першоджерело.
  */
-export const NewsPage: React.FC = () => {
+/** Лента новостей. `embedded` — вложенный сегмент раздела «Інфо» (см. OutagesPage). */
+export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { t } = useTranslation();
   const { currentRegion } = useRegion();
   const [kind, setKind] = useState<KindFilter>('all');
@@ -112,14 +114,18 @@ export const NewsPage: React.FC = () => {
   }, [items, fallbackData, onlyPower, query]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 pb-16 md:pb-6">
-      <header className="space-y-0.5">
-        <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-          <Newspaper className="h-5 w-5 text-muted-foreground" aria-hidden />
-          {t('news.title')}
-        </h1>
-        <p className="text-xs text-muted-foreground sm:text-sm">{t('news.subtitle')}</p>
-      </header>
+    <div className={cn('space-y-4', embedded ? '' : 'mx-auto max-w-4xl pb-16 md:pb-6')}>
+      {/* Во вложенном виде заголовок не рисуем: он уже есть у раздела «Інфо», и второй
+          заголовок под первым читается как ошибка вёрстки. */}
+      {!embedded && (
+        <header className="space-y-0.5">
+          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+            <Newspaper className="h-5 w-5 text-muted-foreground" aria-hidden />
+            {t('news.title')}
+          </h1>
+          <p className="text-xs text-muted-foreground sm:text-sm">{t('news.subtitle')}</p>
+        </header>
+      )}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
