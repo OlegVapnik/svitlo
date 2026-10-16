@@ -14,6 +14,16 @@ export function formatTimeRange(start: string, end: string): string {
   return `${t1} – ${t2}`;
 }
 
+/**
+ * Только время в киевском поясе («14:00»).
+ *
+ * Отдельно от formatDateTime: в текстах уведомлений и подписях к строке расписания дата лишняя
+ * и только удлиняет строку — «Світло зникне за 30 хв, початок о 14:00» читается сразу.
+ */
+export function formatKyivTime(iso: string): string {
+  return formatInTimeZone(new Date(iso), KYIV_TZ, 'HH:mm');
+}
+
 export function formatRelative(iso: string): string {
   return formatDistanceToNow(new Date(iso), { addSuffix: true, locale: uk });
 }

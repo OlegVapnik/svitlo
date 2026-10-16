@@ -64,15 +64,23 @@ function snapshotKey(region: string): string {
 /**
  * Сохраняет срез по всем группам области.
  *
+ * `at` — время, к которому относятся данные. По умолчанию это момент записи (сетевой ответ
+ * только что пришёл). При гидратации из пакета синхронизации сюда передаётся время сборки
+ * пакета на сервере: иначе вчерашний график выглядел бы как «щойно оновлено».
+ *
  * Молча отказывает, если хранилище недоступно или не помещается: отсутствие кэша — это
  * «в офлайне покажем пусто», но не падение приложения.
  */
-export function writeRegionScheduleSnapshot(region: string, buckets: readonly SnapshotBucket[]): void {
+export function writeRegionScheduleSnapshot(
+  region: string,
+  buckets: readonly SnapshotBucket[],
+  at?: string,
+): void {
   const store = storage();
   if (!store || !region) return;
 
   const snapshot: RegionSnapshot = {
-    at: new Date().toISOString(),
+    at: typeof at === 'string' && at ? at : new Date().toISOString(),
     // Сохраняем только нужное: settlements/streetNames в снимке не участвуют, а место занимают.
     buckets: buckets
       .filter((bucket) => bucket && bucket.queue && bucket.date && Array.isArray(bucket.intervals))

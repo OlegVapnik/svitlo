@@ -10,8 +10,10 @@
  * 3. Час і дата — київські (Europe/Kyiv), не UTC.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import type { SyncSettlement } from '@svitlo/shared';
 import { db } from '../db/connection.js';
 import { scheduleSlots, settlementQueues, settlements } from '../db/schema.js';
+import { settlementsForRegion } from '../providers/settlement-directory.js';
 import { timeToMinutes } from './data-quality.js';
 
 export type SettlementKind = 'місто' | 'смт' | 'село';
@@ -130,6 +132,79 @@ export async function searchSettlements(
     total: countRows[0]?.total ?? rows.length,
   };
 }
+
+/**
+ * Ліміт НП в офлайн-пакеті `/api/v1/sync`.
+ *
+ * 2000 — це з запасом покриває найбільшу область (у Чернігівській 1509 НП у довіднику КОАТТГ),
+ * і одночасно межа, за якою пакет починає важити більше, ніж користі приносить: у мобільній
+ * мережі кожен кілобайт стартового пакета відчутний. Скільки НП є насправді, клієнт бачить
+ * у `settlementsTotal` — обрізаний список не видається за повний.
+ */
+export const SYNC_SETTLEMENTS_LIMIT = 2000;
+
+/**
+ * НП області для офлайн-пошуку адреси (майстер «область → НП → вулиця → дом»).
+ *
+ * Джерела зливаються, а не вибирається одне:
+ *   - рядки `settlements` із прив'язками `settlement_queues` — те, що ми справді знаємо про
+ *     групи (у них є `queues`, і саме вони дають «моє село → моя черга» офлайн);
+ *   - довідник КОАТТГ (`settlementsForRegion`) — тисячі реальних назв області, які оператор ще
+ *     не згадав у графіку. Черги для них порожні, і це чесно: вигадувати прив'язку не можна.
+ *
+ * Порядок — спершу НП із відомими групами (вони корисніші в підказках), далі за назвою. Без
+ * цього сортування найкорисніші НП губилися б у алфавітному хвості обрізаного списку.
+ */
+export async function listRegionSettlements(
+  region: string,
+  limit: number = SYNC_SETTLEMENTS_LIMIT,
+): Promise<{ items: SyncSettlement[]; total: number }> {
+  const [rows, queueRows] = await Promise.all([
+    db
+      .select({ id: settlements.id, name: settlements.name, kind: settlements.kind })
+      .from(settlements)
+      .where(eq(settlements.region, region)),
+    db
+      .select({ settlementId: settlementQueues.settlementId, queue: settlementQueues.queue })
+      .from(settlementQueues)
+      .where(eq(settlementQueues.region, region))
+      .orderBy(asc(settlementQueues.queue)),
+  ]);
+
+  const queuesBySettlement = new Map<string, string[]>();
+  for (const row of queueRows) {
+    const list = queuesBySettlement.get(row.settlementId) ?? [];
+    if (!list.includes(row.queue)) list.push(row.queue);
+    queuesBySettlement.set(row.settlementId, list);
+  }
+
+  // Ключ — нормалізована назва: довідник і база можуть описувати один НП по-різному
+  // («с. Деснянське» / «Деснянське»), а подвійна підказка в списку виглядає як дві різні місцини.
+  const merged = new Map<string, SyncSettlement>();
+  for (const row of rows) {
+    const key = normalizeSettlementName(row.name);
+    if (!key) continue;
+    merged.set(key, {
+      name: row.name.trim(),
+      kind: (row.kind as SettlementKind | null) ?? null,
+      queues: queuesBySettlement.get(row.id) ?? [],
+    });
+  }
+  for (const item of settlementsForRegion(region)) {
+    const key = normalizeSettlementName(item.name);
+    if (!key || merged.has(key)) continue;
+    merged.set(key, { name: item.name.trim(), kind: item.kind ?? null, queues: [] });
+  }
+
+  const all = [...merged.values()].sort((a, b) => {
+    const byQueues = b.queues.length - a.queues.length;
+    if (byQueues !== 0) return byQueues;
+    return a.name.localeCompare(b.name, 'uk');
+  });
+
+  return { items: all.slice(0, limit), total: all.length };
+}
+
 
 /** Черги населеного пункту + сьогоднішні вікна відключень (київська доба). Немає даних → чесно false/null. */
 export async function getSettlementQueues(id: string, now: Date = new Date()): Promise<SettlementQueuesResult | null> {

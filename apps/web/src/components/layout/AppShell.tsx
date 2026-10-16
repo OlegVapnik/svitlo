@@ -1,5 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { useBatterySaver } from '../../hooks/useBatterySaver.js';
+import { useOfflineSync } from '../../hooks/useOfflineSync.js';
+import { useOutageNotifications } from '../../hooks/useOutageNotifications.js';
 import { Header } from './Header.js';
 import { BottomNav } from './BottomNav.js';
 import { Sidebar } from './Sidebar.js';
@@ -7,10 +9,18 @@ import { Sidebar } from './Sidebar.js';
 /**
  * Каркас приложения: шапка, боковое меню (desktop), контент, нижняя навигация (mobile).
  * «Skip to content» — первая ссылка на странице: клавиатурой можно проскочить меню.
+ *
+ * Здесь же запускается фоновая синхронизация офлайн-пакета: каркас живёт всю сессию и не
+ * перемонтируется при переходах между экранами, поэтому один таймер обслуживает всё приложение
+ * (индикатор в шапке только читает состояние).
  */
 export const AppShell = () => {
   // Один вызов на всё приложение: класс ставится на <html> и гасит анимации разом.
   useBatterySaver();
+  // Тоже один вызов на всё приложение: внутри таймер, обработчики сети и возврата во вкладку.
+  useOfflineSync();
+  // И предупреждения об отключениях: они читают тот же кеш, что наполняет офлайн-пакет.
+  useOutageNotifications();
 
   return (
   <div className="flex min-h-dvh flex-col bg-background">

@@ -21,6 +21,7 @@ import regionRoutes from './routes/regions.js';
 import reliabilityRoutes from './routes/reliability.js';
 import settlementRoutes from './routes/settlements.js';
 import newsRoutes from './routes/news.js';
+import syncRoutes from './routes/sync.js';
 import changelogRoutes from './routes/changelog.js';
 import adminProviderRoutes from './routes/admin-providers.js';
 
@@ -79,6 +80,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(reliabilityRoutes);
   await server.register(settlementRoutes);
   await server.register(newsRoutes);
+  // Один пакет для офлайн-старту застосунку (статус + каталог областей + графік + новини).
+  await server.register(syncRoutes);
   // Чейджлог по сети: серверный фикс виден в уже установленном приложении без пересборки APK.
   await server.register(changelogRoutes);
   await server.register(adminProviderRoutes);

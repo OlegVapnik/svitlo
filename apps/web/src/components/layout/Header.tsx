@@ -4,12 +4,15 @@ import { Zap } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle.js';
 import { RegionPicker } from '../region/RegionPicker.js';
 import { FreshnessChip } from '../status/FreshnessChip.js';
+import { SyncIndicator } from '../status/SyncIndicator.js';
 
 /**
  * Верхняя панель: узнаваемый логотип, состояние источника данных (свежесть/ошибка),
  * выбор области (мультирегіональність) и переключатели.
  * Свежесть вынесена в шапку намеренно: «данные устарели» должно быть видно с любой страницы,
  * а не только на главной (skills/frontend-ui-change, PWA).
+ * Рядом — индикатор офлайн-пакета: он отвечает на другой вопрос («знает ли телефон график») и
+ * с ошибкой источника не совпадает, поэтому это две отдельные метки, а не одна.
  */
 export const Header = () => {
   const { t } = useTranslation();
@@ -32,6 +35,7 @@ export const Header = () => {
               стоял нативный <select> без поиска, из-за чего в мобильном приложении выбрать
               область в средине списка было невозможно. */}
           <RegionPicker variant="compact" />
+          <SyncIndicator />
           <FreshnessChip />
           <ThemeToggle />
         </div>

@@ -33,7 +33,13 @@ export class ApiError extends Error {
   }
 }
 
-async function fetcher(endpoint: string, options?: RequestInit) {
+/**
+ * `useOfflineCache = false` — не писать этот ответ в кеш по URL.
+ *
+ * Нужно ровно для `/sync`: пакет (~170 КБ) хранит сам offline-sync, и вторая копия в общем
+ * кеше только съедала бы квоту localStorage и вытесняла оттуда полезные ответы.
+ */
+async function fetcher(endpoint: string, options?: RequestInit, useOfflineCache = true) {
   // cache: 'no-store' — график групп меняется у оператора каждые полчаса, а обычный HTTP disk
   // cache в браузере отдавал по /api/v1/schedules устаревший (в том числе пустой) ответ: главная
   // показывала «Даних графіка немає», хотя бэкенд отдавал интервалы. Кэширование данных решает
@@ -48,7 +54,7 @@ async function fetcher(endpoint: string, options?: RequestInit) {
   } catch (error) {
     // Сеть недоступна — отдаём последний успешный ответ по этому эндпоинту, если он есть.
     // Это ровно тот случай, когда в районе без связи человек должен видеть график отключений.
-    if (isRead) {
+    if (isRead && useOfflineCache) {
       const cached = readCache(endpoint);
       if (cached) {
         noteServedFromCache(cached);
@@ -69,7 +75,7 @@ async function fetcher(endpoint: string, options?: RequestInit) {
   const data = await res.json();
   // Сеть снова доступна — снимаем баннер офлайна и обновляем кеш свежим ответом.
   noteServedOnline();
-  if (isRead) writeCache(endpoint, data);
+  if (isRead && useOfflineCache) writeCache(endpoint, data);
   return data;
 }
 
@@ -96,6 +102,25 @@ export const api = {
     return fetcher(`/status${query}`, { signal });
   },
   fetchHealth: () => fetcher('/health'),
+  /**
+   * Офлайн-пакет области (GET /api/v1/sync) — один ответ вместо пяти запросов на старте.
+   *
+   * `etag` уходит в `If-None-Match`: сервер отвечает `304 Not Modified`, если содержимое не
+   * изменилось. Это не ошибка, а нормальный результат, поэтому вызывающая сторона
+   * (api/offline-sync.ts) отличает его по `ApiError.status === 304`. Отдаём 304 сюда, а не
+   * глушим внутри: решать, «обновлять или нет», должна логика синхронизации, а не транспорт.
+   *
+   * В общий кеш по URL ответ не пишется (`useOfflineCache = false`): пакет хранит offline-sync,
+   * и его копия здесь только занимала бы квоту localStorage.
+   */
+  fetchSync: (region?: string, etag?: string | null, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (region) params.set('region', region);
+    const query = params.toString();
+    const headers: Record<string, string> = {};
+    if (etag) headers['if-none-match'] = etag;
+    return fetcher(`/sync${query ? `?${query}` : ''}`, { signal, headers }, false);
+  },
   /**
    * Поиск своей группы ГПВ по адресу (область → НП → улица → дом).
    *

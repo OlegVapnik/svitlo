@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { hydrateOfflineStartup } from './api/offline-sync.js';
 import './styles/globals.css';
 
 /**
@@ -15,6 +16,16 @@ if ('caches' in window) {
     void caches.delete(name).catch(() => undefined);
   }
 }
+
+/**
+ * Гидратация офлайн-пакета ДО первого рендера.
+ *
+ * Почему не в useEffect: хуки страниц запускают запросы сразу при монтировании, и без сети
+ * первый кадр рисовался бы пустым («Немає даних»), а сохранённый график приезжал бы вторым.
+ * С гидратацией здесь приложение в офлайне показывает последний известный график с первого
+ * кадра — ровно ради этого эндпоинт /sync и делался.
+ */
+hydrateOfflineStartup();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

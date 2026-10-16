@@ -526,6 +526,131 @@ export interface NewsCollectResponse {
   perSource: NewsCollectPerSource[];
 }
 
+// ───────────────────────────── Пакет синхронізації офлайн-застосунку ─────────────────────────────
+
+/**
+ * Контакт обленерго у пакеті синхронізації.
+ *
+ * Тип залишено для сумісності контракту `/api/v1/sync`. Самі контакти з проєкту прибрані
+ * (див. `apps/api/src/db/migrations/0018_drop_contacts.sql` та `InfoPage.tsx`): застосунок від
+ * них більше не залежить, і вигадувати номери телефонів замість видалених було б обманом.
+ * Тому `SyncBundle.contacts` приходить порожнім масивом, а не вигаданим довідником.
+ */
+export interface SyncContact {
+  /** cpu області, до якої належить контакт. */
+  regionCpu: string;
+  /** Назва обленерго. */
+  name: string;
+  /** Телефон диспетчера/кол-центру, якщо відомий. */
+  phone?: string | null;
+  /** Сторінка оператора для перевірки графіка. */
+  url?: string | null;
+}
+
+/**
+ * Графік однієї області в пакеті синхронізації: по одному елементу на пару «група × дата».
+ *
+ * Форма елемента навмисно дорівнює `GroupOutageSummary` — саме так її віддає
+ * `GET /api/v1/schedules/upcoming`. Завдяки цьому той самий JSON гідратує одразу два кеші
+ * TanStack Query: список ближніх відключень (`upcomingGroupOutages`) і графік конкретної групи
+ * (`queueSchedule`), без окремих структур даних і без перекладів між ними на клієнті.
+ */
+export interface SyncRegionSchedules {
+  /** Київські дати, на які зібрано графік (сьогодні й завтра). */
+  days: string[];
+  /** Групи з реальними інтервалами відключень на ці дати. Порожньо — графіка немає. */
+  buckets: GroupOutageSummary[];
+}
+
+/**
+ * Пакет синхронізації `GET /api/v1/sync`: усе, що потрібне телефону для автономної роботи.
+ *
+ * Один запит замість шести (`/status`, `/regions`, `/schedules/upcoming`, `/schedules`, `/news`,
+ * `/contacts`) — це головна причина появи ендпоінта: у мобільної мережі важлива не швидкість
+ * кожного запиту, а їх кількість.
+ */
+export interface SyncSettlement {
+  /** Назва населеного пункту так, як її віддає джерело («с. Деснянське», «Чернігів»). */
+  name: string;
+  /** 'місто' | 'село' | 'смт' — з довідника КОАТТГ; `null`, якщо джерело типу не знає. */
+  kind: string | null;
+  /** Коди груп, прив'язаних до НП. Порожньо — прив'язки немає, і вигадувати її не можна. */
+  queues: string[];
+}
+
+export interface SyncBundle {
+  /** Коли зібрано пакет (ISO, UTC). */
+  syncedAt: string;
+  /**
+   * Детермінований хеш вмісту — клієнт надсилає його в `If-None-Match`.
+   *
+   * Рахується від вмісту БЕЗ `syncedAt` і без `status.nextAttemptAt`: обидва поля похідні від
+   * моменту запиту, а не від даних. Якщо їх не виключити, хеш змінюється на кожен виклик,
+   * `If-None-Match` не збігається ніколи і 304 не настає — заголовок стає декоративним.
+   */
+  etag: string;
+  /** Область, для якої зібрано графік; `null` — пакет містить усі відомі області. */
+  region: string | null;
+  /** Повний стан мережі для вибраної області (для `useStatus`). */
+  status: StatusResponse;
+  /** Каталог областей зі статистикою. */
+  regions: RegionSummary[];
+  /** Очереди області (для `useQueues`): без них «Мої черги» в офлайні були б порожні. */
+  queues: QueueSummary[];
+  /** Графіки за областями: ключ — `cpu` області. */
+  schedulesByRegion: Record<string, SyncRegionSchedules>;
+  /**
+   * Населені пункти області для офлайн-пошуку адреси (майстер «область → НП → вулиця → дом»).
+   *
+   * Це не повний географічний реєстр країни, а те, що ми справді знаємо про область: НП із
+   * довідника КОАТТГ і ті, у яких є прив'язка до групи. Обрізаний до ліміту рунтайма —
+   * скільки всього, видно в `settlementsTotal`.
+   */
+  settlements: SyncSettlement[];
+  /** Скільки НП області відомо всього (а не скільки потрапило в `settlements`). */
+  settlementsTotal: number;
+  /** Останні 20 публікацій каналів операторів. */
+  news: NewsItem[];
+  /** Довідник контактів обленерго (наразі порожній, див. `SyncContact`). */
+  contacts: SyncContact[];
+}
+
+/**
+ * Детермінований хеш пакета синхронізації (FNV-1a, 32 біти) у формі weak-ETag.
+ *
+ * Потрібен рівно для одного: щоб `If-None-Match` працював у двох різних рантаймах (Cloudflare
+ * Workers і Node) без криптографії. `crypto.subtle.digest` асинхронний і в воркері дає інший
+ * результат, ніж у Node, якщо передати рядок різними шляхами; FNV-1a — це чиста функція над
+ * текстом, тому обидві реалізації рахують однаково. Криптостійкість тут не потрібна: ETag не
+ * захищає дані, він лише відрізняє «те саме» від «нове».
+ */
+export function computeSyncEtag(payload: unknown): string {
+  const text = JSON.stringify(payload) ?? '';
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `W/"${hash.toString(16).padStart(8, '0')}"`;
+}
+
+/**
+ * Чи збігається клієнтський `If-None-Match` з нашим ETag.
+ *
+ * Заголовок — список значень через кому, кожне може мати префікс `W/` (weak). Строге порівняння
+ * рядків тут не працювало б: браузер може віддати той самий ETag із префіксом, без нього або в
+ * списку разом з іншими. `*` означає «будь-яке вже збережене представлення» — це теж 304.
+ */
+export function etagMatchesHeader(header: string | null | undefined, etag: string): boolean {
+  if (!header) return false;
+  const normalize = (value: string) => value.trim().replace(/^W\//u, '');
+  const wanted = normalize(etag);
+  return header
+    .split(',')
+    .map((part) => part.trim())
+    .some((part) => part === '*' || normalize(part) === wanted);
+}
+
 export const newsKindSchema = z.enum(['outage', 'schedule-change', 'repair', 'emergency', 'ukraine', 'other']);
 
 export const newsQuerySchema = z.object({

@@ -44,8 +44,14 @@ function isValidBookmark(value: unknown): value is Bookmark {
   );
 }
 
-/** Читає закладки з localStorage, відфільтровуючи мусор старих версій. */
-function loadBookmarks(): Bookmark[] {
+/**
+ * Читає закладки з localStorage, відфільтровуючи мусор старих версій (схема, що не збігається
+ * з поточною, вважається застарілою і не використовується).
+ *
+ * Експортовано, бо список потрібен і поза React-компонентом: фонова перевірка сповіщень про
+ * відключення читає ті самі закладки, щоб знати, за якими чергами стежити.
+ */
+export function loadBookmarks(): Bookmark[] {
   if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(BOOKMARKS_KEY);

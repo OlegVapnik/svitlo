@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin, Search, Star } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useAddressLookup, useContributeAddress } from '../../api/queries.js';
+import { offlineSettlementStats, searchOfflineSettlements } from '../../api/offline-sync.js';
 import { QueueScheduleBar } from '../schedule/QueueScheduleBar.js';
 import { Button } from '../ui/Button.js';
 import { Skeleton } from '../ui/Skeleton.js';
@@ -133,6 +134,19 @@ export const AddressWizard: React.FC = () => {
               setHouse('');
             }}
           />
+          {/* Подсказки из офлайн-пакета: без них поиск адреса в дороге превращается в угадывание
+              точного написания НП. Данные те же, что у сервера (пакет собирается из справочника
+              settlements), поэтому подсказка ничего не выдумывает. */}
+          <SettlementHints
+            region={currentRegion}
+            query={settlement}
+            onPick={(name) => {
+              setSettlement(name);
+              setStreet('');
+              setHouse('');
+              setResult(null);
+            }}
+          />
         </li>
         <li>
           <StepField
@@ -249,6 +263,51 @@ export const AddressWizard: React.FC = () => {
             <p className="text-[11px] text-muted-foreground/80">{t('addressWizard.source', { source })}</p>
           )}
         </section>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Локальные подсказки по населённым пунктам области.
+ *
+ * Справочник лежит в офлайн-пакете, поэтому подсказки работают и без сети — ровно там, где они
+ * нужнее всего: в селе связь пропадает, а название села надо набрать точно.
+ *
+ * Показываем при двух и более символах и не больше пяти вариантов: список нужен, чтобы выбрать,
+ * а не читать. Если на устройстве не весь справочник (пакет урезан по размеру), говорим об этом
+ * прямо — иначе пустой список читается как «такого села нет», хотя оно просто не сохранено.
+ */
+const SettlementHints: React.FC<{
+  region: string;
+  query: string;
+  onPick: (name: string) => void;
+}> = ({ region, query, onPick }) => {
+  const { t } = useTranslation();
+  const stats = useMemo(() => offlineSettlementStats(region), [region]);
+  const items = useMemo(() => searchOfflineSettlements(region, query, 5), [region, query]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 space-y-1">
+      <ul className="flex flex-wrap gap-1.5">
+        {items.map((item) => (
+          <li key={item.name}>
+            <button
+              type="button"
+              onClick={() => onPick(item.name)}
+              className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+            >
+              {item.name}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {stats && stats.total > stats.shown && (
+        <p className="text-[11px] text-muted-foreground">
+          {t('offline.suggestionsPartial', { shown: stats.shown, total: stats.total })}
+        </p>
       )}
     </div>
   );

@@ -2,7 +2,10 @@
 import os, re, sys
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
-IGNORE_DIRS = {".git", "node_modules", "dist", ".turbo", "coverage"}
+# `.cache` и `build` — локальные кеши Gradle/Android (в .gitignore): в них лежат документация и
+# Kotlin-DSL самого инструмента, где слово `password` встречается сотнями раз. В репозиторий они не
+# попадают, и находки в них означали бы только одно: настоящая находка утонула бы в шуме.
+IGNORE_DIRS = {".git", "node_modules", "dist", ".turbo", "coverage", ".cache", ".gradle", "build", "__pycache__"}
 SECRET_RE = re.compile(
     r"""["']?(?:ADMIN_TOKEN|POSTGRES_PASSWORD|CAPTCHA_SOLVER_API_KEY|password|secret)["']?\s*[:=]\s*["']([A-Za-z0-9_\-./+=]{8,})["']""",
     re.IGNORECASE,

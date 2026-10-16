@@ -13,6 +13,7 @@ import { useOutages } from '../api/queries.js';
 import { api, ApiError } from '../api/client.js';
 import { AddressCombobox } from '../components/search/AddressCombobox.js';
 import { AddressWizard } from '../components/address/AddressWizard.js';
+import { NotificationToggle } from '../components/status/NotificationToggle.js';
 import { isAccountNumber, normalizeAccountNumber } from '../lib/account.js';
 import type { Outage, SubscriberPlace } from '@svitlo/shared';
 
@@ -127,6 +128,12 @@ export const MyAddressPage: React.FC = () => {
         </CardHeader>
         <CardContent className="p-4 sm:p-5">
           <AddressWizard />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4 sm:p-5">
+          <NotificationToggle />
         </CardContent>
       </Card>
 

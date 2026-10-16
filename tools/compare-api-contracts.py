@@ -10,17 +10,25 @@
 Запуск:
     python3 tools/compare-api-contracts.py
     python3 tools/compare-api-contracts.py --only status,incidents
+    # Локально, до деплоя: wrangler dev рядом с docker-бэкендом.
+    SVITLO_API_BASE=http://localhost:3001/api/v1 \
+    SVITLO_WORKER_BASE=http://127.0.0.1:8788/api/v1 python3 tools/compare-api-contracts.py
 """
 import argparse
 import json
+import os
 import re
 import sys
 import urllib.error
 import urllib.request
 import urllib.parse
 
-API = "http://192.168.1.100:3000/api/v1"
-WORKER = "https://svitlo-api.olegvapnik45.workers.dev/api/v1"
+# Адреса можно переопределить переменными окружения: иначе сверку негде прогнать, кроме как
+# на живом облаке, а локальный `wrangler dev` (и он же в CI) — единственный способ проверить
+# правку воркера ДО деплоя. Опечатка в схеме стоит белого экрана на телефоне, поэтому проверка
+# до выкладки важнее удобства «просто запусти скрипт».
+API = os.environ.get("SVITLO_API_BASE", "http://192.168.1.100:3000/api/v1")
+WORKER = os.environ.get("SVITLO_WORKER_BASE", "https://svitlo-api.olegvapnik45.workers.dev/api/v1")
 
 # Маршруты, которые реально вызывает приложение.
 ROUTES = [
@@ -39,6 +47,10 @@ ROUTES = [
     ("addresses/streets", "addresses/streets?region=chernihivska-oblast&settlement=%D1%81.+%D0%94%D0%B5%D1%81%D0%BD%D1%8F%D0%BD%D1%81%D1%8C%D0%BA%D0%B5", None),
     ("addresses/resolve", "addresses/resolve?region=chernihivska-oblast&settlement=%D1%81.+%D0%94%D0%B5%D1%81%D0%BD%D1%8F%D0%BD%D1%81%D1%8C%D0%BA%D0%B5", None),
     ("addresses/suggest", "addresses/suggest?q=%D0%A8%D0%B5%D0%B2", None),
+    # Офлайн-пакет: один ответ вместо шести запросов на старте приложения. Сверяем его отдельно,
+    # потому что расхождение здесь не видно глазами: фронтенд кладёт пакет в localStorage и
+    # показывает экран из него, поэтому пропавшее поле проявится не ошибкой, а пустым блоком.
+    ("sync", "sync?region=chernihivska-oblast", None),
 ]
 
 # Что компоненты читают обязательно. Пустое значение — поле просто должно существовать,
@@ -71,13 +83,25 @@ REQUIRED = {
     "addresses/settlements": ["data"],
     "addresses/streets": ["data"],
     "addresses/resolve": ["data.queue", "data.options", "data.reason", "data.source"],
+    # Офлайн-пакет. Поля перечислены все: каждое из них наполняет свой кеш TanStack Query, и
+    # отсутствие любого в воркере означает пустой блок на экране в офлайне — молча, без ошибки.
+    "sync": [
+        "data.region", "data.syncedAt", "data.etag",
+        "data.status.grid.level", "data.status.lastUpdatedAt",
+        "data.regions", "data.queues", "data.schedulesByRegion",
+        "data.settlements", "data.settlementsTotal", "data.news", "data.contacts",
+    ],
 }
 
 
-def fetch(base, path):
+def fetch(base, path, etag=None):
     # Без заголовка Cloudflare отвечает 403 на Python-urllib, и сравнение молча
     # показало бы «воркер недоступен» там, где он на самом деле отвечает.
-    request = urllib.request.Request(f"{base}/{path}", headers={"user-agent": "SvitloUA/2.4"})
+    headers = {"user-agent": "SvitloUA/2.4"}
+    # `etag` — для проверки 304: без If-None-Match этот путь кода вообще не выполняется.
+    if etag:
+        headers["if-none-match"] = etag
+    request = urllib.request.Request(f"{base}/{path}", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -181,6 +205,24 @@ def main():
                 print(f"    воркер: {json.dumps(shape(worker), ensure_ascii=False)[:600]}")
         else:
             print("  ✓ структуры совпадают")
+
+        # ETag: клиент присылает его в If-None-Match и ждёт 304 без тела. Без этой проверки обещание
+        # «не тратим трафик» держится только на честном слове: 200 с тем же содержимым тоже выглядит
+        # как успех, но заставляет телефон переписывать пакет на диск при каждом запуске.
+        #
+        # Хеш каждой стороны проверяем её же хешем: сравнивать ETag эталона и воркера нельзя — они
+        # считаются от разных данных (в локальной базе воркера может лежать одна область), и обмен
+        # хешами между ними давал бы вечный 200 там, где обе стороны исправны.
+        for label, base, payload in (("эталон", API, reference), ("воркер", WORKER, worker)):
+            etag = dig(payload, "data.etag")
+            if not isinstance(etag, str) or len(etag) < 4:
+                continue
+            status = fetch(base, path, etag).get("__http_error__")
+            if status == 304:
+                print(f"  ✓ {label}: If-None-Match → 304 без тела")
+            else:
+                problems += 1
+                print(f"  ✗ {label}: If-None-Match → {status or '200 с телом'}, ожидался 304")
 
     print(f"\nпроблем: {problems}")
     return 1 if problems else 0
