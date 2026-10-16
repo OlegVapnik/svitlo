@@ -121,13 +121,6 @@ export const MyQueueHero: React.FC<Props> = ({ queue, address, date, schedule, i
             >
               {t('nav.myAddress')}
             </Link>
-            <a
-              href="tel:0800210310"
-              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm font-semibold text-foreground"
-            >
-              <PhoneCall className="h-4 w-4" aria-hidden />
-              {t('home.hotlineNumber')}
-            </a>
           </div>
         </>
       )}

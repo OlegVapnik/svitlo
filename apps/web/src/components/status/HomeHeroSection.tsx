@@ -277,15 +277,6 @@ className={cn(
           <p className="mt-1 max-w-md text-xs text-muted-foreground sm:text-sm">
             {t('regions.noDataForRegionDesc')}
           </p>
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <a
-              href="tel:0800210310"
-              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
-            >
-              <PhoneCall className="h-3.5 w-3.5" aria-hidden />
-              {t('home.hotline')}
-            </a>
-          </div>
         </div>
       ) : !hasIntervals ? (
         /* Нет отключений для этой очереди на выбранную дату */
@@ -408,13 +399,6 @@ className={cn(
               >
                 {t('nav.myAddress')}
               </Link>
-              <a
-                href="tel:0800210310"
-                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
-              >
-                <PhoneCall className="h-3.5 w-3.5" aria-hidden />
-                {t('home.hotlineNumber')}
-              </a>
             </div>
 
             {schedule?.lastImportedAt && (

@@ -2,12 +2,9 @@ import {
   Activity,
   Building2,
   CalendarDays,
-  Contact,
   Home,
   Info,
   MapPin,
-  Newspaper,
-  Phone,
   Search,
   Upload,
   Zap,
@@ -52,7 +49,6 @@ export const LEGACY_ROUTES: Array<{ from: string; to: string }> = [
   { from: '/streets', to: '/search' },
   { from: '/my-address', to: '/search' },
   { from: '/news', to: '/info' },
-  { from: '/contacts', to: '/info' },
 ];
 
 /**
@@ -92,7 +88,6 @@ export const SIDEBAR_ENTRIES: SidebarEntry[] = [
   { to: '/monitor?tab=outages', icon: Zap, labelKey: 'nav.monitorOutages', tab: '/monitor' },
   { to: '/monitor?tab=incidents', icon: Activity, labelKey: 'nav.monitorIncidents', tab: '/monitor' },
   { to: '/info', icon: Info, labelKey: 'nav.info', tab: '/info' },
-  { to: '/info?tab=contacts', icon: Phone, labelKey: 'nav.infoContacts', tab: '/info' },
 ];
 
 /** Служебные адреса вне публичного меню: импорт графика, выбор области. */
@@ -100,6 +95,4 @@ export const ADMIN_ENTRIES: SidebarEntry[] = [
   { to: '/schedule-import', icon: Upload, labelKey: 'nav.scheduleImport', tab: 'admin' },
   { to: '/region', icon: Building2, labelKey: 'nav.region', tab: 'admin' },
   { to: '/my-address', icon: MapPin, labelKey: 'nav.myAddress', tab: 'admin' },
-  { to: '/contacts', icon: Contact, labelKey: 'nav.contacts', tab: 'admin' },
-  { to: '/news', icon: Newspaper, labelKey: 'nav.news', tab: 'admin' },
 ];

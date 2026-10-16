@@ -16,8 +16,7 @@
     "info": "Інфо",
     "monitorGroups": "Групи",
     "monitorOutages": "Відключення",
-    "monitorIncidents": "Події",
-    "infoContacts": "Контакти"
+    "monitorIncidents": "Події"
   },
   "status": {
     "stable": "Стабільно",
@@ -74,8 +73,6 @@
     "moreGroups": "Ще {{n}} груп",
     "moreInStreets": "Ще {{n}} вулиць →",
     "allOutages": "Усі відключення",
-    "hotline": "Гаряча лінія",
-    "hotlineNumber": "0 800 210-310",
     "streetsHint": "Черга за адресою",
     "myAddressHint": "Адреса та черги",
     "offTodayLabel": "Без світла за добу",
@@ -450,10 +447,7 @@
     "stateNoData": "Даних немає"
   },
   "info": {
-    "subtitle": "Новини та контакти обленерго",
-    "contactsEmpty": "Оператор ще не передав контакти.",
-    "contactsError": "Не вдалося завантажити контакти. Спробуйте пізніше.",
-    "contactsPublicNote": "Це публічні канали зв’язку. Особисті дані не збираються."
+    "subtitle": "Новини операторов про відключення та графіки"
   },
   "share": {
     "button": "Поділитись графіком",

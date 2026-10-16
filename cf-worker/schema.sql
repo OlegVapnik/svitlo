@@ -58,16 +58,6 @@ CREATE TABLE IF NOT EXISTS provider_city_ids (
   PRIMARY KEY (provider, city_id)
 );
 
--- Публичные контакты операторов. Перенесены из миграции apps/api 0010_operator_contacts.sql:
--- без них страница «Контакти» в облаке была бы пустой, а это самые нужные телефоны при отключении.
-CREATE TABLE IF NOT EXISTS contacts (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL,
-  label TEXT NOT NULL,
-  value TEXT NOT NULL,
-  region TEXT
-);
-
 -- Географический справочник: НП и улицы, которые мы знаем, но для которых ещё НЕ известна очередь.
 --
 -- Отдельные таблицы — не избыточность. В `address_queues` лежит привязка «адрес → очередь», и
@@ -136,12 +126,7 @@ VALUES
   ('chernihivska-oblast', 'деснянське', 'вул. Паркова',    'паркова',    'curated'),
   ('chernihivska-oblast', 'деснянське', 'вул. Дружби',     'дружби',     'curated');
 
--- Контакты: те же 7 публичных каналов, что и в Node-бэкенде. Персональных данных нет.
-INSERT OR IGNORE INTO contacts (id, type, label, value, region) VALUES
-  ('phone:0800210310',    'phone',    'Кол-центр (безкоштовно по Україні)', '0800210310',                   'Чернігівська область'),
-  ('phone:0462772901',    'phone',    'Міський телефон Чернігів',           '0462772901',                   'Чернігів'),
-  ('telegram:chernigivoblenergo', 'telegram', 'Telegram-канал з новинами',        'https://t.me/chernigivoblenergo', NULL),
-  ('telegram:ChernigivOEbot',     'telegram', 'Telegram-бот для перевірки черги', 'https://t.me/ChernigivOEbot',     NULL),
-  ('viber:in_viber',      'viber',    'Viber-бот АТ «Чернігівобленерго»',   'https://chernihivoblenergo.com.ua/in_viber', NULL),
-  ('link:site',           'link',     'Офіційний сайт',                     'https://chernihivoblenergo.com.ua', NULL),
-  ('link:feedback',       'link',     'Онлайн-звернення споживачів',        'https://chernihivoblenergo.com.ua/feedback_new', NULL);
+
+-- Таблица контактов была создана прежней версией схемы, поэтому CREATE IF NOT EXISTS её не
+-- убирает: удаляем явно. Повторный прогон безопасен thanks IF EXISTS.
+DROP TABLE IF EXISTS contacts;

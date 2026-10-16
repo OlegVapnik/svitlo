@@ -231,14 +231,6 @@ export const gridStatus = pgTable('grid_status', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });
 
-export const contacts = pgTable('contacts', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  type: text('type').notNull(),
-  label: text('label').notNull(),
-  value: text('value').notNull(),
-  region: text('region')
-});
-
 export const parseRuns = pgTable('parse_runs', {
   id: uuid('id').primaryKey().defaultRandom(),
   sourceId: uuid('source_id').references(() => sources.id).notNull(),

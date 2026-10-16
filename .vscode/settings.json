@@ -1,41 +1,42 @@
 {
-    "CodeGPT.apiKey": "CodeGPT Plus Beta",
-    "tailwindCSS.includeLanguages": { "typescriptreact": "javascript", "typescript": "javascript" },
-    "tailwindCSS.experimental.classRegex": [["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]],
-    "css.lint.unknownAtRules": "ignore",
-    "less.lint.unknownAtRules": "ignore",
-    "scss.lint.unknownAtRules": "ignore",
-    // SQLTools. Пароль НЕ хранится здесь: файл под git, а .env — нет. Значение берётся из
-    // переменной POSTGRES_PASSWORD (.env) один раз: VS Code спросит его и положит в системное
-    // хранилище секретов (askForPassword). Отменить: см. skills/secrets-pii-hygiene/SKILL.md.
-    "sqltools.connections": [
-        {
-            "name": "Svitlo (docker db)",
-            "driver": "PostgreSQL",
-            "server": "localhost",
-            "port": 5432,
-            "database": "svitlo",
-            "username": "svitlo",
-            "askForPassword": true,
-            "connectionTimeout": 15,
-            "previewLimit": 50
-        }
-    ],
-    "sqltools.results.limit": 200,
-    "sqltools.autoOpenSessionFiles": false,
-    "editor.formatOnSave": true,
-    "search.exclude": {
-        "**/node_modules": true,
-        "**/dist": true,
-        "**/coverage": true,
-        "**/operator-samples": true,
-        "**/.kilo/worktrees": true
-    },
-    "files.watcherExclude": {
-        "**/node_modules/**": true,
-        "**/dist/**": true,
-        "**/coverage/**": true,
-        "**/operator-samples/**": true,
-        "**/.kilo/worktrees/**": true
+  "CodeGPT.apiKey": "CodeGPT Plus Beta",
+  "tailwindCSS.includeLanguages": { "typescriptreact": "javascript", "typescript": "javascript" },
+  "tailwindCSS.experimental.classRegex": [["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]],
+  "css.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  // SQLTools. Пароль НЕ хранится здесь: файл под git, а .env — нет. Значение берётся из
+  // переменной POSTGRES_PASSWORD (.env) один раз: VS Code спросит его и положит в системное
+  // хранилище секретов (askForPassword). Отменить: см. skills/secrets-pii-hygiene/SKILL.md.
+  "sqltools.connections": [
+    {
+      "name": "Svitlo (docker db)",
+      "driver": "PostgreSQL",
+      "server": "localhost",
+      "port": 5432,
+      "database": "svitlo",
+      "username": "svitlo",
+      "askForPassword": true,
+      "connectionTimeout": 15,
+      "previewLimit": 50
     }
+  ],
+  "sqltools.results.limit": 200,
+  "sqltools.autoOpenSessionFiles": false,
+  "editor.formatOnSave": true,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/coverage": true,
+    "**/operator-samples": true,
+    "**/.kilo/worktrees": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true,
+    "**/operator-samples/**": true,
+    "**/.kilo/worktrees/**": true
+  },
+  "java.configuration.updateBuildConfiguration": "interactive"
 }

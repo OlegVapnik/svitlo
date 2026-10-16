@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
-  ContactListResponse,
   IncidentListResponse,
   OutageListResponse,
   OutageStatsResponse,
@@ -109,12 +108,6 @@ export const useReliability = (region?: string) =>
     queryKey: ['reliability', region ?? null],
     queryFn: ({ signal }) => api.fetchReliability(region, signal),
     refetchInterval: 300000,
-  });
-
-export const useContacts = () =>
-  useQuery<ContactListResponse>({
-    queryKey: ['contacts'],
-    queryFn: api.fetchContacts,
   });
 
 export const useHealth = () =>

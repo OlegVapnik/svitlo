@@ -1499,22 +1499,6 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return json({ data: items, meta: { count: items.length, limit, stale } });
   }
 
-  if (path === '/contacts') {
-    // Контакты приходят из справочника в D1 (см. schema.sql) — это те же публичные каналы
-    // связи, что и в Node-бэкенде: колл-центр, телефоны, боты и приём обращений.
-    const rows = await env.DB.prepare(
-      `SELECT id, type, label, value, region FROM contacts ORDER BY type, label`,
-    ).all<{ id: string; type: string; label: string; value: string; region: string | null }>();
-    const data = (rows.results ?? []).map((row) => ({
-      id: row.id,
-      type: row.type,
-      label: row.label,
-      value: row.value,
-      region: row.region ?? null,
-    }));
-    return json({ data });
-  }
-
   if (path === '/addresses/settlements') {
     const query = (url.searchParams.get('q') ?? '').trim();
     if (query.length < 2) return json({ data: [] });

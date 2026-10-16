@@ -44,7 +44,6 @@ export const router = createBrowserRouter([
       { path: 'streets', element: <LegacyRedirect /> },
       { path: 'my-address', element: <LegacyRedirect /> },
       { path: 'news', element: <LegacyRedirect /> },
-      { path: 'contacts', element: <LegacyRedirect /> },
 
       // Импорт графика остаётся отдельным служебным адресом: это не раздел для человека,
       // а админский инструмент, прятать его в таб было бы неудобно.

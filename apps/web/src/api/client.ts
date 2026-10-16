@@ -95,7 +95,6 @@ export const api = {
     const query = region ? `?${new URLSearchParams({ region }).toString()}` : '';
     return fetcher(`/status${query}`, { signal });
   },
-  fetchContacts: () => fetcher('/contacts'),
   fetchHealth: () => fetcher('/health'),
   /**
    * Поиск своей группы ГПВ по адресу (область → НП → улица → дом).

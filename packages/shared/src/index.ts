@@ -34,7 +34,6 @@ export interface Incident {
   /** Посилання на першоджерело (сторінка оператора / повідомлення Telegram). */
   sourceUrl?: string | null;
 }
-export interface Contact { id: string; type: string; label: string; value: string; region?: string | null; }
 export interface StatusResponse { grid: { level: 'stable' | 'warning' | 'emergency'; message: string }; activeOutages: number; scheduledOutages: number;
   /** Сколько групп области сейчас по графику ГПВ без света (region из ?region=). */
   activeGroups?: number;
@@ -46,7 +45,6 @@ export interface OutageListResponse { data: Outage[]; meta?: Record<string, unkn
 export interface OutageDetailResponse { data: Outage; }
 export interface OutageStatsResponse { data: OutageStats; }
 export interface IncidentListResponse { data: Incident[]; }
-export interface ContactListResponse { data: Contact[]; }
 /**
  * Область ГПВ у каталозі `GET /api/v1/regions`. `cpu` — ідентифікатор із дзеркала
  * (`chernihivska-oblast`, `kyiv-city`), він же ключ у `schedule_slots.region`.
