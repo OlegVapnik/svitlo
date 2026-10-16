@@ -9,8 +9,8 @@
 
 | Показатель | Состояние |
 |---|---|
-| **Последний проверенный коммит** | `ef53f83` (сессия Obsidian Dark, v2.6.1; чейнджлог в воркере — `706189a`) |
-| **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
+| **Последний проверенный коммит** | `3af1936` (мобильная шапка, статус-бар и свайп табов, v2.7.0; тесты API — `6c8706e`) |
+| **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. Безопасные зоны телефона — утилиты `.pt-safe`/`.pb-safe` (максимум из `env()` и нативных инсетов `window.SvitloInsets` от `MainActivity`); табы листаются свайпом (`lib/swipe-tabs.ts`). Тема — ровно две (світла/темна), режима «Авто» нет. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
 | **Масштаб продукта** | **Вся Украина**: мультирегиональный каталог областей (`GET /api/v1/regions`), автоимпорт ГПВ с всеукраинского зеркала (`source='mirror'`) + Telegram (`source='telegram'`) + агрегатор новостей + **5 провайдеров** (mirror, YASNO, DTEK, e-svitlo, chernihivoblenergo) в `apis/api/src/providers/*.ts` |
 | **Язык интерфейса** | Единый украинский (`uk.json`); `ru.json`, `en.json` и переключатель языков удалены |
 | **Безопасность** | Порт БД закрыт на `127.0.0.1:5432`; `ADMIN_TOKEN` проверяется через `timingSafeEqual` + запрет слабых токенов (<16) в проде; CORS закрыт по умолчанию (`CORS_ORIGINS`); `TRUST_PROXY` настроен; админка вынесена в `ADMIN_ITEMS` |
@@ -82,6 +82,45 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers (Что осталось следующей смене)
 1. ...
 ```
+
+---
+
+## Сессия 2026-10-16: мобильная шапка, строка состояния и свайп табов (v2.7.0)
+
+- **Ветка / HEAD:** `redesign/wow-ui` — `afb98fe` (интерфейс) + `6c8706e` (тесты API); снимок ниже и чейнджлог — последним коммитом `docs(tools)`
+- **Бэкап БД:** не снимался (схема БД и контракты API не менялись: правки в `apps/web`, включая нативный `MainActivity`)
+- **Релиз:** `./deploy-cf.sh` → воркер `svitlo-api` (https://svitlo-api.olegvapnik45.workers.dev) + Pages `svitlo-ua` (https://svitlo-ua-4ze.pages.dev, бандл `index-Dzcyqdqc.js` / `index-CBWwl8Pr.css`); APK `versionCode 110` / `versionName 2.7.0` (`BUILD SUCCESSFUL in 14s`, 4,5 МБ), собран `./tools/build-android-apk.sh https://svitlo-api.olegvapnik45.workers.dev/api/v1` — адрес API в APK указывает на воркер, а не на домашний сервер, поэтому приложение работает и вне домашней сети
+
+### Done (Что сделано)
+- **Строка состояния телефона больше не перекрывает интерфейс.** Две причины и две правки: (1) `padding-top` безопасной зоны жил на `body`, а шапка `sticky top-0` padding предка не учитывает — при прокрутке она прилипала к `y=0` и содержимое уезжало под часы. Отступ переехал на саму шапку (утилита `.pt-safe`); (2) Android-WebView не отдаёт `env(safe-area-inset-*)` в CSS вообще (там всегда 0), поэтому в APK зона не резервировалась никогда. `MainActivity` измеряет `WindowInsets` и публикует мост `window.SvitloInsets` (методы `top()` / `bottom()`), веб читает их в `--safe-top` / `--safe-bottom` (`hooks/useSafeAreaInsets.ts`), а `.pt-safe` / `.pb-safe` берут максимум из системного `env()` и нативного значения. Мост вместо разовой инъекции стиля: страница в WebView грузится позже первого запроса инсетов, а после перезагрузки документа вставленный стиль теряется.
+- **Шапка на 360px перестала налезать сама на себя:** словесный логотип только на `sm+`, чип области сжимается многоточием (`flex-1 min-w-0 sm:flex-none`), переключатель темы — одна кнопка 44×44 вместо сегмента из трёх.
+- **Тема: режим «Авто» убран**, осталось ровно две (світла/темна) — одна кнопка с иконкой солнца/луны и `aria-pressed`. Он требовал трёх кнопок, дублировал системную настройку и делал поведение невидимым (два одинаковых телефона выглядели по-разному). Старое сохранённое `'auto'` мигрирует в системную тему и записывается как явный выбор (`useTheme`, инлайн-скрипт в `index.html`), подписка на `matchMedia('prefers-color-scheme')` удалена вместе с режимом.
+- **Волнистая змейка прогресса стала заметной:** высота 24 → 32px, толщина линии 2.5 → 3.5px, амплитуда 3 → 4.5px, длина волны 24 → 28px; подписи в строке — `text-xs`.
+- **Плашки «Зараз HH:MM» убраны со шкал** (`QueueScheduleBar`, `Timeline24h`): белая плашка с временем висела ровно на сегментах и закрывала график (на телефоне это выглядело как дыра в полосе). На шкале осталась белая риска `2px`, время стоит текстом в строке легенды. Неиспользуемые `animate-pin-in` и `@keyframes pin-in` удалены.
+- **Свайп между вкладками:** влево — следующий таб, вправо — предыдущий, с вибро-откликом как у тапа. Косые жесты (перевес вертикали 1.6×) не листают, как и жесты внутри `canvas`/`svg` (графики, карта), полей ввода, `[role=dialog]` и блоков с собственной горизонтальной прокруткой. Решение вынесено в чистую функцию `lib/swipe-tabs.ts` и покрыто тестом `lib/swipe-tabs.test.ts` (7 кейсов); хук `useSwipeTabs` навешан на контейнер `AppShell`, чтобы жест работал и над шапкой.
+- **Цвета манифеста PWA** приведены к палитре: `theme_color` / `background_color` `#050807` → `#09090b` (манифест видит система до загрузки CSS, по нему окрашивается строка состояния установленного приложения).
+- **Тесты API снова зелёные:** `mergeQueues` в `tests/services/queues.test.ts` ожидал `QueueSummary` без `settlements` / `streetNames` (поля добавили раньше, ожидания отстали) — отдельный коммит `6c8706e`.
+
+### Changed (Ключевые файлы и миграции)
+- Нативное: `apps/web/android/app/src/main/java/ua/com/svitlo/app/MainActivity.java` (`WindowInsets` → `window.SvitloInsets`)
+- Новые: `apps/web/src/hooks/useSafeAreaInsets.ts`, `apps/web/src/hooks/useSwipeTabs.ts`, `apps/web/src/lib/swipe-tabs.ts`, `apps/web/src/lib/swipe-tabs.test.ts`
+- Правленые: `apps/web/src/styles/globals.css` (`.pt-safe`, `max(env(), var())` в `.pb-safe`, `--safe-top/--safe-bottom`, удалён `pin-in`), `components/layout/{Header,AppShell}.tsx`, `components/ui/{ThemeToggle,WavyProgressBar}.tsx`, `components/schedule/{Timeline24h,QueueScheduleBar}.tsx`, `hooks/useTheme.ts`, `i18n/uk.json` (`theme.*`), `index.html`, `vite.config.ts`, `apps/web/src/version.ts` (2.6.1 → 2.7.0), `apps/api/tests/services/queues.test.ts`
+- Миграций БД нет.
+
+### Verified (Чем проверено)
+- `tsc --noEmit`, запущенный из каталогов пакетов (`apps/api`, `apps/web`, `cf-worker`): 0 ошибок. Из корня репозитория та же команда печатает справку и выходит с кодом 1 — корневого `tsconfig.json` нет, только `tsconfig.base.json`, поэтому нужен либо `cd`, либо явный `-p apps/api/tsconfig.json`
+- `vitest run` (apps/web): 97/97 passed (12 файлов, включая новый `swipe-tabs`); `vitest run` (apps/api): 218 passed, 55 skipped, 0 failed
+- `vite build`: ✓ built; в собранном CSS есть `pt-safe{padding-top:max(env(safe-area-inset-top,0px), var(--safe-top,0px))}` и `pb-safe` с таким же `max(...)`
+- `check_tailwind_tokens.py .` — OK; `scan_secrets.py .` — 0 findings
+- **Живой деплой:** `curl https://svitlo-api.olegvapnik45.workers.dev/api/v1/health` → `{"status":"ok"}`; `GET /api/v1/changelog` → 30 записей, верхняя `afb98fe` с текстом этой версии (хеш пересобран после `--amend`, чтобы в интерфейсе не осталось несуществующего коммита); в бандле Pages `index-Dzcyqdqc.js` найдена версия `2.7.0` и `--safe-top`, в `index-CBWwl8Pr.css` — `pt-safe{padding-top:max(env(safe-area-inset-top,0px), var(--safe-top,0px))}` и `pb-safe` с тем же `max(...)`
+- **APK:** `BUILD SUCCESSFUL in 14s`, 4,5 МБ; внутри архива в `assets/public/assets/*.css` те же `.pt-safe` / `.pb-safe`, адрес API — воркер
+- **Не проверено «пальцем»:** зона статус-бара и свайп на живом телефоне (в среде нет устройства и браузера) — только расчёт, ревью кода и совпадение собранных артефактов с исходниками
+
+### Next / Blockers (Что осталось следующей смене)
+1. Установить APK `2.7.0` на телефон: шапка должна уйти из-под часов, свайп не должен конфликтовать с прокруткой графиков на `monitor`.
+2. При переходе на `targetSdk 36` (edge-to-edge обязателен) перепроверить инсеты: мост не зависит от `Capacitor.adjustMarginsForEdgeToEdge`, но система может поменять раскладку.
+3. Свайп можно доработать анимацией перехода (`startViewTransition`) — сейчас раздел меняется мгновенно, как при тапе по табу.
+
 
 ---
 
