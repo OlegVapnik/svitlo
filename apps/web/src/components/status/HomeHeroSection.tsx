@@ -19,7 +19,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { QueueSelector } from '../queue/QueueSelector.js';
-import { WavyDivider } from '../ui/WavyProgressBar.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
 import { ShareSchedule } from '../schedule/ShareSchedule.js';
 import { Skeleton } from '../ui/Skeleton.js';
@@ -190,7 +189,7 @@ export const HomeHeroSection: React.FC = () => {
         loading={scheduleLoading && !schedule}
       />
 
-      <div className="space-y-4 rounded-[32px] border border-outline-variant/60 bg-surface-container-low p-4 sm:p-6">
+      <div className="space-y-4 rounded-3xl border border-border bg-card p-4 sm:p-6">
       {/* Вибір області тепер один — у шапці, з пошуком (дизайн звідси й перенесено).
           Дубль на головній лише плутав: два способи обрати ту саму область. */}
 
@@ -286,9 +285,9 @@ export const HomeHeroSection: React.FC = () => {
         </div>
       </div>
 
-      {/* Волнистый разделитель M3 вместо прямой рамки: секция «управление» отделена от графика,
-          но линия не спорит с тональными поверхностями. */}
-      <WavyDivider className="opacity-70" />
+      {/* Деликатная линия вместо волнистого разделителя: 1px и 6% белого — секция «управление»
+          отделена от графика без декоративного шума. */}
+      <div className="border-t border-hairline" aria-hidden />
 
       {/* 3. Головний стан героя та таймлайн */}
       {regionLoading || (scheduleLoading && !schedule) ? (

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Clock } from 'lucide-react';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { OFF_STATE_CODE, formatMinutesUk, minutesOfDay, minutesToHm, scheduleWindow } from '../../lib/scheduleWindow.js';
+import { cn } from '../../lib/cn.js';
 
 type Props = {
   intervals: ScheduleIntervalUtc[];
@@ -20,6 +21,24 @@ function kyivHm(iso: string): string {
 }
 
 /**
+ * Цвет сегмента суток — по состоянию, а не по цвету из ответа оператора.
+ *
+ * ПОЧЕМУ ПАЛИТРА, А НЕ stateColor ИЗ API. Источник отдаёт «світло» разными оттенками зелёного
+ * (порой почти болотного), а отключение — кирпичным: на графитовом фоне это выглядело грязно и
+ * рядом с бейджами читалось как третий, чужой язык цвета. Теперь свет — спокойный изумруд,
+ * отключение — контрастный рубин, «можливо вимкнуть» — янтарь: те же три роли, что и у
+ * остальных индикаторов. Название состояния по-прежнему берём у оператора (stateName) и
+ * показываем в легенде — смысл не подменяем, подменяем только краску.
+ */
+function segmentTone(stateCode: number): string {
+  if (stateCode === OFF_STATE_CODE) return 'border-rose-500/40 bg-rose-500/25';
+  // Код 2 у оператора — «світло вимкнули»: показываем янтарём как предупреждение.
+  if (stateCode === 2) return 'border-amber-500/30 bg-amber-500/20';
+  if (stateCode === 1) return 'border-emerald-500/30 bg-emerald-500/20';
+  return 'border-hairline bg-surface-container-high';
+}
+
+/**
  * Полоса суток 00:00–24:00 по графику очереди. Расчёт окна (что сейчас, когда следующее, сколько
  * без света за день) живёт в lib/scheduleWindow.ts: тот же расчёт использует герой главной,
  * поэтому цифры в двух блоках не могут разойтись.
@@ -33,7 +52,7 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
 
   if (!intervals.length) {
     return (
-      <div className="rounded-[22px] bg-surface-container-high/60 p-6 text-center text-sm text-on-surface-variant">
+      <div className="rounded-2xl border border-hairline bg-surface-container-high/50 p-6 text-center text-sm text-on-surface-variant">
         {emptyLabel ?? t('schedule.notImported')}
       </div>
     );
@@ -43,20 +62,21 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
 
   // В легенде — уникальные состояния. В сутках их два-три, а интервалов бывает пять и больше:
   // раньше легенда повторяла «Світло є» трижды и занимала пол-экрана на телефоне.
-  const legend = intervals.reduce<Array<{ name: string; color: string }>>((acc, interval) => {
-    if (!acc.some((item) => item.name === interval.stateName && item.color === interval.stateColor)) {
-      acc.push({ name: interval.stateName, color: interval.stateColor });
+  // Цвет легенды считаем тем же правилом, что и сегменты: иначе легенда описывала бы не шкалу.
+  const legend = intervals.reduce<Array<{ name: string; code: number }>>((acc, interval) => {
+    if (!acc.some((item) => item.name === interval.stateName && item.code === interval.stateCode)) {
+      acc.push({ name: interval.stateName, code: interval.stateCode });
     }
     return acc;
   }, []);
 
   return (
     <div className="space-y-2.5">
-      {/* Полоса суток: капсулы внутри тонального трека. Цвета сегментов — по-прежнему из ответа
-          оператора (interval.stateColor): подменять их палитрой нельзя, иначе полоса перестанет
-          совпадать с легендой источника. Часы отключения получают векторную штриховку — их видно
-          и на цветном экране при дальтонизме, и в чёрно-белой печати. */}
-      <div className="relative h-11 w-full overflow-hidden rounded-[22px] bg-surface-container p-1">
+      {/* Полоса суток: строгий трек с сегментами-часами. Трек — самый тёмный тон палитры, поэтому
+          сегменты читаются как «зажжённые» участки, а не как наклейки. Часы отключения получают
+          векторную штриховку — их видно и на цветном экране при дальтонизме, и в чёрно-белой
+          печати. */}
+      <div className="relative h-9 w-full overflow-hidden rounded-xl border border-hairline bg-surface-container-low p-1">
         <svg className="absolute h-0 w-0" aria-hidden focusable="false">
           <defs>
             <pattern id={hatchId} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -72,11 +92,11 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
             <div
               key={index}
               title={`${interval.stateName} ${minutesToHm(from)}–${minutesToHm(to)}`}
-              style={{ left: `${(from / 1440) * 100}%`, width: `${((to - from) / 1440) * 100}%`, backgroundColor: interval.stateColor }}
-              className="absolute inset-y-1 overflow-hidden rounded-lg"
+              style={{ left: `${(from / 1440) * 100}%`, width: `${((to - from) / 1440) * 100}%` }}
+              className={cn('absolute inset-y-1 overflow-hidden rounded-md border', segmentTone(interval.stateCode))}
             >
               {interval.stateCode === OFF_STATE_CODE && (
-                <svg className="absolute inset-0 h-full w-full text-on-surface/45" aria-hidden focusable="false">
+                <svg className="absolute inset-0 h-full w-full text-rose-100/25" aria-hidden focusable="false">
                   <rect width="100%" height="100%" fill={`url(#${hatchId})`} />
                 </svg>
               )}
@@ -89,12 +109,12 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
         {nowMinutes != null && nowMinutes >= 0 && nowMinutes <= 1440 && (
           <>
             <span
-              className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_8px_currentColor]"
+              className="pointer-events-none absolute inset-y-0 z-10 w-px -translate-x-1/2 bg-white/80"
               style={{ left: `${(nowMinutes / 1440) * 100}%` }}
               aria-hidden
             />
             <span
-              className="pointer-events-none absolute top-1/2 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 animate-pin-in items-center gap-1 rounded-full bg-primary px-2 py-1 text-[10px] font-bold leading-none text-on-primary shadow-lg"
+              className="pointer-events-none absolute top-1/2 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 animate-pin-in items-center gap-1 rounded-md bg-white px-1.5 py-1 text-[10px] font-bold leading-none text-zinc-900 shadow-pop"
               style={{ left: `${(nowMinutes / 1440) * 100}%` }}
               aria-label={t('schedule.now')}
             >
@@ -117,10 +137,10 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
       <div className="flex flex-wrap gap-2">
         {legend.map((item) => (
           <span
-            key={`${item.name}-${item.color}`}
-            className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high/60 px-2.5 py-1 text-xs"
+            key={`${item.name}-${item.code}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-container-high px-2.5 py-1 text-xs text-on-surface-variant"
           >
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+            <span className={cn('h-2.5 w-2.5 rounded-full border', segmentTone(item.code))} />
             {item.name}
           </span>
         ))}

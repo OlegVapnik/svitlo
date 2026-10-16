@@ -34,7 +34,7 @@ const VISIBLE_GROUPS_LIMIT = 6;
 const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
   const { t } = useTranslation();
   return (
-    <article className="rounded-[28px] border border-outline-variant/50 bg-surface-container p-4">
+    <article className="rounded-2xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span
@@ -232,7 +232,7 @@ export const HomePage: React.FC = () => {
       <HomeHeroSection />
 
 
-      <section className="rounded-[32px] border border-outline-variant/60 bg-surface-container-low p-4 sm:p-6">
+      <section className="rounded-3xl border border-border bg-card p-4 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <h1 className="text-xl font-bold tracking-tight text-on-surface sm:text-2xl">{t('home.title')}</h1>
@@ -302,7 +302,7 @@ export const HomePage: React.FC = () => {
               <Skeleton className="h-28 w-full rounded-2xl" />
             ) : groupOutages.length === 0 ? (
               outages.length === 0 ? (
-                <div className="flex items-center justify-center gap-2 rounded-[28px] bg-surface-container-high/50 px-6 py-8 text-sm text-on-surface-variant">
+                <div className="flex items-center justify-center gap-2 rounded-2xl border border-hairline bg-surface-container-high/50 px-6 py-8 text-sm text-on-surface-variant">
                   <ZapOff className="h-4 w-4" aria-hidden />
                   {t('outages.noOutages')}
                 </div>

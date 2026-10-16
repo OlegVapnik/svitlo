@@ -54,7 +54,7 @@ export const PowerSummaryCard: React.FC<PowerSummaryCardProps> = ({ summary, isL
   const poweredWidth = windowMinutes > 0 ? Math.min(100, Math.max(0, (powered / windowMinutes) * 100)) : 100;
 
   return (
-    <div className="h-full space-y-3 rounded-[28px] border border-outline-variant/50 bg-surface-container p-4 sm:p-5">
+    <div className="h-full space-y-3 rounded-2xl border border-border bg-card p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <div className={`rounded-2xl p-2 ${level.chip}`}>

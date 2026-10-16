@@ -10,19 +10,23 @@
   /* Время, проценты и номера очередей ровнее в столбик (00:00–06:00, 99.2%, черга 3). */
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 
-  --radius-xl: 0.875rem;
+  /* Скругления строгие и «собранные»: 12px — кнопки и чипы, 16px — обычные карточки,
+     24px — только главный Hero. Раздутые радиусы (40px+) убраны: премиальность в этом
+     интерфейсе даёт тонкая грань 1px и блик, а не надутая форма. */
+  --radius-xl: 0.75rem;
   --radius-2xl: 1rem;
-  --radius-3xl: 1.25rem;
+  --radius-3xl: 1.5rem;
 
   /* Дисплейный шрифт grok (Unbounded/Manrope) не тянем веб-шрифтом: PWA должна открываться
      в оффлайне без сети. Токен введён, чтобы герой и цифры брали один стек (и чтобы позже
      подставить самохостинг одной строкой, без правки разметки). */
   --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  /* Высота панелей — тональная (см. surface-container-*), тень осталась только у всплывающих
-     слоёв: на OLED тень не видна и стоит перерисовки, поэтому вместо неё работает тон. */
-  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.16);
-  --shadow-pop: 0 18px 40px -24px rgb(0 0 0 / 0.55);
+  /* Высота панелей — тональная (см. surface-container-*). Панель держится на двух вещах:
+     верхний блик по грани (inset) и очень мягкая тень под ней. На OLED тень почти не видна,
+     поэтому блик важнее — он читается на любом экране и не «подсвечивает» фон. */
+  --shadow-card: inset 0 1px 0 0 var(--md-highlight-top), 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-pop: inset 0 1px 0 0 var(--md-highlight-top), 0 18px 40px -24px rgb(0 0 0 / 0.65);
 
   /* Цвета статуса сети переехали в палитру темы: см. @theme inline ниже (--color-status-*). */
 
@@ -38,13 +42,12 @@
   --animate-fade-in: fade-in 220ms ease-out both;
   --animate-rise: rise 260ms ease-out both;
   --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
-  /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны делает цикл
-     бесшовным (тайл повтора в WavyProgressBar). Значение сдвига приходит с элемента через
-     --wave-shift: 22px у полной волны, 33px — у «спокойного» технического ритма. */
-  --animate-wave-slide: wave-slide 1.05s linear infinite;
-  --animate-shape-spin: shape-spin 26s linear infinite;
-  --animate-shape-breathe: shape-breathe 4.2s var(--ease-m3-expressive-default) infinite;
-  --animate-pin-in: pin-in 520ms var(--ease-m3-expressive-fast) both;
+  /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны (24px, см.
+     WAVELENGTH в WavyProgressBar) делает цикл бесшовным — тайл повтора встаёт сам в себя.
+     Скорость приходит с элемента через inline animationDuration: у спокойных состояний
+     волна течёт медленнее, но форма и высота не меняются, поэтому полоса не «дёргается». */
+  --animate-wave-slide: wave-slide 1.3s linear infinite;
+  --animate-pin-in: pin-in 320ms var(--ease-m3-standard) both;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -63,14 +66,7 @@
      волну, и затухающий пунктир — разной остаётся только скорость. */
   @keyframes wave-slide {
     from { transform: translateX(0); }
-    to { transform: translateX(var(--wave-shift, -22px)); }
-  }
-  @keyframes shape-spin {
-    to { transform: rotate(360deg); }
-  }
-  @keyframes shape-breathe {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.1); }
+    to { transform: translateX(var(--wave-shift, -24px)); }
   }
   /* Пин «Зараз HH:MM» на 24-часовой шкале: влетает пружинкой, чтобы его заметили. */
   @keyframes pin-in {
@@ -98,29 +94,44 @@
   --color-outline: var(--md-outline);
   --color-outline-variant: var(--md-outline-variant);
 
-  /* --- M3 Primary-группа. Меняется ЦЕЛИКОМ от data-power-state на <html>:
-     «світло є» — изумруд, «скоро вимкнуть» — янтарь, «світла немає» — рубин, нет данных —
-     графит. Это единственная «краска» приложения, поэтому смена статуса перекрашивает
-     интерфейс целиком, а не только бейдж. */
+  /* --- Интерактивный акцент: чистый электрический изумруд. Он НЕ зависит от состояния сети:
+     статус больше не перекрашивает кнопки, навигацию и фон — иначе оболочка приложения
+     становилась тревожной всякий раз, когда где-то нет света, а сам статус переставал
+     читаться. Состояние несут бейдж, таймер, линия прогресса и свечение (--color-status*). */
   --color-primary: var(--md-primary);
   --color-on-primary: var(--md-on-primary);
   --color-primary-container: var(--md-primary-container);
   --color-on-primary-container: var(--md-on-primary-container);
 
+  /* --- Статус сети: ТОЛЬКО бейдж, текст таймера, линия прогресс-бара и радиальное свечение.
+     Значения приходят от `data-power-state` (палитра ниже) и меняются вместе с состоянием.
+     Карточку или фон в «грязный» цвет они не красят никогда. */
+  --color-status: var(--md-status);
+  --color-status-text: var(--md-status-text);
+  --color-status-soft: var(--md-status-soft);
+  --color-status-border: var(--md-status-border);
+
+  /* Грань и хвост прогресса. `hairline` — та самая деликатная линия в один пиксель вместо
+     разделителей и рамок (в тёмной теме ровно 6% белого), `track` — оставшаяся часть полосы
+     прогресса (12% белого). Оба токена меняются с темой, поэтому светлая тема не «слепнет». */
+  --color-hairline: var(--md-hairline);
+  --color-track: var(--md-track);
+
   /* --- Legacy-роли → те же M3-переменные. Утилиты bg-card / text-muted-foreground /
      border-border остались в разметке десятков компонентов: пусть указывают на M3-тон, тогда
-     редизайн не превращается в переписывание всех файлов. --- */
+     редизайн не превращается в переписывание всех файлов. `bg-card` — это КАРТОЧКА (#131318
+     в тёмной теме), а не вторичный фон: один токен описывает все панели приложения. --- */
   --color-background: var(--md-surface-dim);
   --color-foreground: var(--md-on-surface);
-  --color-card: var(--md-surface-container-low);
+  --color-card: var(--md-surface-container);
   --color-card-foreground: var(--md-on-surface);
-  --color-card-raised: var(--md-surface-container);
+  --color-card-raised: var(--md-surface-container-high);
   --color-popover: var(--md-surface-container-high);
   --color-popover-foreground: var(--md-on-surface);
   --color-primary-foreground: var(--md-on-primary);
   --color-secondary: var(--md-surface-container-high);
   --color-secondary-foreground: var(--md-on-surface);
-  --color-muted: var(--md-surface-container);
+  --color-muted: var(--md-surface-container-high);
   --color-muted-foreground: var(--md-on-surface-variant);
   --color-accent: var(--md-surface-container-high);
   --color-accent-foreground: var(--md-on-surface);
@@ -146,10 +157,6 @@
   --color-status-stable: var(--md-success);
   --color-status-warning: var(--md-warning);
   --color-status-emergency: var(--md-destructive);
-  --color-success-glow: var(--glow-success);
-  --color-warning-glow: var(--glow-warning);
-  --color-destructive-glow: var(--glow-destructive);
-  --color-unknown-glow: var(--glow-unknown);
 
   /* Псевдонимы «сырых» оттенков Tailwind, которые остались в 8 компонентах статусов
      (PowerSummaryCard, ReliabilityCard, IncidentBanner, OutageCalendar, OutageTimeline,
@@ -185,157 +192,189 @@
     border-color: var(--md-outline-variant);
   }
 
-  /* --- M3 Expressive: светлая тема (Light) ---
-     Тональная палитра Material 3: поверхности — нейтрально-зеленоватая «бумага» (тон выведен из
-     акцентного изумруда), разделение уровней — светлотой. Контраст: on-surface #1a1c19 на
-     surface #f7f8f4 — 15.8:1, on-surface-variant #424940 — 8.9:1, primary #00674a на surface —
-     6.2:1 (все выше AA для мелкого текста). Светлые роли primary намеренно темнее спеки тёмной
-     темы: на светлом фоне светлый изумруд #6EE7B7 дал бы 1.7:1 и текст был бы нечитаем. */
+  /* Верхний блик панелей: тонкая светлая линия по верхней грани. Именно она, а не тень, даёт
+     «стеклянную» глубину на тёмном фоне. Правило по классу, а не по компоненту: панели
+     собраны из bg-card / bg-surface-container в десятках файлов, и переписывать их ради одного
+     блика нельзя. Если у элемента задана своя тень (shadow-xs, shadow-pop), она честно
+     перекрывает блик — утилиты Tailwind идут слоем выше базового. */
+  .bg-card,
+  .bg-surface-container,
+  .bg-surface-container-low,
+  .bg-surface-container-lowest {
+    box-shadow: inset 0 1px 0 0 var(--md-highlight-top);
+  }
+
+  /* --- Светлая тема: чистый снег и графит ---
+     Никаких «бумажных» зелёных оттенков: фон #F8FAFC (Slate 50), карточка строго белая,
+     грани — #E2E8F0. Контраст: on-surface #0F172A на #FFFFFF — 17.9:1, on-surface-variant
+     #64748B — 5.6:1, акцент #047857 на белом — 5.0:1: всё выше AA для мелкого текста. */
   :root {
-    /* Тональные поверхности */
-    --md-surface: #f7f8f4;
-    --md-surface-dim: #edefe9;
+    /* Поверхности */
+    --md-surface: #f8fafc;
+    --md-surface-dim: #f1f5f9;
     --md-surface-container-lowest: #ffffff;
-    --md-surface-container-low: #f2f4ef;
-    --md-surface-container: #ecefe8;
-    --md-surface-container-high: #e5e9e1;
-    --md-surface-container-highest: #dee3da;
-    --md-on-surface: #1a1c19;
-    --md-on-surface-variant: #424940;
-    --md-outline: #727970;
-    --md-outline-variant: #c2c9be;
+    --md-surface-container-low: #ffffff;
+    --md-surface-container: #ffffff;
+    --md-surface-container-high: #f1f5f9;
+    --md-surface-container-highest: #e2e8f0;
+    --md-on-surface: #0f172a;
+    --md-on-surface-variant: #64748b;
+    --md-outline: #94a3b8;
+    --md-outline-variant: #e2e8f0;
 
-    /* Primary-группа по умолчанию = состояние «світло є» (фирменный изумруд) */
-    --md-primary: #00674a;
+    /* Интерактивный акцент: на светлом фоне читается только тёмный изумруд, светлый «выгорает» */
+    --md-primary: #047857;
     --md-on-primary: #ffffff;
-    --md-primary-container: #a7f3d0;
-    --md-on-primary-container: #003824;
+    --md-primary-container: rgb(4 120 87 / 0.12);
+    --md-on-primary-container: #065f46;
 
-    /* Статусы сети */
-    --md-success: #047857;
+    /* Статусы сети. Фиксированные роли: ими красятся бейджи, капсулы шкалы и точки. */
+    --md-success: #059669;
     --md-on-success: #ffffff;
-    --md-warning: #b45309;
+    --md-warning: #d97706;
     --md-on-warning: #ffffff;
-    --md-destructive: #be123c;
+    --md-destructive: #e11d48;
     --md-on-destructive: #ffffff;
-    --md-info: #0e7490;
+    --md-info: #2563eb;
     --md-on-info: #ffffff;
-    --md-unknown: #6b7280;
-    --md-unknown-soft: #e2e5e1;
-    --md-level-high: #4d7c0f;
-    --md-info-soft: #e0f2fe;
+    --md-unknown: #71717a;
+    --md-unknown-soft: rgb(113 113 122 / 0.12);
+    --md-level-high: #65a30d;
+    --md-info-soft: rgb(37 99 235 / 0.1);
 
-    /* Свечение статуса под Hero: мягкий радиальный градиент, а не тень. */
-    --glow-success: #047857;
-    --glow-warning: #b45309;
-    --glow-destructive: #be123c;
-    --glow-unknown: #6b7280;
-    --glow-strength: 0.16;
+    /* Грань, хвост прогресса и верхний блик панелей */
+    --md-hairline: rgb(15 23 42 / 0.08);
+    --md-track: rgb(15 23 42 / 0.12);
+    --md-highlight-top: rgb(15 23 42 / 0.04);
+
+    /* Дефолт до первого замера статуса — «нет данных». Честный нейтральный серый, а не
+       зелёный: пустой график нельзя показывать как «світло є». */
+    --md-status: #71717a;
+    --md-status-text: #52525b;
+    --md-status-soft: rgb(113 113 122 / 0.1);
+    --md-status-border: rgb(113 113 122 / 0.25);
+
+    /* Сила свечения под Hero: 10% — фон остаётся чистым, но подсветка видна. */
+    --glow-strength: 0.1;
 
     --radius: 1rem;
   }
 
-  /* --- M3 Expressive: динамическая палитра от состояния сети ---
-     data-power-state ставится на <html> хуком usePowerState (единственный писатель, чтобы
-     порядок монтирования компонентов не влиял на цвет). Значения для светлой темы — тёмные
-     тона тех же оттенков (иначе текст на светлом фоне не читается). */
-  :root[data-power-state='on'] {
-    --md-primary: #00674a;
-    --md-on-primary: #ffffff;
-    --md-primary-container: #a7f3d0;
-    --md-on-primary-container: #003824;
+  /* --- Динамика состояния сети ---
+     Атрибут `data-power-state` пишет хук usePowerState на <html>, и статус теперь красит
+     ТОЛЬКО бейдж, таймер, линию прогресса и свечение под Hero. Фон, карточки, кнопки и
+     навигация от состояния не зависят: строгий интерфейс не должен «краснеть» из-за того,
+     что где-то нет света.
+     Селектор без :root — намеренно: тот же атрибут ставит на себя сам Hero, а он может
+     показывать график на завтра, пока страница показывает сегодняшний. */
+  [data-power-state='on'] {
+    --md-status: #059669;
+    --md-status-text: #047857;
+    --md-status-soft: rgb(5 150 105 / 0.1);
+    --md-status-border: rgb(5 150 105 / 0.25);
   }
-  :root[data-power-state='warning'] {
-    --md-primary: #7a5300;
-    --md-on-primary: #ffffff;
-    --md-primary-container: #fde68a;
-    --md-on-primary-container: #3e2700;
+  [data-power-state='warning'] {
+    --md-status: #d97706;
+    --md-status-text: #b45309;
+    --md-status-soft: rgb(217 119 6 / 0.1);
+    --md-status-border: rgb(217 119 6 / 0.25);
   }
-  :root[data-power-state='off'] {
-    --md-primary: #a1143f;
-    --md-on-primary: #ffffff;
-    --md-primary-container: #fecdd3;
-    --md-on-primary-container: #4c0519;
+  [data-power-state='off'] {
+    --md-status: #e11d48;
+    --md-status-text: #be123c;
+    --md-status-soft: rgb(225 29 72 / 0.1);
+    --md-status-border: rgb(225 29 72 / 0.25);
   }
   /* Нет данных — графит. Никогда не зелёный: пустой график нельзя показать как «світло є». */
-  :root[data-power-state='unknown'] {
-    --md-primary: #4a534d;
-    --md-on-primary: #ffffff;
-    --md-primary-container: #dee3da;
-    --md-on-primary-container: #1a1c19;
+  [data-power-state='unknown'] {
+    --md-status: #71717a;
+    --md-status-text: #52525b;
+    --md-status-soft: rgb(113 113 122 / 0.1);
+    --md-status-border: rgb(113 113 122 / 0.25);
   }
 
-  /* --- M3 Expressive: тёмная тема (Dark OLED) ---
-     Поверхности — из спеки M3 Expressive: surface #0A0E0D, dim #050807, container-ramp от
-     #050706 до #2B3430. На AMOLED такие панели физически выключаются и экономят заряд, а
-     уровни различаются тоном, а не тенью. Контраст: on-surface #E0E6E2 на #050807 — 16.9:1,
-     on-surface-variant #BCC7C0 — 9.4:1 (выше AA). */
+  /* --- Тёмная тема: строгий Obsidian (Zinc) ---
+     Фон #09090B — чистый антрацит без примеси зелёного, карточка #131318 отделяется от фона
+     тоном и гранью 1px, а не тенью. Контраст: on-surface #FAFAFA на #09090B — 19.3:1,
+     on-surface-variant #A1A1AA — 8.6:1, акцент-изумруд #10B981 на фоне — 8.0:1: всё выше AA. */
   .dark {
-    /* Тональные поверхности */
-    --md-surface: #0a0e0d;
-    --md-surface-dim: #050807;
-    --md-surface-container-lowest: #050706;
-    --md-surface-container-low: #111715;
-    --md-surface-container: #161d1a;
-    --md-surface-container-high: #202825;
-    --md-surface-container-highest: #2b3430;
-    --md-on-surface: #e0e6e2;
-    --md-on-surface-variant: #bcc7c0;
-    --md-outline: #87928b;
-    --md-outline-variant: #3d4742;
+    /* Поверхности */
+    --md-surface: #09090b;
+    --md-surface-dim: #09090b;
+    --md-surface-container-lowest: #09090b;
+    --md-surface-container-low: #0e0e12;
+    --md-surface-container: #131318;
+    --md-surface-container-high: #1b1b22;
+    --md-surface-container-highest: #23232c;
+    --md-on-surface: #fafafa;
+    --md-on-surface-variant: #a1a1aa;
+    --md-outline: #3f3f46;
+    --md-outline-variant: rgb(255 255 255 / 0.08);
 
-    /* Primary-группа по умолчанию = «світло є» (изумруд из спеки) */
-    --md-primary: #6ee7b7;
-    --md-on-primary: #003824;
-    --md-primary-container: #005236;
-    --md-on-primary-container: #a7f3d0;
+    /* Интерактивный акцент: чистый изумруд с почти чёрным текстом (8.4:1) */
+    --md-primary: #10b981;
+    --md-on-primary: #09090b;
+    --md-primary-container: rgb(16 185 129 / 0.14);
+    --md-on-primary-container: #6ee7b7;
 
-    /* Статусы сети */
-    --md-success: #6ee7b7;
-    --md-on-success: #003824;
-    --md-warning: #fcd34d;
-    --md-on-warning: #3e2700;
-    --md-destructive: #fda4af;
-    --md-on-destructive: #4c0519;
-    --md-info: #7dd3fc;
-    --md-on-info: #04222e;
-    --md-unknown: #9ca3af;
-    --md-unknown-soft: #202825;
-    --md-level-high: #bef264;
-    --md-info-soft: #0b3143;
+    /* Статусы сети: Emerald / Amber / Rose / Zinc — и только они */
+    --md-success: #10b981;
+    --md-on-success: #09090b;
+    --md-warning: #f59e0b;
+    --md-on-warning: #09090b;
+    --md-destructive: #f43f5e;
+    --md-on-destructive: #09090b;
+    --md-info: #3b82f6;
+    --md-on-info: #09090b;
+    --md-unknown: #71717a;
+    --md-unknown-soft: rgb(113 113 122 / 0.14);
+    --md-level-high: #a3e635;
+    --md-info-soft: rgb(59 130 246 / 0.14);
 
-    --glow-success: #6ee7b7;
-    --glow-warning: #fcd34d;
-    --glow-destructive: #fda4af;
-    --glow-unknown: #9ca3af;
-    --glow-strength: 0.3;
+    /* Грань 1px и верхний блик: именно они дают «ювелирный» вид, а не крупные скругления */
+    --md-hairline: rgb(255 255 255 / 0.06);
+    --md-track: rgb(255 255 255 / 0.12);
+    --md-highlight-top: rgb(255 255 255 / 0.05);
+
+    --md-status: #71717a;
+    --md-status-text: #a1a1aa;
+    --md-status-soft: rgb(113 113 122 / 0.12);
+    --md-status-border: rgb(113 113 122 / 0.25);
+
+    --glow-strength: 0.1;
     --radius: 1rem;
   }
 
-  /* Динамическая палитра в тёмной теме — ровно значения спеки M3 Expressive. */
-  .dark[data-power-state='on'] {
-    --md-primary: #6ee7b7;
-    --md-on-primary: #003824;
-    --md-primary-container: #005236;
-    --md-on-primary-container: #a7f3d0;
+  /* Тёмная тема: те же четыре состояния, но светлые тона — на антраците только они дают
+     нужный контраст для текста таймера и линии прогресса. Оба селектора нужны: атрибут стоит
+     и на <html> (пишет usePowerState), и на самом Hero внутри тёмной страницы. */
+  .dark[data-power-state='on'],
+  .dark [data-power-state='on'] {
+    --md-status: #10b981;
+    --md-status-text: #34d399;
+    --md-status-soft: rgb(16 185 129 / 0.12);
+    --md-status-border: rgb(16 185 129 / 0.25);
   }
-  .dark[data-power-state='warning'] {
-    --md-primary: #fcd34d;
-    --md-on-primary: #3e2700;
-    --md-primary-container: #5c3d00;
-    --md-on-primary-container: #fde68a;
+  .dark[data-power-state='warning'],
+  .dark [data-power-state='warning'] {
+    --md-status: #f59e0b;
+    --md-status-text: #fbbf24;
+    --md-status-soft: rgb(245 158 11 / 0.12);
+    --md-status-border: rgb(245 158 11 / 0.25);
   }
-  .dark[data-power-state='off'] {
-    --md-primary: #fda4af;
-    --md-on-primary: #4c0519;
-    --md-primary-container: #5f1422;
-    --md-on-primary-container: #fecdd3;
+  .dark[data-power-state='off'],
+  .dark [data-power-state='off'] {
+    --md-status: #f43f5e;
+    --md-status-text: #fb7185;
+    --md-status-soft: rgb(244 63 94 / 0.12);
+    --md-status-border: rgb(244 63 94 / 0.25);
   }
-  .dark[data-power-state='unknown'] {
-    --md-primary: #bdc9c2;
-    --md-on-primary: #1b211d;
-    --md-primary-container: #2b3430;
-    --md-on-primary-container: #dde3df;
+  .dark[data-power-state='unknown'],
+  .dark [data-power-state='unknown'] {
+    --md-status: #71717a;
+    --md-status-text: #a1a1aa;
+    --md-status-soft: rgb(113 113 122 / 0.12);
+    --md-status-border: rgb(113 113 122 / 0.25);
   }
 
   html {
@@ -374,22 +413,22 @@
     letter-spacing: -0.02em;
   }
 
-  /* Радиальное свечение статуса за Hero. Цвет приходит токеном и меняется плавно —
-     transition на переменной не работает, поэтому анимируем opacity у псевдоэлемента,
-     а сам цвет переключаем через data-атрибут на контейнере. Прозрачность считает color-mix:
-     альфу к hex-переменной иначе не добавить. */
+  /* Мягкое радиальное свечение статуса под Hero. Живёт у верхнего края и читается как
+     «подсветка сверху», а не как заливка: сила 10% (--glow-strength), то есть фон остаётся
+     графитовым, а оттенок состояния виден. Цвет берётся из --md-status, который ставит
+     `data-power-state` — на <html> (usePowerState) или на самом Hero. */
   .status-glow::before {
     content: "";
     position: absolute;
-    inset: -30% -10% 30%;
+    inset: 0 0 45%;
     z-index: 0;
     pointer-events: none;
     background: radial-gradient(
-      60% 55% at 50% 35%,
-      color-mix(in oklab, var(--glow-color, var(--glow-unknown)) calc(var(--glow-strength) * 100%), transparent) 0%,
-      transparent 70%
+      70% 120% at 50% 0%,
+      color-mix(in oklab, var(--md-status) calc(var(--glow-strength) * 100%), transparent) 0%,
+      transparent 72%
     );
-    transition: background 700ms var(--ease-m3-expressive-default), opacity 700ms ease;
+    transition: background 700ms var(--ease-m3-standard), opacity 700ms ease;
   }
 
   /* Режим «Економія заряду»: гасим анимации и свечение, оставляем чистый чёрный фон.

@@ -6,7 +6,7 @@
          для людей со слабым зрением и противоречит WCAG 1.4.4. viewport-fit=cover нужен
          для нижней панели под «чёлкой». -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#050807" />
+    <meta name="theme-color" content="#09090b" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Svitlo — Чернігів</title>
     <script>
@@ -25,7 +25,7 @@
               : pref === 'dark';
           document.documentElement.classList.toggle('dark', dark);
           var meta = document.querySelector('meta[name="theme-color"]');
-          if (meta) meta.setAttribute('content', dark ? '#050807' : '#edefe9');
+          if (meta) meta.setAttribute('content', dark ? '#09090b' : '#f1f5f9');
         } catch (error) {
           /* приватный режим: localStorage недоступен — берём тёмную по системной настройке */
           var darkAuto = window.matchMedia('(prefers-color-scheme: dark)').matches;

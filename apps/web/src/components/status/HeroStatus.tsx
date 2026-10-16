@@ -1,11 +1,10 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BatteryCharging, Clock } from 'lucide-react';
-import { ExpressiveShapeBadge, ShapeOutline, type ExpressiveShape } from '../ui/ExpressiveShapeBadge.js';
+import { StatusPill } from '../ui/StatusPill.js';
 import { StatusDot, type NetworkState } from '../ui/StatusDot.js';
-import { WavyDivider, WavyProgressBar, type WaveTone } from '../ui/WavyProgressBar.js';
+import { WavyProgressBar, type WaveTone } from '../ui/WavyProgressBar.js';
 import { formatMinutesUk, slotProgress } from '../../lib/scheduleWindow.js';
-import { cn } from '../../lib/cn.js';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
 /**
@@ -23,21 +22,11 @@ import type { ScheduleIntervalUtc } from '@svitlo/shared';
  * нейтральный серый и отдельный текст.
  */
 
-/** Токен свечения под Hero для каждого состояния. */
-const GLOW: Record<NetworkState, string> = {
-  on: 'var(--glow-success)',
-  soon: 'var(--glow-warning)',
-  off: 'var(--glow-destructive)',
-  unknown: 'var(--glow-unknown)',
-};
-
-/** Фирменная M3-фигура статуса: силуэт читается даже там, где цвет выгорел. */
-const SHAPE: Record<NetworkState, ExpressiveShape> = {
-  on: 'scallop',
-  soon: 'clover',
-  off: 'polygon',
-  unknown: 'scallop',
-};
+/*
+ * Цвет статуса в этой карточке не задаётся локально: атрибут `data-power-state` на самой секции
+ * переключает токены --md-status*, из которых берут цвет бейдж, таймер, линия прогресса и
+ * свечение. Одна точка правки вместо четырёх синхронных карт состояний в разметке.
+ */
 
 export interface HeroStatusProps {
   intervals: ScheduleIntervalUtc[];
@@ -98,31 +87,21 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
 
   return (
     <section
-      className="status-glow relative isolate overflow-hidden rounded-[40px] border border-outline-variant/70 bg-surface-container-low p-5 sm:p-7"
-      style={{ ['--glow-color' as string]: GLOW[state] }}
+      // data-power-state ставим на саму секцию, а не только на <html>: Hero может показывать
+      // график на завтра, и тогда его состояние отличается от страничного. От этого же атрибута
+      // берут цвет бейдж, таймер, полоса прогресса и свечение — разойтись они не могут.
+      data-power-state={state}
+      className="status-glow relative isolate overflow-hidden rounded-3xl border border-border bg-card p-5 sm:p-6"
     >
-      {/* Гигантский контур M3-фигуры: декоративная подложка, а не информация — поэтому почти
-          прозрачна и не мешает читать цифры. */}
-      <ShapeOutline
-        kind={SHAPE[state]}
-        className={cn(
-          'pointer-events-none absolute -right-20 -top-24 h-80 w-80 text-primary opacity-[0.06]',
-          state !== 'unknown' && 'animate-shape-spin',
-        )}
-      />
-
       <div className="relative z-10 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Капсула статуса: фигура + текст. Цвет и силуэт работают вместе — статус не держится
-              на одном лишь цвете (доступность на солнце и при дальтонизме). */}
-          <span className="inline-flex min-h-12 items-center gap-2.5 rounded-full bg-surface-container-high/70 py-1.5 pl-1.5 pr-4">
-            <ExpressiveShapeBadge state={state} size="sm" />
-            <span className="text-sm font-bold text-on-surface sm:text-base">{title}</span>
-          </span>
+          {/* Пилл статуса: точка + векторная иконка + текст. Иконка — второй (не-цветовой)
+              сигнал состояния, поэтому статус читается и на солнце, и при дальтонизме. */}
+          <StatusPill state={state} label={title} pulse={state !== 'unknown'} className="sm:text-sm" />
 
           <div className="flex items-center gap-2">
             {fromCache && (
-              <span className="rounded-full bg-surface-container-high px-3 py-1 text-[11px] font-semibold text-on-surface-variant">
+              <span className="rounded-full border border-hairline bg-surface-container-high px-3 py-1 text-[11px] font-semibold text-on-surface-variant">
                 {t('home.heroFromCache', {
                   time: cachedAt ? new Date(cachedAt).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) : '',
                 })}
@@ -142,24 +121,26 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
             {clock ? (
               <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
                 <div className="min-w-0">
+                  {/* Таймер: ровные табличные цифры, статичное двоеточие. Мигание убрано —
+                      на телефоне оно читается как дефект рендера, а не как признак живых данных. */}
                   <p
-                    className="font-timer flex items-baseline text-5xl font-black leading-none tracking-tight tabular-nums text-on-surface sm:text-7xl"
+                    className="font-timer flex items-baseline text-4xl font-bold leading-none tracking-tight text-on-surface sm:text-6xl"
                     aria-label={`${clock.hours}:${clock.minutes} ${caption}`}
                   >
                     <span>{clock.hours}</span>
-                    <span className="mx-1 animate-pulse-soft text-primary sm:mx-2" aria-hidden>
+                    <span className="mx-1 text-on-surface-variant/70 sm:mx-2" aria-hidden>
                       :
                     </span>
                     <span>{clock.minutes}</span>
                   </p>
-                  <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-wider text-on-surface-variant sm:text-xs">
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-status-text sm:text-xs">
                     {caption}
                   </p>
                 </div>
 
                 {nextBoundaryAt && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-container-high/60 px-3 py-1.5 text-xs text-on-surface-variant">
-                    <Clock className="h-3.5 w-3.5 text-primary" strokeWidth={2.2} aria-hidden />
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-container-high px-3 py-1.5 text-xs text-on-surface-variant">
+                    <Clock className="h-3.5 w-3.5 text-status-text" strokeWidth={2.2} aria-hidden />
                     {t('home.heroBoundary', { time: formatTime(nextBoundaryAt) })}
                   </span>
                 )}
@@ -170,7 +151,8 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
               </p>
             )}
 
-            <WavyDivider />
+            {/* Деликатная линия вместо волнистого разделителя: 1px и 6% белого. */}
+            <div className="border-t border-hairline" aria-hidden />
 
             {/* Волнистая змейка прогресса слота: сколько уже прошло и сколько осталось. */}
             {slot && (
@@ -189,8 +171,8 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
         {/* Бытовой совет: человек открывает приложение во время отключения и думает,
             что делать дальше, а не когда выключат. */}
         {isOff && (
-          <div className="flex items-start gap-2.5 rounded-[22px] bg-surface-container-high/60 p-3">
-            <BatteryCharging className="mt-0.5 h-4 w-4 shrink-0 text-primary" strokeWidth={2.2} aria-hidden />
+          <div className="flex items-start gap-2.5 rounded-2xl border border-hairline bg-surface-container-high p-3">
+            <BatteryCharging className="mt-0.5 h-4 w-4 shrink-0 text-status-text" strokeWidth={2.2} aria-hidden />
             <p className="text-xs leading-relaxed text-on-surface-variant">{t('home.heroTipOff')}</p>
           </div>
         )}

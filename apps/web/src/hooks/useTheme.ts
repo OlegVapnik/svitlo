@@ -19,7 +19,13 @@ const THEME_KEY = 'theme';
 export type ThemePreference = 'auto' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
-export const THEME_VALUES: Record<ResolvedTheme, string> = { light: '#edefe9', dark: '#050807' };
+/**
+ * Цвета строки состояния телефона — ровно фон приложения (--md-surface-dim): тёмная тема #09090B
+ * (антрацит), светлая #F1F5F9. Держим их здесь, потому что этот хук пишет метку вне React, а
+ * инлайн-скрипт в index.html — до первой отрисовки; значение обязано совпадать с палитрой в
+ * globals.css, иначе на холодной загрузке полоса мигнёт чужим цветом.
+ */
+export const THEME_VALUES: Record<ResolvedTheme, string> = { light: '#f1f5f9', dark: '#09090b' };
 
 /** Читаемое сохранённое значение; битое или отсутствующее — «auto». */
 function readPreference(): ThemePreference {

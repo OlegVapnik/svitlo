@@ -53,9 +53,9 @@ export function StatCard({ label, value, icon: Icon, tone = 'neutral', hint, to,
   );
 
   const className = cn(
-    // Bento-плитка M3: тонкая подложка-контейнер, радиус 28px и пружинный отклик на нажатие.
-    'flex items-center gap-3 rounded-[28px] border border-outline-variant/50 bg-surface-container p-4 transition-[transform,background-color,border-color] duration-200 ease-[var(--ease-m3-expressive-fast)]',
-    to && 'hover:border-primary/40 hover:bg-surface-container-high active:scale-[0.98]',
+    // Плитка-метрика: собраный радиус 16px, тонкая грань и верхний блик вместо тени.
+    'flex items-center gap-3 rounded-2xl border border-border bg-card p-4 transition-colors duration-200',
+    to && 'hover:border-primary/40 hover:bg-surface-container-high active:scale-[0.99]',
   );
 
   if (to) {

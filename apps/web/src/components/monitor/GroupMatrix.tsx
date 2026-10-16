@@ -42,7 +42,7 @@ export const GroupMatrix: React.FC<GroupMatrixProps> = ({ queues, outages, onSel
 
   if (queues.length === 0) {
     return (
-      <p className="rounded-[28px] bg-surface-container px-4 py-6 text-center text-sm text-on-surface-variant">
+      <p className="rounded-2xl border border-hairline bg-card px-4 py-6 text-center text-sm text-on-surface-variant">
         {t('monitor.noQueues')}
       </p>
     );
@@ -59,15 +59,15 @@ export const GroupMatrix: React.FC<GroupMatrixProps> = ({ queues, outages, onSel
             type="button"
             onClick={() => onSelect?.(queue)}
             className={cn(
-              // Плитка-сквиркл M3 Expressive: радиус 22px в покое и сжатие при нажатии —
-              // нажатие чувствуется даже на плохом экране под солнцем.
-              'flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-[22px] border p-2',
-              'transition-[border-radius,background-color,border-color,transform] duration-200 ease-[var(--ease-m3-expressive-fast)] active:scale-[0.94] active:rounded-[14px]',
+              // Плитка группы: строгий радиус и грань. Морфинг формы при нажатии убран — от него
+              // сетка «дрожала», а состояние и так читается цветом, точкой и подписью.
+              'flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-xl border p-2',
+              'transition-colors duration-150 active:scale-[0.99]',
               off
-                ? 'border-destructive/40 bg-destructive/10'
+                ? 'border-destructive/30 bg-destructive/10'
                 : state === 'unknown'
-                  ? 'border-outline-variant/50 bg-surface-container'
-                  : 'border-outline-variant/50 bg-surface-container hover:bg-surface-container-high',
+                  ? 'border-hairline bg-card'
+                  : 'border-hairline bg-surface-container-high hover:bg-surface-container-highest',
             )}
           >
             <StatusDot state={state} />
