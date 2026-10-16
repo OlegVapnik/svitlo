@@ -11,12 +11,16 @@ describe('mergeQueues', () => {
       [{ queue: '3', slots: 24, lastDate: '2026-10-10' }],
       [{ queue: '3', streets: 5 }],
     );
-    expect(result).toEqual([{ queue: '3', slots: 24, lastDate: '2026-10-10', streets: 5 }]);
+    expect(result).toEqual([
+      { queue: '3', slots: 24, lastDate: '2026-10-10', streets: 5, settlements: [], streetNames: [] },
+    ]);
   });
 
   test('очередь без графика остаётся в списке (только привязки улиц)', () => {
     const result = mergeQueues([], [{ queue: '2/2', streets: 3 }]);
-    expect(result).toEqual([{ queue: '2/2', slots: 0, lastDate: null, streets: 3 }]);
+    expect(result).toEqual([
+      { queue: '2/2', slots: 0, lastDate: null, streets: 3, settlements: [], streetNames: [] },
+    ]);
   });
 
   test('пустые источники дают пустой список — очереди не выдумываются', () => {
