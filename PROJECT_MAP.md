@@ -1,7 +1,32 @@
-# Svitlo — карта проекта (project map)
+> Назначение файла: за 5 минут ввести в курс нового разработчика или ИИ-агента.
+> Актуальность: проверено по реальному коду на **2026-10-14 (коммит `6cbe3ff`, ветка
+> `redesign/wow-ui`)**. `tsc --noEmit` для `api`, `web` и `cf-worker` — **0 ошибок**.
 
-> Назначение файла: за 5 минут ввести в курс нового разработчика или ИИ-агента[cite: 2].
-> Актуальность: проверено по реальному коду на **2026-10-13 (коммит `0dfa737`)** — история Git есть (ветки `ai/...`), рабочее дерево чистое, `tsc --noEmit` для `api` и `web` проходит с **0 ошибок**[cite: 1, 2].
+---
+
+## ⚠️ ЧТО ИЗМЕНИЛОСЬ 14.10.2026 (обязательно к прочтению)
+
+За день проект переехал из «ноутбук + Node-бэкенд» в **бесплатное облако Cloudflare**.
+Если вы пришли по инструкциям ниже про `docker compose` и Node-бэкенд — они всё ещё
+работают, но это теперь **резервный путь**, а не основной.
+
+| Что | Где | Статус |
+|---|---|---|
+| Worker (API + крон) | `cf-worker/` | **основной раздатчик данных** |
+| D1-база | облако, id в `cf-worker/wrangler.toml` | графики, контакты, привязки адресов |
+| Статика | Cloudflare Pages, проект `svitlo-ua` | домен `svitlo-ua-4ze.pages.dev` |
+| Деплой одной командой | `./deploy-cf.sh` | без GitHub, без CI |
+| Живой API | `https://svitlo-api.olegvapnik45.workers.dev/api/v1` | крон каждые 20 минут |
+
+Новые части проекта, которых не было в предыдущей версии файла:
+* `cf-worker/` — автономный Worker без Node-зависимостей (Web Fetch + D1 + Cache API).
+* `cf-worker/src/settlements-ua.json` — справочник 1853 населённых пунктов, поиск по префиксу в памяти.
+* `apps/api/src/services/address-lookup.service.ts` — поиск очереди по адресу (3 уровня).
+* `apps/api/src/services/house-number.ts` — сопоставление номеров домов с шаблонами.
+* `tools/compare-api-contracts.py` — сверка контрактов ответа воркера с эталоном.
+* `tools/gen-settlements-ua.py` — генератор справочника из дампа GeoNames.
+
+Ветка `redesign/wow-ui` содержит незавершённый визуальный редизайн (этапы 1–6 из 8).
 
 ---
 
@@ -21,6 +46,22 @@ PWA-сервис «Svitlo — Чернігів» собирает и показ�
 ---
 
 ## 1. Быстрый старт
+
+### Путь 1. Облако (основной)
+
+```bash
+# Нужен аккаунт Cloudflare и один раз — вход:
+npx wrangler login
+
+# Деплой всего: D1 создаётся и подставляется автоматически, схема накатывается,
+# воркер публикуется, фронтенд собирается на его адрес и уезжает в Pages.
+./deploy-cf.sh
+```
+
+Скрипт идемпотентен и сам ищет существующую базу `svitlo` либо создаёт её, если в
+`cf-worker/wrangler.toml` ещё стоит заглушка `ЗАМЕНИТЕ_НА_DATABASE_ID`.
+
+### Путь 2. Локально (Node-бэкенд, резервный)
 
 ```bash
 # 1. Переменные окружения (обязателен ADMIN_TOKEN от 16 символов в production)
@@ -65,6 +106,22 @@ pnpm --filter @svitlo/web dev      # vite, proxy /api → http://localhost:3001
 
 ```text
 svitlo/
+├─ deploy-cf.sh                # ОСНОВНОЙ ДЕПЛОЙ: D1 → воркер → сборка фронта → Pages, одной командой
+├─ cf-worker/                  # Cloudflare Worker: API + крон 20 мин, БЕЗ Node-зависимостей
+│  ├─ wrangler.toml            # имя, cron */20, [vars], привязка D1 (database_id)
+│  ├─ schema.sql               # схема D1 + справочные данные (контакты, 20 улиц Деснянского)
+│  ├─ .wranglerignore          # что НЕ упаковывать в бандл воркера
+│  ├─ src/index.ts             # все /api/v1 маршруты, cron-обход зеркала, Telegram-новости
+│  ├─ src/address.ts           # нормализация адресов + матчер домов (порт из apps/api)
+│  ├─ src/settlements.ts       # поиск по справочнику, бинарный поиск по префиксу
+│  ├─ src/settlements-ua.json  # 1853 населённых пункта (GeoNames), 72 КБ
+│  ├─ src/chernihiv.ts         # порт парсера chernihiv-web в Worker
+│  └─ src/news / telegram      # разбор t.me/s/<канал>
+├─ tools/
+│  ├─ compare-api-contracts.py # сверка ответов воркера с эталоном (ловит расхождения контрактов)
+│  ├─ gen-settlements-ua.py    # пересборка справочника НП из дампа GeoNames
+│  ├─ build-android-apk.sh     # APK: сборка фронта + cap sync + gradle в Docker
+│  └─ bump-version.sh          # версия X.Y.Z
 ├─ docker-compose.yml          # db + migrate + api + web, единый x-api-env для api/migrate
 ├─ docker/
 │  ├─ Dockerfile.api           # node:22-alpine, multi-stage (deps→builder→runner), CMD node dist/server.js
