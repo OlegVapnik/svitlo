@@ -9,7 +9,7 @@
 
 | Показатель | Состояние |
 |---|---|
-| **Последний проверенный коммит** | `580cc24` (зум, отступ от статус-бара и переходы табов; CORS офлайн-пакета — `5f791ea`, v2.8.0) |
+| **Последний проверенный коммит** | `7fea8ea` (**v2.9.0**: покрытие дней графика, «опубликовано без отключень» вместо «Немає даних», надёжность на знаменателе известных дней, `byRegionSummary`; зеркало — `5f791ea`/`580cc24`, v2.8.0) |
 | **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. Безопасные зоны телефона — утилиты `.pt-safe`/`.pb-safe` (максимум из `env()` и нативных инсетов `window.SvitloInsets` от `MainActivity`); табы листаются свайпом (`lib/swipe-tabs.ts`), смена раздела проявляется мягко (`.tab-enter` + `lib/tab-transition.ts`), зум в APK выключен. Тема — ровно две (світла/темна), режима «Авто» нет. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
 | **Масштаб продукта** | **Вся Украина**: мультирегиональный каталог областей (`GET /api/v1/regions`), автоимпорт ГПВ с всеукраинского зеркала (`source='mirror'`) + Telegram (`source='telegram'`) + агрегатор новостей + **5 провайдеров** (mirror, YASNO, DTEK, e-svitlo, chernihivoblenergo) в `apis/api/src/providers/*.ts` |
 | **Язык интерфейса** | Единый украинский (`uk.json`); `ru.json`, `en.json` и переключатель языков удалены |
@@ -82,6 +82,39 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers (Что осталось следующей смене)
 1. ...
 ```
+
+---
+
+## Сессия 2026-10-17: покрытие дня ГПВ и «опубликовано без отключень» (v2.9.0)
+
+- **Ветка / HEAD:** `redesign/wow-ui` — `7fea8ea` (чейнджлог — в том же коммите; снимок ниже — следующим `docs(tools)`, потому что хеш коммита содержания появляется только после него)
+- **Бэкап БД:** не снимался (схема БД и миграции не менялись; в облаке добавилась таблица `schedule_coverage` внутри `schema.sql`, накатывается `wrangler d1 execute`)
+
+### Done (Что сделано)
+- **Разделены «не знаємо» и «знаем, что отключений нет».** Зеркало отдаёт день области и когда все 48 получасовых кодов у очереди — «світло є», а в `schedule_slots` мы пишем только отключения. Поэтому опубликованный график без отключений давал `slots = 0` и подпись «Немає даних» (17.10.2026 — `dnipro-cek`, `dnipro-dnem`, `ivano-frankivska-oblast`: 12 черг, по 48 комірок, усі «світло є»). Теперь `mirrorDayCoverage()` читает уже загруженный снимок и говорит, что именно опубликовано на дату: `/schedules` отдаёт `covered` + `allClear`, `/regions` — `allClear` за сьогодні, `/queues` — `covered`.
+- **`allClear` ≠ `covered` — это разные вопросы.** Есть интервалы → показываем их; интервалов нет и день опубликован → «світло за графіком»; опубликованного дня нет → «даних немає». Предохранитель: если фид УЖЕ видит отключение у группы, а слотов ещё нет (импорт отстал), `allClear` не ставим — обещать свет было бы прямой брехнью (`isAllClear()` + `offlineQueues`).
+- **Снимок берётся только из кеша** (`peekMirrorSnapshot`), сеть в публичном запросе не дёргается: холодный кеш честно даёт `covered: false`. Импорт `publishedClearQueues` — динамический, иначе цикл `queues.service ↔ mirror-schedule.service`.
+- **Надёжность считается на знаменателе известных дней** (`daysKnown`, не меньше суток): у группы с двумя днями данных из семи процент больше не занижается втрое. Завтрашний день считается по опубликованному ГПВ и помечается `isForecast`. Добавлено `byRegionSummary` — сведение по областям, области без данных в список не попадают.
+- **Та же логика в облаке** (`cf-worker`): новая таблица `schedule_coverage`, знаменатели по известным дням, `covered`/`allClear` в `/schedules` и `/queues`, `source` из слотов (а не жёсткое `'mirror'`), порядок групп «1, 1/2, 2, 2/2, 10». Туда же перенесён разбор публичных Telegram-каналов операторов (`cf-worker/src/telegram-schedule.ts` — копия проверенного Node-парсера, чтобы оба сервера читали один пост одинаково).
+- **Живая проверка:** `/api/v1/queues?region=dnipro-cek` — 12 черг с `covered: true`, `slots: 0`; `/api/v1/schedules?region=dnipro-cek&queue=2/2&date=…` — `intervals: []`, `covered: true`, `allClear: true`, `source: "mirror"`; группа вне фида — `covered: false, allClear: false`; `/api/v1/reliability?region=dnipro-cek` — `byRegionSummary` с `daysKnown`.
+
+### Changed (Ключевые файлы)
+- `apps/api/src/services/mirror-schedule.service.ts` (`mirrorDayCoverage`, `isAllClear`), `apps/api/src/services/queues.service.ts` (`covered` в `mergeQueues`, кешный `publishedClearQueues`), `apps/api/src/routes/schedules.ts`, `apps/api/src/services/regions.service.ts` (`allClear` за сьогодні), `apps/api/src/services/reliability.ts` + `routes/reliability.ts` (`daysKnown`, `isForecast`, `byRegionSummary`)
+- Веб: `MyQueueHero`, `HomeHeroSection`, `QueueScheduleBar`, `ReliabilityCard`, `QueueSchedulePage`, `StreetsPage`, `lib/region.ts` + `i18n/uk.json`; `apps/web/src/version.ts` (2.8.0 → 2.9.0)
+- Облако: `cf-worker/src/index.ts` (+`telegram-schedule.ts`, `schema.sql` — `schedule_coverage`); контракт: `packages/shared/src/index.ts`
+- Тесты: новый `apps/api/tests/integration/queues-all-clear.test.ts` (5 сценариев через HTTP со fetch-стабом фида), дополнены юнит-тесты `mirror-schedule.test.ts`, `queues.test.ts`, `reliability.test.ts`, `lib/region.test.ts`, поправлены устаревшие ожидания в `regions-api.test.ts` и `street-queues-region.test.ts` (не знали о `settlements`/`streetNames`)
+
+### Verified (Чем проверено)
+- `tsc --noEmit`: api / web / cf-worker — 0 ошибок
+- `vitest run` в `apps/api` с `TEST_DATABASE_URL` — 40 файлов / 296 тестов зелёные; `apps/web` — 13 файлов
+- `scan_secrets.py` — 0 находок; `check_tailwind_tokens.py` — OK
+- `docker compose up -d --build api` — пересобран и проверен живыми `curl` (см. выше)
+- `vite build` (web) — собрано за 1,3 с, единственное предупреждение — старое про размер чанка
+
+### Next / Blockers (Что осталось следующей смене)
+1. **Деплой воркера не сделан** (правило AGENTS: прод-деплой требует явного согласия человека): `./deploy-cf.sh`, затем `SVITLO_API_BASE=… SVITLO_WORKER_BASE=… python3 tools/compare-api-contracts.py` — сверить новые `covered`/`allClear`/`byRegionSummary` на обоих бэкендах.
+2. **Псевдонимы областей.** В фиде и в БД живут `dnipro-cek` / `dnipro-dnem`, которых нет в человеческом каталоге областей (`dnipropetrovnska-oblast`, `dtek-dnem`). Нужен fallback-алиас с меткой источника `region-fallback` в `apps/api/src/services/mirror-schedule.service.ts` и `cf-worker/src/index.ts`, иначе часть Днепропетровщины ищется только по коду оператора.
+3. **APK** для v2.9.0 ещё не собирали (`./tools/build-android-apk.sh <api-base>`); веб-сборка проверена (`vite build`).
 
 ---
 
