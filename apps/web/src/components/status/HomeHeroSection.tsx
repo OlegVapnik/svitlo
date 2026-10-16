@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { CalendarDays, FileQuestion, PhoneCall, RefreshCw, Star, Zap, ZapOff } from 'lucide-react';
 import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
+import { ShareSchedule } from '../schedule/ShareSchedule.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
@@ -13,6 +14,8 @@ import { useQueues, useQueueSchedule, useUpcomingGroupOutages } from '../../api/
 import { HeroStatus } from './HeroStatus.js';
 import { DaySegment } from '../schedule/DaySegment.js';
 import { useMinuteTicker } from '../../hooks/useVisibilityTicker.js';
+import { useDynamicChrome } from '../../hooks/useDynamicChrome.js';
+import { useTheme } from '../../hooks/useTheme.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
@@ -94,6 +97,7 @@ export const HomeHeroSection: React.FC = () => {
   // Секундний тик для обратного отсчёта. Зупиняється, коли вкладка не видна: иначе таймер
   // будил бы CPU телефона каждую секунду, пока приложение лежит в кармане.
   const now = useMinuteTicker();
+  const { theme } = useTheme();
 
   // Розрахунок вікна графіка на вибрану добу (що зараз, коли наступне, скільки без світла)
   const windowSummary = useMemo(() => {
@@ -101,6 +105,27 @@ export const HomeHeroSection: React.FC = () => {
   }, [hasIntervals, intervals, selectedDate, now]);
 
   const isOff = Boolean(windowSummary?.isOff);
+
+  // Цвет строки состояния телефона и заголовок вкладки следуют за статусом сети.
+  // Минуты в заголовок идут отдельным ключом, а не собираются из предложения Hero:
+  // склеивать переводы через replace значит сломать заголовок при любой правке текста.
+  const chromeMinutes =
+    isOff && windowSummary?.backInMinutes != null
+      ? formatMinutesUk(windowSummary.backInMinutes)
+      : !isOff && windowSummary?.nextInMinutes != null
+        ? formatMinutesUk(windowSummary.nextInMinutes)
+        : null;
+
+  useDynamicChrome({
+    status: !hasIntervals ? 'unknown' : isOff ? 'off' : 'on',
+    theme,
+    statusLabel: !hasIntervals
+      ? t('home.heroUnknown')
+      : isOff
+        ? t('home.heroTitleOff')
+        : t('home.heroTitleOn'),
+    minutesLabel: chromeMinutes ? t('home.chromeMinutes', { time: chromeMinutes }) : null,
+  });
   // (deleted_duplicate)
   // Формування підсумкового рядка-відліку
   const statusHeadline = useMemo(() => {
@@ -351,6 +376,21 @@ className={cn(
           {/* 24-годинний горизонтальний таймлайн із півгодинними комірками */}
           <div className="pt-1">
             <Timeline24h intervals={intervals} date={selectedDate} />
+
+            {/* Поделиться графиком. Текстом, а не картинкой: системное меню «Поделиться»
+                с текстом поддерживают все платформы, а с файлами — единицы, и рисовать
+                canvas ради простой задачи пришлось бы зря. */}
+            {selectedQueue && (
+              <div className="flex justify-end">
+                <ShareSchedule
+                  queue={selectedQueue}
+                  regionName={currentRegionData.nameUa ?? currentRegion}
+                  date={selectedDate}
+                  intervals={intervals}
+                  summaryLine={statusHeadline || t('home.heroUnknown')}
+                />
+              </div>
+            )}
           </div>
 
           {/* Графік узято з офлайн-снимка, а не зі свіжої відповіді оператора. Кажемо про це

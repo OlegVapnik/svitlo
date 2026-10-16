@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { useBatterySaver } from '../../hooks/useBatterySaver.js';
 import { Header } from './Header.js';
 import { BottomNav } from './BottomNav.js';
 import { Sidebar } from './Sidebar.js';
@@ -7,7 +8,11 @@ import { Sidebar } from './Sidebar.js';
  * Каркас приложения: шапка, боковое меню (desktop), контент, нижняя навигация (mobile).
  * «Skip to content» — первая ссылка на странице: клавиатурой можно проскочить меню.
  */
-export const AppShell = () => (
+export const AppShell = () => {
+  // Один вызов на всё приложение: класс ставится на <html> и гасит анимации разом.
+  useBatterySaver();
+
+  return (
   <div className="flex min-h-dvh flex-col bg-background">
     <a
       href="#main"
@@ -26,4 +31,5 @@ export const AppShell = () => (
     </div>
     <BottomNav />
   </div>
-);
+  );
+};

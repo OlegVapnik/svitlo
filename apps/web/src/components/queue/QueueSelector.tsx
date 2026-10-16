@@ -47,7 +47,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
             onChange={(e) => onSelect(e.target.value)}
             disabled={disabled}
             aria-label={t('queues.selectQueue')}
-            className="min-h-[40px] appearance-none rounded-xl border border-border bg-card py-1.5 pl-3 pr-8 text-xs font-bold text-foreground shadow-xs transition-colors hover:border-primary/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-h-11 appearance-none rounded-xl border border-border bg-card py-1.5 pl-3 pr-8 text-xs font-bold text-foreground shadow-xs transition-colors hover:border-primary/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             {queues.map((q) => (
               <option key={q} value={q}>
@@ -77,7 +77,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
                 disabled={disabled}
                 onClick={() => onSelect(q)}
                 className={cn(
-                  'min-h-[38px] min-w-[44px] rounded-xl px-2.5 py-1 text-xs font-semibold transition-all duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+                  'min-h-11 min-w-11 rounded-xl px-2.5 py-1 text-xs font-semibold transition-all duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
                   isSelected
                     ? 'bg-primary text-primary-foreground shadow-xs'
                     : 'border border-border bg-card text-foreground hover:border-primary/50 hover:bg-muted/60',
