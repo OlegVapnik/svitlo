@@ -9,8 +9,8 @@
 
 | Показатель | Состояние |
 |---|---|
-| **Последний проверенный коммит** | `25ed660` (далее — сессия M3 Expressive, коммит этой сессии) |
-| **Дизайн-система** | **Material 3 Expressive**: тональные поверхности (`@theme inline` → `--md-*` в `globals.css`), динамическая палитра от статуса сети (`data-power-state` на `<html>`, единственный писатель — хук `usePowerState` в `AppShell`), волнистый прогресс `WavyProgressBar` + `WavyDivider`, фигуры-бейджи `ExpressiveShapeBadge` / `ShapeOutline`, M3 Navigation Bar (mobile) и Navigation Rail (desktop), шкала-капсулы со штриховкой, Bento-сетка на главной. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
+| **Последний проверенный коммит** | `ef53f83` (сессия Obsidian Dark, v2.6.1; чейнджлог в воркере — `706189a`) |
+| **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
 | **Масштаб продукта** | **Вся Украина**: мультирегиональный каталог областей (`GET /api/v1/regions`), автоимпорт ГПВ с всеукраинского зеркала (`source='mirror'`) + Telegram (`source='telegram'`) + агрегатор новостей + **5 провайдеров** (mirror, YASNO, DTEK, e-svitlo, chernihivoblenergo) в `apis/api/src/providers/*.ts` |
 | **Язык интерфейса** | Единый украинский (`uk.json`); `ru.json`, `en.json` и переключатель языков удалены |
 | **Безопасность** | Порт БД закрыт на `127.0.0.1:5432`; `ADMIN_TOKEN` проверяется через `timingSafeEqual` + запрет слабых токенов (<16) в проде; CORS закрыт по умолчанию (`CORS_ORIGINS`); `TRUST_PROXY` настроен; админка вынесена в `ADMIN_ITEMS` |
@@ -82,6 +82,45 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers (Что осталось следующей смене)
 1. ...
 ```
+
+---
+
+## Сессия 2026-10-16: Obsidian Dark — зачистка визуала после M3 Expressive (v2.6.1)
+
+- **Ветка / HEAD:** `redesign/wow-ui` — `706189a` (чейнджлог в воркере) + `ef53f83` (палитра и визуал)
+- **Бэкап БД:** не снимался (схема БД и контракты API не менялись: правки в `apps/web`, `cf-worker` и инструментах)
+- **Релиз:** `./deploy-cf.sh` → воркер `svitlo-api` + Pages `svitlo-ua` (https://svitlo-ua-4ze.pages.dev); APK `versionCode 105` / `versionName 2.6.1`
+
+### Done (Что сделано)
+- **Палитра `globals.css` переписана** на нейтральный Zinc/Obsidian: фон `#09090B`, карточка `#131318` (грань `1px` + верхний блик `--md-highlight-top` вместо тени), вложенные элементы `#1B1B22` (hover `#23232C`), текст `#FAFAFA` и `#A1A1AA`; светлая тема — `#F8FAFC`, белая карточка, грань `#E2E8F0`. Болотных, коричневых и бордовых фонов не осталось.
+- **Акцент выбора отвязан от статуса:** `--md-primary` = изумруд `#10B981` (светлая тема — `#047857`) и больше не меняется от `data-power-state`. Раньше тревога в любой точке области перекрашивала всю оболочку. Состояние теперь красит ровно четыре вещи: пилл, текст таймера, линию прогресса и свечение 10% (токены `--md-status`, `--md-status-text`, `--md-status-soft`, `--md-status-border`).
+- **Визуальный мусор удалён:** `ExpressiveShapeBadge.tsx` (вместе с `ShapeOutline`) удалён целиком, вместо него `components/ui/StatusPill.tsx` — стеклянный пилл со светящейся точкой и иконкой `Zap` / `Clock` / `ZapOff` / `FileQuestion`; анимации `shape-spin` и `shape-breathe` убраны из темы.
+- **`WavyProgressBar` переделан:** высота 24px, `strokeWidth 2.5`, амплитуда 3px, длина волны 24px; пройденная часть — волна цвета состояния, хвост — прямая линия 12% белого, на стыке белая риска-ползунок. `WavyDivider` удалён: между блоками только `border-t border-hairline` (6% белого).
+- **Геометрия собрана:** радиусы 12 / 16 / 24px (`--radius-xl/2xl/3xl`), морфинг формы и `active:scale` с изменением радиуса убраны в `QueueSelector`, `GroupMatrix`, `StatCard`; селектор групп — сетка 6×2 с инвертированной выбранной ячейкой; шкалы часов (`QueueScheduleBar`, `Timeline24h`) — `h-9 rounded-xl` в треке `#0E0E12` с сегментами изумруд/рубин/янтарь и белой линией времени.
+- **Таймер и оболочка:** мигающее двоеточие убрано, цвет строки состояния телефона всегда нейтрален (`useTheme`, `useDynamicChrome`, `index.html`).
+- **`GET /api/v1/changelog` в `cf-worker`:** тот же конверт `{ data }` и те же заголовки, что у Node-бэкенда, `ETag` от содержимого файла; `tools/gen_changelog.mjs` пишет третью копию в `cf-worker/src/data/changelog.json` (в Workers нет файловой системы — JSON вшивается в бандл); `compare-api-contracts.py` сверяет новый маршрут.
+- **Скрипт `check_tailwind_tokens.py`** ужесточён: 6 базовых ролей, 14 ролей поверхностей, 6 токенов состояния/грани и полнота палитры всех четырёх состояний в обеих темах.
+
+### Changed (Ключевые файлы)
+- `apps/web/src/styles/globals.css`, `apps/web/index.html`, `apps/web/src/version.ts` (2.6.0 → 2.6.1)
+- Новое: `apps/web/src/components/ui/StatusPill.tsx`; удалено: `apps/web/src/components/ui/ExpressiveShapeBadge.tsx`
+- Правленые: `components/ui/{WavyProgressBar,StatCard}.tsx`, `components/status/{HeroStatus,HomeHeroSection,PowerSummaryCard}.tsx`, `components/schedule/{QueueScheduleBar,Timeline24h}.tsx`, `components/queue/QueueSelector.tsx`, `components/monitor/GroupMatrix.tsx`, `components/layout/AppShell.tsx`, `pages/HomePage.tsx`, `hooks/{useTheme,useDynamicChrome}.ts`
+- Воркер и инструменты: `cf-worker/{src/index.ts,tsconfig.json,src/data/changelog.json}`, `tools/{gen_changelog.mjs,compare-api-contracts.py}`, `skills/frontend-ui-change/scripts/check_tailwind_tokens.py`, `docs/AI-ONBOARDING.md`
+
+### Verified (Чем проверено — команды и результат)
+- `tsc --noEmit` (api / web / cf-worker): 0 ошибок
+- `vitest run` (apps/web): 90/90 passed
+- `check_tailwind_tokens.py .`: OK (6 базовых + 14 поверхностей + 6 состояния/грани; 4 состояния × 2 темы)
+- `scan_secrets.py .`: 0 findings; эмодзи в `apps/web/src`: 0
+- `vite build`: ✓; живой CSS `https://svitlo-ua-4ze.pages.dev/assets/index-BFiAQGjC.css` содержит `--md-hairline:#ffffff0f`, `--md-track:#ffffff1f`, `#09090b` ×8 и не содержит `#161d1a`, `#0a0e0d`, `#5f1422`
+- `compare-api-contracts.py` (эталон — локальный api `127.0.0.1:3000`, у LAN-IP порт не слушается): **проблем: 0**, включая новый маршрут `changelog`
+- Живая проверка: `GET /api/v1/changelog` на воркере → HTTP 200, верхняя запись — `ef53f83` («Интерфейс переехал на строгий Obsidian Dark…»); `GET /api/v1/health` → `{"status":"ok"}`
+- APK: `apps/web/android-apk/app-debug.apk` (4,5 МБ), `versionCode 105`, `versionName 2.6.1`
+
+### Next / Blockers (Что осталось следующей смене)
+1. **Визуальный проход на живом сайте** (Hard Reload — PWA отдаёт старый бандл) и установка APK: `adb install -r apps/web/android-apk/app-debug.apk`. Контраст светлой темы посчитан, но «вживую» на улице не проверен.
+2. **Свечение Hero и цвета сегментов** посмотреть на реальном графике в момент отключения: сейчас проверено расчётом контраста и разбором бандла, а не глазами на телефоне.
+3. Копии чейнджлога (три файла) пишет только `tools/gen_changelog.mjs`; если появится четвёртый потребитель — расширять генератор, а не копировать JSON руками.
 
 ---
 
