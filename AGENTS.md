@@ -82,7 +82,10 @@
 ```bash
 # Из корня репозитория обязателен -p: корневого tsconfig.json нет, только tsconfig.base.json,
 # поэтому голый `tsc --noEmit` печатает справку и выходит с кодом 1 (ложная «ошибка типов»).
+# Отдельный конфиг для тестов: в `apps/api/tsconfig.json` include — только `src/**`, из-за чего
+# ошибки в `tests/**` видел лишь редактор, а проверка их пропускала.
 ./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit
+./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.tests.json --noEmit
 ./apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit
 (cd cf-worker && ./node_modules/.bin/tsc --noEmit)
 python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .
