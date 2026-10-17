@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4×1, растягивается по горизонтали и вертикали. updatePeriodMillis=0: система не будит
+     приложение по расписанию — виджет обновляется из syncState() WebView, когда приходит
+     свежий график. Так батарея не тратится на пустые обновления ночью. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/widget_svitlo"
+    android:minHeight="70dp"
+    android:minWidth="250dp"
+    android:previewLayout="@layout/widget_svitlo"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="1"
+    android:targetCellWidth="4"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen"
+    tools:targetApi="31" />

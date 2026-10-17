@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
+import { hapticTick } from '@/lib/haptics';
 import { SIDEBAR_ENTRIES, isNavItemActive, type SidebarEntry } from './nav-items.js';
 
 /**
@@ -20,6 +21,7 @@ function RailLink({ item }: { item: SidebarEntry }) {
     <Link
       to={item.to}
       aria-current={active ? 'page' : undefined}
+      onClick={() => hapticTick('tick')}
       className={cn(
         'flex w-full flex-col items-center gap-1 rounded-3xl px-1 py-2.5 transition-colors duration-200',
         active ? 'text-on-surface' : 'text-on-surface-variant hover:bg-surface-container-high/60 hover:text-on-surface',

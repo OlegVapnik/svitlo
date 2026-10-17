@@ -112,7 +112,7 @@ const PeriodRow: React.FC<{
         </span>
       </span>
       <SplitBar pct={poweredPct(bucket)} label={`${label}: ${formatMinutes(bucket.outageMinutes)}`} />
-      <span className="w-19 shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
+      <span className="w-19 shrink-0 whitespace-nowrap rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
         −{formatMinutes(bucket.outageMinutes)}
       </span>
       <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
@@ -131,7 +131,7 @@ const GroupRow: React.FC<{ group: ReliabilityGroup }> = ({ group }) => {
         {t('home.heroQueue', { queue: group.queue })}
       </span>
       <SplitBar pct={poweredPct(group)} label={`${group.queue}: ${formatMinutes(group.outageMinutes)}`} />
-      <span className="w-19 shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
+      <span className="w-19 shrink-0 whitespace-nowrap rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
         −{formatMinutes(group.outageMinutes)}
       </span>
       <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">

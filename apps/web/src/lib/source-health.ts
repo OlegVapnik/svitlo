@@ -10,10 +10,29 @@ import type { StatusResponse } from '@svitlo/shared';
  */
 export type SourceSeverity = 'ok' | 'stale' | 'problem';
 
-export function sourceSeverity(status: StatusResponse | undefined): SourceSeverity {
+/**
+ * Порог устаревания на клиенте — 75 минут, а не «флаг с сервера».
+ *
+ * Крон воркера обходит зеркала раз в 20 минут и пишет `lastUpdatedAt`; путь обхода может
+ * занять ещё несколько минут. Серверный `dataStale` считается по своим часам (в API — 2 часа,
+ * у старого воркера — меньше), и на «Оновлено 29 хвилин тому» плашка «Застарілі дані» пугала
+ * людей при живом расписании. Поэтому решает возраст отметки, а флаг сервера здесь не главный:
+ * если данные моложе 75 минут, показываем их как свежие.
+ */
+export const STALE_AFTER_MINUTES = 75;
+
+export function sourceSeverity(
+  status: StatusResponse | undefined,
+  now: Date = new Date(),
+): SourceSeverity {
   if (!status) return 'ok';
   if (status.lastError) return 'problem';
   // нет отметки обновления вообще — данные показывать как «свежие» нельзя
-  if (status.dataStale || !status.lastUpdatedAt) return 'stale';
-  return 'ok';
+  if (!status.lastUpdatedAt) return 'stale';
+
+  const updatedAt = Date.parse(status.lastUpdatedAt);
+  if (!Number.isFinite(updatedAt)) return 'stale';
+
+  const ageMinutes = (now.getTime() - updatedAt) / 60_000;
+  return ageMinutes > STALE_AFTER_MINUTES ? 'stale' : 'ok';
 }

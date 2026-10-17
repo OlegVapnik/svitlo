@@ -25,6 +25,25 @@
 
         </activity>
 
+        <!-- Виджет рабочего стола 4×1: система шлёт APPWIDGET_UPDATE, а данные приходят из
+             WebView через window.SvitloNative.syncState (SharedPreferences). -->
+        <receiver
+            android:name=".SvitloWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/svitlo_widget_info" />
+        </receiver>
+
+        <!-- Фоновые уведомления: будильники AlarmManager бьют в этот receiver, даже когда
+             приложение выгружено из памяти. exported=false — снаружи его не вызвать. -->
+        <receiver
+            android:name=".OutageAlarmReceiver"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -39,4 +58,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+: без этого разрешения нативные уведомления не показываются. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Точные будильники за 15 минут до отключения. Если человек не дал разрешение,
+         OutageAlarmReceiver откатывается на setAndAllowWhileIdle. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 </manifest>

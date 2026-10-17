@@ -112,7 +112,7 @@ describe('multi-region helper', () => {
       slots: 0,
       lastDate: null,
     };
-    expect(formatRegionOption(regionNoQueues)).toBe('Львівська область');
+    expect(formatRegionOption(regionNoQueues)).toBe('Львівська область — немає даних');
   });
 
   test('regionDataBadge розрізняє «є слоти», «світло за графіком» і «не знаємо»', () => {

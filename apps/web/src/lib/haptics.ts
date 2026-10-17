@@ -18,10 +18,22 @@ interface NativeHapticsBridge {
   vibrateTick?: (kind: string) => void;
 }
 
+/**
+ * Новый единый мост Android-обёртки (`window.SvitloNative`, MainActivity.java).
+ * `haptic` — тактильный отклик; `syncState` — компактный снимок расписания для нативного
+ * виджета и фоновых будильников. Оба метода необязательные: в браузере их нет.
+ */
+interface NativeAppBridge {
+  haptic?: (kind: string) => void;
+  syncState?: (json: string) => void;
+}
+
 declare global {
   interface Window {
     /** Мост из MainActivity (Android-обёртка): тактильный отклик без разрешений. */
     SvitloHaptics?: NativeHapticsBridge;
+    /** Единый нативный мост: тактильный отклик и синхронизация виджета. */
+    SvitloNative?: NativeAppBridge;
   }
 }
 
@@ -36,6 +48,14 @@ export function hapticTick(kind: HapticKind = 'tick'): void {
   if (typeof window === 'undefined') return;
 
   try {
+    // Сначала новый мост SvitloNative (haptic + syncState), затем старый SvitloHaptics:
+    // так на телефоне со свежим APK работает одна точка, а старые сборки не ломаются.
+    const native = window.SvitloNative;
+    if (native && typeof native.haptic === 'function') {
+      native.haptic(kind);
+      return;
+    }
+
     const bridge = window.SvitloHaptics;
     // Мост вызывается через рефлексию WebView: если он пересоздан или метод пропал, вызов
     // бросит исключение — тогда честно уходим в браузерную ветку, а не роняем обработчик тапа.

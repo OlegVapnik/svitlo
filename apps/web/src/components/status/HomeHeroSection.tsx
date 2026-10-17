@@ -35,8 +35,14 @@ import { useDynamicChrome } from '../../hooks/useDynamicChrome.js';
 import { useTheme } from '../../hooks/useTheme.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
+import { useNativeWidgetSync, type NativeWidgetState } from '../../hooks/useNativeWidgetSync.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
-import { formatMinutesUk, scheduleWindow } from '../../lib/scheduleWindow.js';
+import {
+  formatMinutesUk,
+  minutesOfDay,
+  OFF_STATE_CODE,
+  scheduleWindow,
+} from '../../lib/scheduleWindow.js';
 import type { QueueScheduleData } from '@svitlo/shared';
 import { cn } from '../../lib/cn.js';
 
@@ -117,7 +123,10 @@ export const HomeHeroSection: React.FC = () => {
   // Завантажуємо зріз по ВСІМ групах області: з нього береться офлайн-снимок, завдяки якому в
   // офлайні працюють усі кнопки груп, а не лише та, що її натиснули востаннє. Запит один на
   // область, тому окремо для кожної кнопки додаткових запитів не робимо.
-  useUpcomingGroupOutages(currentRegion, 2);
+  // Тот же запрос, но ответ нужен ещё и нативному виджету: из него берутся сегодняшние
+  // часы без света и будущие интервалы для будильников. Кеш TanStack общий — лишнего
+  // сетевого запроса нет.
+  const { data: upcomingGroupOutages } = useUpcomingGroupOutages(currentRegion, 2);
 
   // Список групп области: он же несёт привязку «населённые пункты / улицы → группа» (тот же
   // `queuesResponse`, что и выше, — запрос один, кеш TanStack Query общий).
@@ -187,6 +196,118 @@ export const HomeHeroSection: React.FC = () => {
     return t('home.heroNoNext');
   }, [windowSummary, hasIntervals, isOff, t]);
 
+  /**
+   * Снимок для нативного Android-виджета и фоновых уведомлений.
+   *
+   * Считаем по данным области, а не только по выбранной дате: виджет на рабочем столе
+   * обязан показывать «сейчас», даже если человек открыл «Завтра». `upcomingGroupOutages`
+   * уже содержит сегодня и завтра, поэтому дополнительных запросов нет.
+   */
+  const widgetState = useMemo<NativeWidgetState | null>(() => {
+    if (!selectedQueue || !currentRegionData.nameUa) return null;
+
+    const nowMs = now.getTime();
+    const todayKey = kyivDateOffsetKey(0);
+    const groupEntries = (upcomingGroupOutages?.data ?? []).filter(
+      (item) => item.queue === selectedQueue,
+    );
+    const todayEntries = groupEntries.filter((item) => item.date === todayKey);
+    const allIntervals = groupEntries.flatMap((item) => item.intervals);
+    const todayIntervals = todayEntries.flatMap((item) => item.intervals);
+
+    const todayOffMinutes = todayIntervals
+      .filter((interval) => interval.stateCode === OFF_STATE_CODE)
+      .reduce(
+        (sum, interval) =>
+          sum +
+          Math.max(
+            0,
+            minutesOfDay(interval.endsAt, todayKey) -
+              minutesOfDay(interval.startsAt, todayKey),
+          ),
+        0,
+      );
+
+    // Для будильников нужны только отключения впереди: начало — за 15 минут, конец — момент,
+    // когда свет возвращается. Текущее отключение тоже попадает (start подрезан до «сейчас»),
+    // иначе уведомление о включении не запланировалось бы.
+    const upcomingIntervals = allIntervals
+      .filter(
+        (interval) =>
+          interval.stateCode === OFF_STATE_CODE && Date.parse(interval.endsAt) > nowMs,
+      )
+      .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+      .map((interval) => ({
+        startEpochMs: Math.max(nowMs, Date.parse(interval.startsAt)),
+        endEpochMs: Date.parse(interval.endsAt),
+      }))
+      .filter(
+        (interval) =>
+          Number.isFinite(interval.startEpochMs) && Number.isFinite(interval.endEpochMs),
+      );
+
+    const currentOff = allIntervals.find(
+      (interval) =>
+        interval.stateCode === OFF_STATE_CODE &&
+        Date.parse(interval.startsAt) <= nowMs &&
+        nowMs < Date.parse(interval.endsAt),
+    );
+    const nextOff = allIntervals
+      .filter(
+        (interval) =>
+          interval.stateCode === OFF_STATE_CODE && Date.parse(interval.startsAt) > nowMs,
+      )
+      .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))[0];
+
+    const isOffNow =
+      Boolean(currentOff) ||
+      todayEntries.some((item) => item.isActiveNow) ||
+      // Страховка, когда `/schedules/upcoming` ещё не ответил, а график выбранной очереди уже
+      // загружен: виджет не должен говорить «світло є» во время отключения.
+      (selectedDayOffset === 0 && isOff);
+    const nextChangeTime =
+      currentOff?.endsAt ??
+      nextOff?.startsAt ??
+      windowSummary?.offEndsAt ??
+      windowSummary?.nextStartsAt ??
+      null;
+
+    const statusText =
+      !hasIntervals && todayIntervals.length === 0
+        ? t('home.heroNoData')
+        : isOffNow
+          ? t('home.heroOff')
+          : t('home.heroOn');
+    const nextChangeLabel = nextChangeTime
+      ? isOffNow
+        ? t('home.widgetNextOn', { time: formatKyivTime(nextChangeTime) })
+        : t('home.widgetNextOff', { time: formatKyivTime(nextChangeTime) })
+      : t('home.widgetNoChanges');
+
+    return {
+      regionName: currentRegionData.nameUa,
+      queue: selectedQueue,
+      isOff: isOffNow,
+      statusText,
+      nextChangeTime,
+      nextChangeLabel,
+      todayOutageHours: Math.round((todayOffMinutes / 60) * 10) / 10,
+      upcomingIntervals,
+    };
+  }, [
+    selectedQueue,
+    currentRegionData.nameUa,
+    upcomingGroupOutages,
+    now,
+    windowSummary,
+    hasIntervals,
+    selectedDayOffset,
+    isOff,
+    t,
+  ]);
+
+  useNativeWidgetSync(widgetState);
+
   return (
     <section className="space-y-4">
       {/* Hero — первый экран и главный ответ приложения. Отдельным компонентом: в нём
@@ -195,6 +316,7 @@ export const HomeHeroSection: React.FC = () => {
       <HeroStatus
         intervals={intervals}
         date={selectedDate}
+        now={now}
         isOff={isOff}
         nextInMinutes={windowSummary?.nextInMinutes ?? null}
         backInMinutes={windowSummary?.backInMinutes ?? null}

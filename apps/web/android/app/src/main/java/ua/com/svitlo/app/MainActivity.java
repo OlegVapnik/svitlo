@@ -1,6 +1,8 @@
 package ua.com.svitlo.app;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -52,6 +54,21 @@ public class MainActivity extends BridgeActivity {
         // Capacitor создаёт WebView внутри super.onCreate, поэтому обычно мост ставится здесь же.
         setupWebView();
         observeInsets();
+        requestNotificationPermission();
+        OutageAlarmReceiver.ensureChannel(this);
+        // После перезапуска показываем последний снимок сразу, не дожидаясь открытия главной.
+        SvitloWidgetProvider.refresh(this);
+    }
+
+    /**
+     * Android 13+ показывает уведомления только с разрешения POST_NOTIFICATIONS. Спрашиваем
+     * один раз при старте: будильники ставятся уже сейчас, и без разрешения они сработают
+     * «в пустоту» — человек будет думать, что приложение не предупреждает.
+     */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 4100);
     }
 
     @Override
@@ -82,6 +99,10 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(new InsetsBridge(this), "SvitloInsets");
             webView.addJavascriptInterface(new HapticsBridge(this), "SvitloHaptics");
             webView.addJavascriptInterface(new ShareBridge(this), "SvitloShare");
+            // Единый мост новых возможностей: тактильный отклик и снимок расписания для
+            // виджета/будильников. Старые мосты оставлены для совместимости с уже собранным
+            // веб-бандлом в кэше WebView.
+            webView.addJavascriptInterface(new NativeBridge(this), "SvitloNative");
             bridgeRegistered = true;
         }
 
@@ -270,7 +291,7 @@ public class MainActivity extends BridgeActivity {
         }
 
         /** 'confirm' — значимая смена состояния, 'select' — выбор группы/области, иначе — тик. */
-        private static int hapticConstant(String kind) {
+        static int hapticConstant(String kind) {
             if ("confirm".equals(kind)) {
                 // CONFIRM появился в API 30; на старых версиях ведёт себя как обычное нажатие.
                 return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
@@ -279,6 +300,48 @@ public class MainActivity extends BridgeActivity {
             }
             if ("select".equals(kind)) return HapticFeedbackConstants.CONTEXT_CLICK;
             return HapticFeedbackConstants.CLOCK_TICK;
+        }
+    }
+
+    /**
+     * Мост `window.SvitloNative` — новые возможности без плагинов Capacitor.
+     *
+     * `haptic(type)` — тактильный отклик на переключение очередей, областей и вкладок.
+     * `syncState(json)` — компактный снимок расписания: кладём в SharedPreferences,
+     * обновляем виджет рабочего стола и переставляем будильники уведомлений.
+     *
+     * Почему один класс на две задачи: обе вызываются из веба в одном месте (главный экран
+     * после загрузки графика), и разделять их на два JS-объекта значило бы два раза
+     * регистрировать мост и два раза объяснять, почему он необязательный.
+     *
+     * Класс public static — WebView вызывает методы через рефлексию; Activity держим по
+     * слабой ссылке, чтобы мост не удерживал уничтоженный экран.
+     */
+    public static class NativeBridge {
+
+        private final WeakReference<MainActivity> activity;
+
+        NativeBridge(MainActivity activity) {
+            this.activity = new WeakReference<>(activity);
+        }
+
+        @JavascriptInterface
+        public void haptic(String kind) {
+            MainActivity current = activity.get();
+            if (current == null || current.getWindow() == null) return;
+            View decor = current.getWindow().getDecorView();
+            int feedback = HapticsBridge.hapticConstant(kind);
+            // post: вызов идёт из JS-потока, а методы View обязаны выполняться в UI-потоке.
+            decor.post(() -> decor.performHapticFeedback(feedback));
+        }
+
+        @JavascriptInterface
+        public void syncState(String json) {
+            MainActivity current = activity.get();
+            if (current == null || json == null || json.isEmpty()) return;
+            SvitloWidgetProvider.storeState(current, json);
+            SvitloWidgetProvider.refresh(current);
+            OutageAlarmReceiver.schedule(current, json);
         }
     }
 }

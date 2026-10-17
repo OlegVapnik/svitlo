@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Палитра виджета: тот же Obsidian Dark, что в веб-части (globals.css, тема .dark).
+     Отдельные имена, чтобы не спорить с colorPrimary из библиотеки Capacitor. -->
+<resources>
+    <color name="svitlo_widget_background">#131318</color>
+    <color name="svitlo_widget_stroke">#2B2B36</color>
+    <color name="svitlo_widget_text">#F3EFE6</color>
+    <color name="svitlo_widget_muted">#9CA3AF</color>
+    <color name="svitlo_widget_primary">#8AB4F8</color>
+    <color name="svitlo_widget_danger">#F87171</color>
+    <color name="svitlo_widget_success">#34D399</color>
+    <color name="svitlo_widget_badge_bg">#1C1C24</color>
+</resources>

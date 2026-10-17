@@ -33,6 +33,12 @@ export interface HeroStatusProps {
   intervals: ScheduleIntervalUtc[];
   /** Киевская дата YYYY-MM-DD, на которую запрошен график: по ней считаются минуты суток. */
   date: string;
+  /**
+   * Тикающее «зараз» из `useMinuteTicker` — тот же момент, по которому считает таймер на
+   * главной. Без него `slotProgress` брал время рендера, и подпись под змейкой замирала:
+   * таймер показывал «через 10 хв», а полоса — «Залишилось 18 хв» с момента загрузки данных.
+   */
+  now: Date;
   /** true, если сейчас идёт отключение. */
   isOff: boolean;
   /** Минут до следующего отключения (свет есть). */
@@ -52,6 +58,7 @@ export interface HeroStatusProps {
 export const HeroStatus: React.FC<HeroStatusProps> = ({
   intervals,
   date,
+  now,
   isOff,
   nextInMinutes,
   backInMinutes,
@@ -71,9 +78,13 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
   /** Тон волны повторяет статус: форма полосы — часть ответа, а не украшение. */
   const tone: WaveTone = state === 'off' ? 'off' : state === 'soon' ? 'warning' : state === 'on' ? 'on' : 'unknown';
 
-  // Прогресс текущего слота считает lib/scheduleWindow — та же математика, что у полосы суток:
-  // дублировать её здесь нельзя, иначе герой и таймлайн разойдутся в цифрах.
-  const slot = useMemo(() => (hasData ? slotProgress(intervals, date) : null), [hasData, intervals, date]);
+  // Прогресс текущего слота считает lib/scheduleWindow — та же математика и тот же тикающий
+  // `now`, что у таймера и полосы суток. Дублировать расчёт здесь нельзя, иначе герой и
+  // таймлайн разойдутся в цифрах, а подпись под змейкой замрёт между тиками.
+  const slot = useMemo(
+    () => (hasData ? slotProgress(intervals, date, now) : null),
+    [hasData, intervals, date, now],
+  );
   const clock = splitClock(isOff ? backInMinutes : nextInMinutes);
 
   const title =
