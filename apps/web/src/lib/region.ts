@@ -116,13 +116,34 @@ export function setStoredRegion(cpu: string, storage?: Pick<Storage, 'setItem'>)
 }
 
 /** Формує підпис для списку областей: назва + кількість черг (якщо відомо). */
+/**
+ * Подпись области в выпадающем списке.
+ *
+ * Области без данных помечаем прямо в тексте. Нативный `<select>` не даёт надёжно стилизовать
+ * отдельные options (браузеры трактуют class у option по-разному), а слово «немає даних»
+ * читается везде и сразу снимает вопрос «почему у меня пусто».
+ *
+ * Считать колонки групп при этом бессмысленно: у Львова в каталоге 12 групп, но графика от
+ * зеркала нет — человек видел бы «Львівська область (12)» и ждал данных, которых не будет.
+ */
 export function formatRegionOption(region: RegionSummary): string {
+  const badge = regionDataBadge(region);
   const queuesCount = region.queues?.length ?? 0;
+
+  if (badge === 'noData') {
+    return `${region.nameUa} — ${regionOptionNoDataSuffix}`;
+  }
   if (queuesCount > 0) {
     return `${region.nameUa} (${queuesCount})`;
   }
   return region.nameUa;
 }
+
+/**
+ * Суффикс «данных нет». Константой, а не строкой в f-шаблоне: подпись используется в двух
+ * местах, и разъехавшийся текст «Немає даних» и «данных нет» человек заметит сразу.
+ */
+export const regionOptionNoDataSuffix = 'немає даних';
 
 /** Що показувати в бейджі області. */
 export type RegionDataBadge = 'slots' | 'allClear' | 'noData';

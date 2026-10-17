@@ -1650,6 +1650,30 @@ const COLUMNS = 6;
  * семантика, что у Node-бэкенда (`importTelegramScheduleSlots`,
  * `apps/api/src/services/telegram-schedule.service.ts`).
  */
+/**
+ * Сколько дней хранить историю графика.
+ *
+ * Обоснование: зеркало отдаёт для некоторых областей график трёхмесячной давности
+ * (2026-07-01, 2026-04-11). Если хранить его, человек открывает область и видит «график
+ * есть» — а на деле это данные, по которым уже три месяца никто не отключался. Это
+ * хуже, чем честное «данных нет»: человек планирует дела по неверной расписанию.
+ *
+ * Неделя — с запасом на то, чтобы история вчерашнего дня ещё показывалась (она полезна
+ * для сверки «а вчера правда отключали?»), но всё, что старше, исчезает само.
+ */
+const HISTORY_KEEP_DAYS = 7;
+
+/**
+ * Удаляет слоты старше окна хранения — по ВСЕМ областям, а не только по затронутым.
+ *
+ * Именно «по всем»: протухшие области не приходят в свежем импорте (зеркало по ним отдаёт
+ * старьё, а не новьё), и при записи с историей-заменой они иначе остались бы навсегда.
+ */
+async function pruneStaleSlots(env: Env): Promise<void> {
+  const border = addDays(kyivToday(), -HISTORY_KEEP_DAYS);
+  await env.DB.prepare(`DELETE FROM schedule_slots WHERE date < ?`).bind(border).run();
+}
+
 async function saveSlots(env: Env, slots: Slot[], options: { source?: string; replace?: boolean } = {}): Promise<void> {
   if (slots.length === 0) return;
   const source = options.source ?? 'mirror';
@@ -2097,6 +2121,7 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
     await saveSlots(env, mergeSlots(raw));
     await saveCoverage(env, mergeCoverage(coverage));
     await saveMirrorRegionNames(env, names);
+    await pruneStaleSlots(env);
     mirrorSlots = raw.length;
     mirrorCoverage = coverage.length;
     mirrorTimestamp = mirror.timestamp ?? null;
@@ -2641,6 +2666,13 @@ async function ensureSchedule(env: Env): Promise<void> {
   // Сначала схема, потом данные: см. `ensureSchemaOnce` — иначе новая таблица не появится на уже
   // наполненной базе, и чтение падает вместо того, чтобы отдать пустой график.
   await ensureSchemaOnce(env);
+
+  // Чистка протухшего — до раннего выхода. Раньше она стояла только внутри ветки «данных ещё
+  // нет», поэтому протухшие слоты от июля месяца висели месяцами: крон запускал чистку, но
+  // первый же запрос к /regions успевал отдать старьё, и человек видел «график есть».
+  // Один DELETE с индексом по дате стоит копейки, а данные перестают вводить в заблуждение.
+  await pruneStaleSlots(env);
+
   // Проверка «данные уже есть» нужна только один раз на изолят: она открывает отдельный запрос к
   // D1 на каждом вызове, а `/sync` и `/status` зовут эту функцию всегда.
   if (scheduleSeeded) return;
