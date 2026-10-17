@@ -29,10 +29,12 @@
 2. **Группы ГПВ по сёлам и улицам (`settlements` + `street_queues`):**
    - Привязать `street_queues` к `region` и `settlement_id` (сейчас таблица глобальная без области, поэтому `listQueues` отдаёт счётчик улиц только для дефолтной области).
    - Поддержать группу на уровне всего села (`settlements.default_queue`), чтобы можно было смотреть группу как по улице, так и по селу целиком.
-3. **[P1] Паритет Cloudflare-воркера по каноническим областям (`cf-worker/src/index.ts`):**
-   - Воркер — второй бэкенд той же сборки фронта (`deploy-cf.sh` собирает PWA с `VITE_API_BASE_URL` на воркер и льёт в Pages), но его `/regions` отдаёт ключи фида и не знает `feedKeys`/`parentCpu`: в облаке новая группировка не работает, а строка `dnipropetrovska-oblast` выбирается как пустая область (у ЦЕК/ДнЕМ данные есть, у неё — нет).
-   - Что нужно: карта псевдонимов + `feedKeys` (копией из `packages/shared/src/regions-catalog.ts` — воркер намеренно без импортов монорепо, как и `compareQueueCodes`/sync-ETag), канонизация `?region=` в одном месте `handleApi`, `400 AMBIGUOUS_REGION` для многомережных областей в `/schedules`, `/status`, `/reliability`, `/sync`, объединение кодов групп в `/queues` (`queueSummaries` должен принимать список ключей) и группа с подобластями в `regionSummaries` (`SELECT region AS cpu, queue …`, ~строка 1902).
-   - Проверять локально (`wrangler dev` + `--test-scheduled`), деплой — только с явного согласия человека.
+3. **[P2] Локальная проверка воркера (`wrangler dev`) до сих пор не запускается:** модуль экспортирует
+   не только обработчики (`ALL_CLEAR_QUEUE`, `compareQueueCodes`, `extractSlots`…), и локальный
+   workerd падает с «Incorrect type for map entry 'ALL_CLEAR_QUEUE'». Деплой (`wrangler deploy`) это
+   принимает, поэтому облако живо, но проверить правку ДО выкладки локально нельзя. Лечится выносом
+   этих экспортов в отдельный модуль (или их снятием — импортов снаружи нет) — тогда заработает и
+   `wrangler dev`, и `--test-scheduled`.
 
 
 ### Блок Б (P1): Доводка ядра `outage_events` и парсинга
@@ -89,6 +91,32 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ```
 
 ---
+
+## Сессия 2026-10-17 (продолжение): паритет облака по областям и два прод-фикса воркера (v2.10.0)
+
+- **Ветка / HEAD:** `redesign/wow-ui` — тот же релиз 2.10.0 (правки воркера — отдельным коммитом `cf`)
+- **Деплой:** `./deploy-cf.sh` (Worker + Pages) + APK на `https://svitlo-api.olegvapnik45.workers.dev/api/v1`
+
+### Done (Что сделано)
+- **Канонические области в воркере.** `cf-worker/src/index.ts` держит копию каталога (`REGION_CATALOG`, `REGION_ALIASES`, `canonicalRegionCpu`/`regionFeedKeysOf`) — импортировать `@svitlo/shared` воркер не может, он собирается wrangler'ом отдельно. `?region=` приводится к ключу фида один раз в `handleApi`; `/regions` отдаёт канонические строки с `feedKeys` и группой «Дніпропетровська область» + подстроками `dnipro-cek`/`dnipro-dnem` (`parentCpu`); `/queues` принимает список ключей и объединяет коды групп, а «світло за графіком» ставит только если так опубликовала каждая сеть; для маршрутов одной сети многомережная область даёт `400 AMBIGUOUS_REGION` (список `SINGLE_REGION_PATHS`); канонический `cpu`, совпавший с ключом фида (легасі-`dnipropetrovska-oblast`), больше не даёт дубль строки — его данные складываются в ту же строку.
+- **[Прод-баг, найден проверкой] `/regions`, `/queues` и `/schedules` в облаке отдавали 500.** `ensureSchema` вызывался только при ПУСТОЙ `schedule_slots`, поэтому таблица `schedule_coverage` (появилась в v2.9.0) на живой D1 не создавалась вовсе: `D1_ERROR: no such table: schedule_coverage`. Таблицу создал аддитивно (`CREATE TABLE IF NOT EXISTS … ` через `wrangler d1 execute --remote`), а в коде схему накатываю ДО чтения данных (`ensureSchemaOnce` + флаг на изолят).
+- **[Прод-баг] `/reliability` в облаке отдавал 500 «Invalid time value».** `labelMonthIso(monthStart)` получал строку, в которой уже есть время, и добавлял `T00:00:00.000Z` вторым — `new Date(...)` давал Invalid Date. Теперь передаётся голая дата (`from`).
+- **Диагностика на будущее:** верхний `catch` теперь пишет стек в `console.error` (наружу по-прежнему только внятное тело 500) — без этого по телу «Invalid time value» место падения не найти; ровно так оба бага и были локализованы через `wrangler tail`.
+- **Проверка контрактов:** `SVITLO_API_BASE=http://localhost:3001/api/v1 python3 tools/compare-api-contracts.py` — **проблем: 0** (воркер против эталонного Node-бэкенда).
+- **APK:** `./tools/build-android-apk.sh "https://svitlo-api.olegvapnik45.workers.dev/api/v1"` → `apps/web/android-apk/app-debug.apk` (4,5 МБ).
+
+### Verified (Чем проверено — команды и коды возврата)
+- `tsc --noEmit` (cf-worker) — 0 ошибок; `wrangler deploy --dry-run` — сборка 280 КіБ, ок
+- Живой воркер: `/regions` — 28 строк без дублей (`dnipropetrovska-oblast` с `feedKeys: [dnipro-cek, dnipro-dnem]` и двумя подстроками, `kyiv-city` → `[kyiv]`, `kyivska-oblast` → `[kiivska-oblast]`); `/queues?region=dnipropetrovnska-oblast` и `?region=dnipropetrovska-oblast` — 12 черг с `covered: true`; `/schedules?region=kyivska-oblast&queue=4/1` — 200 с интервалами; `/schedules?region=dnipropetrovska-oblast&queue=1/1` — 400 `AMBIGUOUS_REGION`; `/reliability` — 200 (days/weeks/months/groups/byRegionSummary)
+- D1: `schedule_coverage` после крона — 175 строк / 15 областей (в т.ч. `dnipro-cek`, `dnipro-dnem` по 12 черг)
+- **Осторожно при проверке облака:** ответы кешируются на грани (`cache-control: public, max-age=300`), поэтому после деплоя тему проверяй с любым лишним параметром (`&cb=1`) — иначе видишь предыдущую версию ответа.
+
+### Next / Blockers
+1. Локальный `wrangler dev` по-прежнему не стартует из-за не-handler-экспортов в модуле воркера (бэклог, Блок А, п. 3) — пока правки воркера проверяются только на живом облаке.
+2. Расхождение на будущее: Node-API сужает многомережную область до сети, у которой есть данные на эту очередь и дату, а воркер всегда отвечает 400 `AMBIGUOUS_REGION`. Для UI это незаметно (группа не выбирается), но если понадобится паритет — добавить ту же проверку по слотам/покрытию.
+
+---
+
 
 ## Сессия 2026-10-17: канонический каталог областей и псевдонимы ключей фида (v2.10.0)
 
