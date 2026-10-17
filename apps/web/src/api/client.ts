@@ -92,8 +92,16 @@ export const api = {
   fetchIncidents: () => fetcher('/incidents'),
   // Статистика — по области: без region бэкенд рахує область за замовчуванням (Чернігівщину),
   // і цифри в картці не збігалися б з областю, вибраною в шапці.
-  fetchReliability: (region?: string, signal?: AbortSignal) => {
-    const query = region ? `?${new URLSearchParams({ region }).toString()}` : '';
+  /**
+   * Надёжность за текущий месяц. `queue` сужает отчёт до одной черты — так «Моя черга» в
+   * статистике главной показывает те же бакеты по днях, что и область, но посчитанные по её слотам
+   * (бэкенд поддерживает `?queue=2/2` и в Node API, и в воркере).
+   */
+  fetchReliability: (region?: string, queue?: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (region) params.set('region', region);
+    if (queue) params.set('queue', queue);
+    const query = params.size > 0 ? `?${params.toString()}` : '';
     return fetcher(`/reliability${query}`, { signal });
   },
   /** Статус сети и счётчики: `region` определяет, по какой области считать группы и статистику. */

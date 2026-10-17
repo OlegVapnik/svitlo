@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarDays, ChevronDown, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronDown, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff, type LucideIcon } from 'lucide-react';
 import { StatusIndicator } from '../components/status/StatusIndicator.js';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
@@ -17,13 +17,45 @@ import { OutageCard } from '../components/outages/OutageCard.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { Button } from '../components/ui/Button.js';
 import { cn } from '../lib/cn.js';
-import { StatCard } from '../components/ui/StatCard.js';
-import { useIncidents, useOutages, useReliability, useStatus, useUpcomingGroupOutages } from '../api/queries.js';
+import { useIncidents, useOutages, useStatus, useUpcomingGroupOutages } from '../api/queries.js';
 import { useRegion } from '../hooks/useRegion.js';
 import type { GroupOutageSummary, Outage } from '@svitlo/shared';
 
 /** Скільки групп показываем до кнопки «показати ще N» — решта за кнопкою. */
 const VISIBLE_GROUPS_LIMIT = 6;
+
+/** Тон числа в компактній плитці: колір — лише підсвітка, підпис завжди є. */
+const MINI_TONE = {
+  danger: 'text-destructive',
+  info: 'text-info',
+  warning: 'text-warning',
+} as const;
+
+/**
+ * Компактна плитка-метрика для правої колонки: іконка, число, підпис. Замінює велику картку
+ * `StatCard` там, де три плитки стоять в один ряд у вузькій колонці — інакше підписи зрізалися б.
+ */
+const MiniStat: React.FC<{
+  to: string;
+  icon: LucideIcon;
+  tone: keyof typeof MINI_TONE;
+  label: string;
+  value: number;
+  isLoading?: boolean;
+}> = ({ to, icon: Icon, tone, label, value, isLoading }) => (
+  <Link
+    to={to}
+    className="flex flex-col items-center gap-1 rounded-xl border border-hairline bg-surface-container-high px-1.5 py-2 text-center transition-colors hover:bg-surface-container-highest"
+  >
+    <Icon className={cn('h-3.5 w-3.5', MINI_TONE[tone])} aria-hidden />
+    {isLoading ? (
+      <span className="my-0.5 inline-block h-4 w-7 animate-pulse rounded bg-muted" aria-hidden />
+    ) : (
+      <span className="tabular text-lg font-bold leading-none text-foreground">{value}</span>
+    )}
+    <span className="text-[10px] leading-tight text-muted-foreground">{label}</span>
+  </Link>
+);
 
 /**
  * Карточка ближайшего отключения одной группы: код черги, интервалы «10:00–11:00», статус
@@ -165,9 +197,10 @@ const PointOutagesByPlace: React.FC<{ outages: Outage[] }> = ({ outages }) => {
 };
 
 /**
- * Главная отвечает на вопрос «что с электричеством сейчас». Порядок блоков — по важности:
- * 1) есть ли авария; 2) состояние сети; 3) цифры; 4) жив ли источник данных;
- * 5) быстрые ссылки и мой график; 6) ближайшие отключения; 7) статистика.
+ * Главная отвечает на вопрос «что с электричеством сейчас». На десктопе — две колонки:
+ * слева график (закладки → Hero → выбор очереди и 24-часовая шкала), справа цифры
+ * (статистика → состояние сети). На телефоне тот же порядок идёт одной лентой, а «Що нового»
+ * лежит внизу свёрнутым аккордеоном, чтобы не отбирать первый экран у графика.
  */
 export const HomePage: React.FC = () => {
   const { t } = useTranslation();
@@ -176,7 +209,6 @@ export const HomePage: React.FC = () => {
   const { currentRegionData } = useRegion();
 
   const { data: statusData, isLoading: statusLoading } = useStatus(currentRegionData.cpu);
-  const { data: reliabilityData, isLoading: reliabilityLoading } = useReliability(currentRegionData.cpu);
   const { data: outagesData, isLoading: outagesLoading } = useOutages({ limit: 5, region: currentRegionData.cpu });
   // Планові відключення по групах — з schedule_slots оператора (не з outage_events, де лише
   // точкові ремонтні записи одного села). Без них блок «Найближчі відключення» не відповідав би
@@ -217,7 +249,7 @@ export const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 pb-8">
+    <div className="mx-auto max-w-5xl space-y-5 pb-8">
       {activeIncidents.length > 0 && <IncidentBanner incident={activeIncidents[0]!} />}
 
       {/* Оновлений головний блок: першокласний селектор області, вибір черги для області,
@@ -229,54 +261,81 @@ export const HomePage: React.FC = () => {
 
       <ConnectionProblem />
 
-      <HomeHeroSection />
-
-
-      <section className="rounded-3xl border border-border bg-card p-4 sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-on-surface sm:text-2xl">{t('home.title')}</h1>
-            <p className="mt-0.5 text-xs text-on-surface-variant sm:text-sm">{currentRegionData.nameUa || t('home.subtitle')}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {status?.lastUpdatedAt && <LastUpdated timestamp={status.lastUpdatedAt} />}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refresh}
-              disabled={refreshing}
-              aria-label={t('common.refresh')}
-              className="gap-1.5"
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} aria-hidden />
-              {refreshing ? t('common.refreshing') : t('common.refresh')}
-            </Button>
-          </div>
+      {/* Десктоп: дві колонки Bento — графік ліворуч, цифри праворуч. Мобільний:
+          Hero → статистика → стан мережі → «Що нового». DOM-порядок один, колонки задає сітка,
+          тому на телефоні нічого не доводиться переставляти умовним рендером. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start">
+        <div className="min-w-0">
+          <HomeHeroSection />
         </div>
 
-        {/* ОПЦИОНАЛЬНАЯ ЦЕПОЧКА ДО КОНЦА: `status?.grid.level` защищает только `status`,
-            и если в ответе нет объекта grid, обращение к `.level` роняет React в белый
-            экран. Ровно это и случилось при подключении к облаку, где маршрут отдавал
-            другой набор полей. */}
-        <StatusIndicator level={status?.grid?.level ?? 'stable'} message={status?.grid?.message} />
+        <div className="min-w-0 space-y-3">
+          <ReliabilityCard />
 
-        {/* «Активні зараз» і «Заплановані» показують ГРУППИ за графіком ГПВ, а не точкові
-            ремонтні відключення: саме групове відключення люди називають «відключенням», а
-            ремонтних записів одиниці — з ними показники зerahivалися в нуль навіть за наявності
-            повного графіку в базі. Підказка пояснює джерело числа. */}
-        {/* Bento-сетка M3: на широком экране плитки-статистика занимают 2/3 ширины, а сводка
-            электропитания за сутки — оставшуюся треть. Раньше это была вертикальная колонка:
-            на десктопе половина ширины пустовала, и карточки не читались как набор. */}
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3 lg:items-start">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-2">
-            <StatCard to="/queues" icon={Zap} tone="danger" label={t('home.statActive')} value={status?.activeGroups ?? status?.activeOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
-            <StatCard to="/queues" icon={CalendarDays} tone="info" label={t('home.statScheduled')} value={status?.scheduledGroups ?? status?.scheduledOutages ?? 0} isLoading={statusLoading} hint={t('home.statGroupsHint')} />
-            <StatCard to="/incidents" icon={TriangleAlert} tone="warning" label={t('home.statIncidents')} value={status?.totalIncidents ?? 0} isLoading={statusLoading} hint={`${t('incidents.active')}: ${status?.activeIncidents ?? 0}`} />
-          </div>
+          {/* Компактний стан енергосистеми: три числа й статус мережі без великої картки. */}
+          <section className="space-y-3 rounded-2xl border border-hairline bg-card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-foreground">{t('home.title')}</h2>
+                <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">
+                  {currentRegionData.nameUa || t('home.subtitle')}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {status?.lastUpdatedAt && <LastUpdated timestamp={status.lastUpdatedAt} />}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={refresh}
+                  disabled={refreshing}
+                  aria-label={t('common.refresh')}
+                  className="gap-1.5"
+                >
+                  <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} aria-hidden />
+                  {refreshing ? t('common.refreshing') : t('common.refresh')}
+                </Button>
+              </div>
+            </div>
+
+            {/* ОПЦИОНАЛЬНАЯ ЦЕПОЧКА ДО КОНЦА: `status?.grid.level` защищает только `status`,
+                и если в ответе нет объекта grid, обращение к `.level` роняет React в белый
+                экран. Ровно это и случилось при подключении к облаку, где маршрут отдавал
+                другой набор полей. */}
+            <StatusIndicator level={status?.grid?.level ?? 'stable'} message={status?.grid?.message} />
+
+            {/* Три числа — группами за графіком ГПВ, а не точковими ремонтними записами:
+                саме групове відключення люди називають «відключенням». */}
+            <div className="grid grid-cols-3 gap-2">
+              <MiniStat
+                to="/queues"
+                icon={ZapOff}
+                tone="danger"
+                label={t('home.statActive')}
+                value={status?.activeGroups ?? status?.activeOutages ?? 0}
+                isLoading={statusLoading}
+              />
+              <MiniStat
+                to="/queues"
+                icon={CalendarDays}
+                tone="info"
+                label={t('home.statScheduled')}
+                value={status?.scheduledGroups ?? status?.scheduledOutages ?? 0}
+                isLoading={statusLoading}
+              />
+              <MiniStat
+                to="/incidents"
+                icon={TriangleAlert}
+                tone="warning"
+                label={t('home.statIncidents')}
+                value={status?.totalIncidents ?? 0}
+                isLoading={statusLoading}
+              />
+            </div>
+          </section>
 
           <PowerSummaryCard summary={status?.powerSummary} isLoading={statusLoading} />
         </div>
-      </section>
+      </div>
 
       <SourceHealthBanner />
 
@@ -337,15 +396,9 @@ export const HomePage: React.FC = () => {
         )}
       </section>
 
-      {/* Що нового — згенерований з історії git список. Раскривається, щоб не тиснути на
-          першому екрані на вибір міста та графіка. */}
+      {/* «Що нового» — в самому низу й згорнуте: список змін не має змагатися з графіком
+          за перший екран, але мусить бути там, де його шукають. */}
       <ChangelogCard />
-
-      <ReliabilityCard
-        report={reliabilityData?.data}
-        isLoading={reliabilityLoading}
-        currentRegion={currentRegionData.cpu}
-      />
 
       {/* Версия сборки: видно сразу, без поиска по меню. */}
       <BuildStamp />

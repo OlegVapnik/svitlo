@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BatteryCharging, Clock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { StatusPill } from '../ui/StatusPill.js';
 import { StatusDot, type NetworkState } from '../ui/StatusDot.js';
 import { WavyProgressBar, type WaveTone } from '../ui/WavyProgressBar.js';
+import { HeroContextTip } from './HeroContextTip.js';
 import { formatMinutesUk, slotProgress } from '../../lib/scheduleWindow.js';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
@@ -168,14 +169,13 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
           </>
         )}
 
-        {/* Бытовой совет: человек открывает приложение во время отключения и думает,
-            что делать дальше, а не когда выключат. */}
-        {isOff && (
-          <div className="flex items-start gap-2.5 rounded-2xl border border-hairline bg-surface-container-high p-3">
-            <BatteryCharging className="mt-0.5 h-4 w-4 shrink-0 text-status-text" strokeWidth={2.2} aria-hidden />
-            <p className="text-xs leading-relaxed text-on-surface-variant">{t('home.heroTipOff')}</p>
-          </div>
-        )}
+        {/* Контекстна підказка: при відключенні — до якого часу, перед ним — що встигнути,
+            при світлі — що зарядити. Текст залежить від стану, а не один на всі випадки. */}
+        <HeroContextTip
+          state={state}
+          backInMinutes={backInMinutes}
+          nextBoundaryAt={nextBoundaryAt}
+        />
       </div>
     </section>
   );

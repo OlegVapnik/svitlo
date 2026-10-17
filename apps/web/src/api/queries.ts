@@ -102,11 +102,12 @@ export const useStatus = (region?: string) =>
     refetchInterval: STATUS_POLL_MS,
   });
 
-export const useReliability = (region?: string) =>
+export const useReliability = (region?: string, queue?: string) =>
   useQuery<ReliabilityResponse>({
-    // region в ключе: иначе переключение области показывало бы цифры прошлой области из кеша.
-    queryKey: ['reliability', region ?? null],
-    queryFn: ({ signal }) => api.fetchReliability(region, signal),
+    // region и queue в ключе: иначе переключение области или «Моєї черги» показывало бы цифры
+    // прошлого запроса из кеша.
+    queryKey: ['reliability', region ?? null, queue ?? null],
+    queryFn: ({ signal }) => api.fetchReliability(region, queue, signal),
     refetchInterval: 300000,
   });
 
