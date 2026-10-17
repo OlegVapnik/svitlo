@@ -215,6 +215,36 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 
 ---
 
+## Сессия 2026-10-17 (вечер): релиз 2.13.1 на Cloudflare — «Застарілі дані» из-за квоты D1
+
+- **Ветка / HEAD:** `redesign/wow-ui`, `74393c9` (+ сгенерированный чейнджлог)
+- **Релиз:** `./deploy-cf.sh` → воркер `svitlo-api` (бандл `index-BCFE9UMh.js`) + Pages `svitlo-ua`
+  (https://svitlo-ua-4ze.pages.dev); APK `versionCode 134` / `versionName 2.13.1`, build
+  `20261017-1549` (4,7 МБ), собран с `https://svitlo-api.olegvapnik45.workers.dev/api/v1`.
+
+### Done (Что сделано)
+- Деплой прошёл полностью (5/5 шагов). Проверка живого API: `/health`, `/status`, `/sync`,
+  `/regions`, `/reliability`, `/queues?region=kyiv-city`, `/changelog` — все 200 за 0,7–1,0 с,
+  **без 503/1102**; `/changelog` отдаёт новую шапку (`923d707`), значит воркер точно обновился.
+- **Причина «Застарілі дані» найдена в `wrangler tail`, и это не код:**
+  `prune: D1_ERROR: Your account has exceeded D1's free tier daily row write limit`. Квота
+  бесплатного D1 (100 000 `rows_written`/сутки) была выжжена СТАРЫМ кодом до деплоя, поэтому
+  `lastUpdatedAt` замер на `2026-10-17T13:20:56Z`, а `/status` честно отдавал `dataStale: true`.
+  Лимит сбрасывается в **00:00 UTC** (03:00 по Киеву) — до этого запись в D1 невозможна физически,
+  никакой правкой кода это не обходится.
+- Пока квота исчерпана, `/sync` отвечает 200 и не падает: новый `ensureSchedule` уходит в ранний
+  выход, потому что данные в базе есть (читаются старые строки). Это ожидаемое поведение.
+
+### Next / Blockers
+1. После 00:00 UTC (03:00 Киева) проверить первым тиком крона: `/status` → `dataStale: false` и
+   свежий `lastUpdatedAt`; `wrangler tail` — без `D1_ERROR`, в логе `scheduled: зеркало …`.
+2. Сверить `rows_written` за сутки в дашборде D1: ожидание — единицы тысяч, а не десятки тысяч.
+   Если снова упирается в 100 000 — включать `MIRROR_SCHEDULE_IMPORT_REGIONS` (импорт части
+   областей) или обсуждать Workers Paid (решение человека: это деньги).
+3. APK 2.13.1 собран и лежит в `apps/web/android-apk/app-debug.apk`; на телефон не устанавливал.
+
+---
+
 ## Сессия 2026-10-17 (продолжение): бюджет записи D1 в воркере — разница вместо перезаписи (v2.13.1)
 
 - **Ветка / HEAD:** `redesign/wow-ui`, коммит поверх `b5d0488` (без деплоя: сначала локальная проверка)
