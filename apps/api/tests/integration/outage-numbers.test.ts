@@ -88,7 +88,7 @@ describeWithDb('numbers must match: 6 events described by 30 address rows', () =
     // (её делает ingest в проде) статистика видела бы пустоту. Импорт ленивый: модуль
     // тянет connection/config, а их можно грузить только после подстановки DATABASE_URL.
     const { backfillOutageEvents } = await import('../../src/db/backfill-outage-events.js');
-    await backfillOutageEvents(db);
+    await backfillOutageEvents();
   });
 
   afterAll(async () => {

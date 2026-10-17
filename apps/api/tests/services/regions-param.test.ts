@@ -103,7 +103,7 @@ describe('readRegionParam — граничні значення та валід�
     try {
       readRegionParam(tooLong);
     } catch (err) {
-      const appErr = err as AppError;
+      const appErr = err as AppErrorType;
       expect(appErr.statusCode).toBe(400);
       expect(appErr.code).toBe('VALIDATION_ERROR');
     }

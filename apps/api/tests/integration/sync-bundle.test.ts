@@ -27,7 +27,9 @@ interface SyncBody {
     etag: string;
     region: string | null;
     status: Record<string, unknown> & { grid: { level: string; message: string } };
-    regions: unknown[];
+    // Каталог областей: тест читает `cpu`, `slots` и `lastDate`, поэтому тип обязан их называть.
+    // С `unknown[]` редактор писал «region относится к типу unknown» и подсказок не было вовсе.
+    regions: Array<{ cpu: string; slots: number; lastDate: string | null }>;
     queues: unknown[];
     schedulesByRegion: Record<string, { days: string[]; buckets: Array<{ queue: string; date: string }> }>;
     settlements: Array<{ name: string; queues: string[] }>;
