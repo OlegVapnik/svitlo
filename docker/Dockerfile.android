@@ -18,8 +18,10 @@ ARG PLATFORM_VERSION=36
 ARG PLATFORM_VERSION_CAPACITOR=35
 ARG BUILD_TOOLS_VERSION_CAPACITOR=34.0.0
 
+# nodejs + librsvg2-bin нужны генератору иконок: он собирает adaptive-иконки и splash
+# из одного SVG уже внутри контейнера, поэтому на хосте не требуется ставить rsvg.
 RUN apt-get update -qq \
- && apt-get install -y -qq --no-install-recommends unzip curl ca-certificates \
+ && apt-get install -y -qq --no-install-recommends unzip curl ca-certificates nodejs librsvg2-bin \
  && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p "${ANDROID_SDK_ROOT}/cmdline-tools" \

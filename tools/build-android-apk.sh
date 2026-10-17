@@ -1,68 +1,156 @@
 #!/usr/bin/env bash
-# Сборка debug-APK для Android из веб-бандла.
+# Сборка Android-приложения Svitlo (Capacitor) из веб-бандла.
 #
-# Зачем Docker: на машине нет JDK и Android SDK, а APK нужен локально и воспроизводимо.
-# Скрипт собирает фронтенд с нужным VITE_API_BASE_URL, синхронизирует его в нативный проект
-# Capacitor и запускает gradle внутри контейнера svitlo-android-builder.
+# По умолчанию собирается release-APK, подписанный постоянным ключом. Это важно:
+# debug-сборка помечена как отладочная, и Android/Play Protect встречают её предупреждением
+# «приложение для разработки». Release-подпись такого предупреждения не даёт, а главное —
+# позволяет ставить новую версию поверх предыдущей без «Приложение не установлено».
 #
 # Использование:
-#   ./tools/build-android-apk.sh                              # адрес из .env (VITE_API_BASE_URL)
-#   ./tools/build-android-apk.sh http://192.168.1.100:3000/api/v1   # адрес явно
+#   ./tools/build-android-apk.sh                              # release, адрес API из .env/дефолта
+#   ./tools/build-android-apk.sh https://example.com/api/v1   # адрес явно
+#   ./tools/build-android-apk.sh --debug                      # debug-сборка для локальной отладки
+#   ./tools/build-android-apk.sh --debug http://192.168.1.10:3000/api/v1
 #
-# Результат: apps/web/android/app/build/outputs/apk/debug/app-debug.apk
+# Результат:
+#   apps/web/android-apk/svitlo-<версия>.apk  (release)
+#   apps/web/android-apk/app-debug.apk        (debug)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILDER_IMAGE="svitlo-android-builder"
+PRODUCTION_API="https://svitlo-api.olegvapnik45.workers.dev/api/v1"
+BUILD_TYPE="release"
+POSITIONAL=()
 
-# Адрес API: аргумент > переменная окружения > значение из .env > локальный адрес машины.
-API_BASE="${1:-${VITE_API_BASE_URL:-}}"
+for arg in "$@"; do
+  case "$arg" in
+    --debug) BUILD_TYPE="debug" ;;
+    --release) BUILD_TYPE="release" ;;
+    -h|--help)
+      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      POSITIONAL+=("$arg")
+      ;;
+  esac
+done
+
+if (( ${#POSITIONAL[@]} > 0 )); then
+  API_BASE="${POSITIONAL[0]}"
+else
+  API_BASE="${VITE_API_BASE_URL:-}"
+fi
 if [[ -z "${API_BASE}" ]]; then
   API_BASE="$(grep -E '^VITE_API_BASE_URL=' "${REPO_ROOT}/.env" | cut -d= -f2- || true)"
 fi
 if [[ -z "${API_BASE}" || "${API_BASE}" == "/api/v1" ]]; then
-  # Относительный /api/v1 внутри нативного приложения указывает на сам WebView, а не на сервер:
-  # запросы ушли бы в никуда. Поэтому подставляем адрес машины в локальной сети.
-  LAN_IP="$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)"
-  if [[ -z "${LAN_IP}" ]]; then
-    echo "Не удалось определить локальный IP. Передайте адрес явно: $0 http://<ip>:<port>/api/v1" >&2
-    exit 1
+  if [[ "${BUILD_TYPE}" == debug ]]; then
+    # В нативном WebView относительный /api/v1 указывает на сам WebView. Для отладки
+    # подставляем адрес машины в локальной сети.
+    LAN_IP="$(ip -4 addr show scope global 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)"
+    if [[ -z "${LAN_IP}" ]]; then
+      echo "Не удалось определить локальный IP. Передайте адрес явно: $0 --debug http://<ip>:<port>/api/v1" >&2
+      exit 1
+    fi
+    API_BASE="http://${LAN_IP}:3000/api/v1"
+  else
+    # Release-сборка ходит на боевой HTTPS-API. Если адрес другой — передайте аргументом.
+    API_BASE="${PRODUCTION_API}"
   fi
-  API_BASE="http://${LAN_IP}:3000/api/v1"
 fi
-echo ">>> API для приложения: ${API_BASE}"
+echo ">>> Режим: ${BUILD_TYPE}; API: ${API_BASE}"
 
-# Каталог для готового APK на хосте. Сборка идёт в контейнере, поэтому артефакт выносим
-# в отдельную папку: внутри android/ лежат build-каталоги от контейнера, они в git не нужны.
+APP_VERSION="$(grep -oP "APP_VERSION = '\K[0-9]+\.[0-9]+\.[0-9]+" "${REPO_ROOT}/apps/web/src/version.ts")"
+BUILD_NUMBER="$(git -C "${REPO_ROOT}" rev-list --count HEAD 2>/dev/null || echo 1)"
 APK_OUT_DIR="${REPO_ROOT}/apps/web/android-apk"
 mkdir -p "${APK_OUT_DIR}"
 
+# --- постоянный ключ release-подписи -------------------------------------------------
+# Ключ и пароль не коммитятся. Если потерять ключ, обновить уже установленное приложение
+# поверх старого не получится: Android считает это другим приложением.
+KEYSTORE_DIR="${REPO_ROOT}/apps/web/android/app/keystore"
+KEYSTORE_FILE="${KEYSTORE_DIR}/svitlo-release.p12"
+KEYSTORE_PROPS="${REPO_ROOT}/apps/web/android/keystore.properties"
+KEY_ALIAS="svitlo"
+
+ensure_release_keystore() {
+  if [[ -f "${KEYSTORE_FILE}" && -f "${KEYSTORE_PROPS}" ]]; then
+    echo ">>> Release-ключ: ${KEYSTORE_FILE}"
+    return
+  fi
+  if [[ -f "${KEYSTORE_FILE}" || -f "${KEYSTORE_PROPS}" ]]; then
+    echo "Найден только один из файлов release-ключа:" >&2
+    echo "  ${KEYSTORE_FILE}" >&2
+    echo "  ${KEYSTORE_PROPS}" >&2
+    echo "Восстановите второй файл из бэкапа. Пересоздавать ключ при наличии установленного приложения нельзя." >&2
+    exit 1
+  fi
+  command -v keytool >/dev/null 2>&1 || {
+    echo "Не найден keytool. Установите JDK или создайте ключ в Android Studio." >&2
+    exit 1
+  }
+  mkdir -p "${KEYSTORE_DIR}"
+  local old_umask
+  old_umask="$(umask)"
+  umask 077
+  local password
+  if command -v openssl >/dev/null 2>&1; then
+    password="$(openssl rand -hex 24)"
+  else
+    password="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+  fi
+  keytool -genkeypair -v \
+    -keystore "${KEYSTORE_FILE}" \
+    -storetype PKCS12 \
+    -keyalg RSA \
+    -keysize 4096 \
+    -validity 10000 \
+    -alias "${KEY_ALIAS}" \
+    -storepass "${password}" \
+    -keypass "${password}" \
+    -dname "CN=Svitlo, OU=Mobile, O=Svitlo, L=Chernihiv, C=UA" >/dev/null 2>&1
+  cat > "${KEYSTORE_PROPS}" <<PROPS
+storeFile=keystore/svitlo-release.p12
+storePassword=${password}
+keyAlias=${KEY_ALIAS}
+keyPassword=${password}
+PROPS
+  chmod 600 "${KEYSTORE_FILE}" "${KEYSTORE_PROPS}"
+  umask "${old_umask}"
+  echo ">>> Создан release-ключ: ${KEYSTORE_FILE}"
+  echo "    Сохраните его и apps/web/android/keystore.properties в надёжном месте."
+}
+
+if [[ "${BUILD_TYPE}" == release ]]; then
+  ensure_release_keystore
+fi
+
 cd "${REPO_ROOT}"
 
-# Чейджлог обновляем перед сборкой: он генерируется из истории git, а в Docker и в PWA истории
-# нет. Если git недоступен (сборка без репозитория) — оставляем предыдущий файл как есть.
+# Чейджлог генерируется из git. В Docker истории нет, поэтому обновляем до сборки.
 echo ">>> Обновление чейджлога"
 node tools/gen_changelog.mjs --limit 20 || echo "    (пропущено: git недоступен, используем прежний changelog.json)"
 
-# Метка сборки попадает в интерфейс (низ меню): по ней видно, что на телефоне стоит именно
-# свежая версия, а не предыдущая установка.
+# maskable-иконка нужна Vite до сборки. PNG рендерятся позже в Docker.
+echo ">>> Обновление SVG-слоёв иконки"
+node apps/web/scripts/generate-android-icons.mjs --svg-only
+
 BUILD_ID="$(date -u +%Y%m%d-%H%M)"
 echo ">>> Сборка веб-бандла (build ${BUILD_ID})"
 VITE_API_BASE_URL="${API_BASE}" SVITLO_BUILD_ID="${BUILD_ID}" \
   npx --yes pnpm@11 --filter @svitlo/web build
 
-# Service Worker в нативном приложении вреден: он встаёт ПЕРЕД локальной раздачей ассетов
-# Capacitor, а на активации наш selfDestroying-SW ещё и стирает все кэши и перезагружает
-# страницу (client.navigate). В нативном приложении это ломает загрузку частей интерфейса:
-# приложение открывалось с «кучей функций» — области и очереди не подгружались.
-# Офлайн-режим тут обеспечивает сам Capacitor: ассеты лежат внутри APK. Поэтому SW убираем.
+# Service Worker в нативном приложении вреден: он встаёт перед локальной раздачей ассетов
+# Capacitor и после selfDestroying-активации перезагружает страницу. Убираем только инъекцию
+# vite-plugin-pwa; в PWA-сборке регистрация остаётся.
 echo ">>> Удаление Service Worker из нативного бандла"
 node - <<'NODE'
 import { readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 
 const indexPath = 'apps/web/dist/index.html';
 const html = readFileSync(indexPath, 'utf8');
-// Вырезаем именно инъекцию vite-plugin-pwa, а не любое упоминание: в PWA-сборке она остаётся.
 const cleaned = html.replace(/<script[^>]*id="vite-plugin-pwa:register-sw"[^>]*><\/script>\s*/g, '');
 if (cleaned !== html) {
   writeFileSync(indexPath, cleaned);
@@ -78,35 +166,18 @@ for (const file of ['apps/web/dist/sw.js', 'apps/web/dist/registerSW.js']) {
 }
 NODE
 
-echo ">>> Генерация иконок"
-node apps/web/scripts/generate-android-icons.mjs >/dev/null
-
-# Версию поднимаем на единицу при каждой сборке.
-#
-# Файл build.gradle меняется на время сборки и возвращается в исходное состояние после неё:
-# иначе каждая сборка оставляла бы в дереве изменённый versionCode, который не несёт смысла
-# и только мешает видеть реальные правки в git status.
+# versionCode/versionName меняем в build.gradle перед gradle. Номер версии — производная
+# от git-истории и version.ts, поэтому после сборки возвращаем файл в исходное состояние:
+# в git не должно быть случайных «versionCode 137» от каждой локальной сборки.
 GRADLE_FILE="apps/web/android/app/build.gradle"
-GRADLE_WAS_CLEAN=false
-if git diff --quiet -- "${GRADLE_FILE}" 2>/dev/null; then
-  GRADLE_WAS_CLEAN=true
-  cp "${GRADLE_FILE}" "${GRADLE_FILE}.buildbak"
-fi
+cp "${GRADLE_FILE}" "${GRADLE_FILE}.buildbak"
 restore_gradle() {
-  if [[ "${GRADLE_WAS_CLEAN}" == true && -f "${GRADLE_FILE}.buildbak" ]]; then
+  if [[ -f "${GRADLE_FILE}.buildbak" ]]; then
     mv "${GRADLE_FILE}.buildbak" "${GRADLE_FILE}"
   fi
 }
 trap restore_gradle EXIT
-#
-# Зачем: пока versionCode оставался равным 1, установщик на телефоне получал APK с тем же
-# кодом версии и не мог отличить новую сборку от старой — а нам нужно было проверить, какая
-# именно версия установлена. Плюс по versionCode видно, обновилось ли приложение вообще.
-BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
-# Видимую версию (X.Y.Z) дублируем в versionName Android, чтобы в диспетчере устройств
-# и в информации о приложении была та же цифра, что на главном экране.
-APP_VERSION="$(grep -oP "APP_VERSION = '\K[0-9]+\.[0-9]+\.[0-9]+" apps/web/src/version.ts)"
-python3 - "$BUILD_NUMBER" "$APP_VERSION" <<'PY'
+python3 - "${BUILD_NUMBER}" "${APP_VERSION}" <<'PY'
 import pathlib
 import re
 import sys
@@ -123,20 +194,12 @@ PY
 echo ">>> Синхронизация в нативный проект Capacitor"
 (cd apps/web && npx cap sync android >/dev/null)
 
-echo ">>> Сборка образа со сборщиком (один раз; кэшируется Docker)"
-if ! docker image inspect "${BUILDER_IMAGE}" >/dev/null 2>&1; then
-  docker build -f docker/Dockerfile.android -t "${BUILDER_IMAGE}" .
-fi
+echo ">>> Сборка образа со сборщиком (кэшируется Docker)"
+# Образ пересобираем каждый раз: Docker использует кэш, но так изменения Dockerfile
+# (например, добавление rsvg/nodejs для иконок) не теряются на машинах с готовым образом.
+docker build -f docker/Dockerfile.android -t "${BUILDER_IMAGE}" .
 
-echo ">>> Gradle assembleDebug"
-# Контейнер запускается от текущего пользователя (--user ниже), а репозиторий смонтирован
-# на запись. Обе части нужны вместе: gradle по умолчанию работает как root и оставляет
-# build-каталоги под root — на btrfs их не удалить без sudo, и следующая пересборка падала бы
-# с "EACCES: permission denied" уже в cap sync. Репозиторий монтируется целиком (а не только
-# android/), потому что capacitor подключает node_modules относительным путём.
-# Кэш gradle — обычный каталог на хосте, а не docker volume: volume создаётся с правами root,
-# а контейнер работает от текущего пользователя, и gradle не может в нём создать lock-файл.
-# На хосте права совпадают автоматически, плюс кэш переживает пересборку образа.
+echo ">>> Gradle assemble${BUILD_TYPE^}"
 GRADLE_CACHE="${REPO_ROOT}/.cache/gradle"
 mkdir -p "${GRADLE_CACHE}"
 
@@ -149,20 +212,35 @@ docker run --rm \
   -e ANDROID_SDK_ROOT=/opt/android-sdk \
   -e GRADLE_USER_HOME=/tmp/.gradle \
   -e HOME=/tmp \
+  -e BUILD_TYPE="${BUILD_TYPE}" \
+  -e APP_VERSION="${APP_VERSION}" \
   "${BUILDER_IMAGE}" \
   bash -c '
     set -e
-    # Репозиторий смонтирован на запись, поэтому контейнер запускается от текущего пользователя
-    # (--user выше): иначе build-каталоги остались бы под root, и на btrfs их не удалить без sudo —
-    # следующая же пересборка падала бы с "EACCES: permission denied" в cap sync.
+    # Иконки и splash рендерим здесь: в образе есть nodejs и rsvg-convert.
+    cd /repo
+    node apps/web/scripts/generate-android-icons.mjs
     cd /repo/apps/web/android
-    ./gradlew --no-daemon --console=plain assembleDebug
     mkdir -p /out
-    cp -f app/build/outputs/apk/debug/app-debug.apk /out/
+    if [ "${BUILD_TYPE}" = "release" ]; then
+      ./gradlew --no-daemon --console=plain assembleRelease
+      cp -f app/build/outputs/apk/release/app-release.apk "/out/svitlo-${APP_VERSION}.apk"
+      cp -f app/build/outputs/apk/release/app-release.apk /out/app-release.apk
+      echo ">>> Проверка подписи"
+      /opt/android-sdk/build-tools/36.0.0/apksigner verify --print-certs "/out/svitlo-${APP_VERSION}.apk" | head -8
+      /opt/android-sdk/build-tools/36.0.0/aapt dump badging "/out/svitlo-${APP_VERSION}.apk" | head -3
+    else
+      ./gradlew --no-daemon --console=plain assembleDebug
+      cp -f app/build/outputs/apk/debug/app-debug.apk /out/app-debug.apk
+    fi
     echo "APK скопирован наружу"
   '
 
-APK="${APK_OUT_DIR}/app-debug.apk"
+if [[ "${BUILD_TYPE}" == release ]]; then
+  APK="${APK_OUT_DIR}/svitlo-${APP_VERSION}.apk"
+else
+  APK="${APK_OUT_DIR}/app-debug.apk"
+fi
 if [[ ! -f "${APK}" ]]; then
   echo "APK не найден: ${APK}" >&2
   exit 1
@@ -171,6 +249,10 @@ fi
 echo ">>> Готово"
 ls -lh "${APK}"
 echo
-echo "Установка на телефон (включите «Установка из неизвестных источников»):"
-echo "  adb install -r ${APK}"
-echo "или скопируйте APK на телефон и откройте его файловым менеджером."
+echo "Установка по USB:"
+echo "  adb install -r \"${APK}\""
+if [[ "${BUILD_TYPE}" == release ]]; then
+  echo "Если на телефоне осталась старая debug-сборка, один раз удалите её:"
+  echo "  adb uninstall ua.com.svitlo.app"
+fi
+echo "Или скопируйте APK на телефон и откройте через «Файлы»."

@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Цвет фона adaptive-иконки: та же точка #1e40af, что и у квадратной иконки и PWA-манифеста.
-     Система Android 8+ накладывает на этот слой маску по форме (круг/скруглённый квадрат). -->
 <resources>
-    <color name="ic_launcher_background">#1e40af</color>
+    <color name="ic_launcher_background">#081226</color>
 </resources>

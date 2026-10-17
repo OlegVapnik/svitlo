@@ -1,0 +1,12 @@
+# Контекст для docker/Dockerfile.android: нужен только Dockerfile и apt-пакеты.
+# Без этого Docker отправляет в демон 2+ ГБ (node_modules, .git, кэш gradle).
+.git
+.cache
+node_modules
+**/node_modules
+dist
+**/dist
+apps/web/android/app/build
+apps/web/android/build
+apps/web/android-apk
+apps/api/snapshots

@@ -33,6 +33,12 @@ ALL_IN_ONE.md
 /apps/web/android/local.properties
 # Готовый APK — производный артефакт, пересобирается tools/build-android-apk.sh
 /apps/web/android-apk/
+# Ключ release-подписи и его пароль: личные секреты, не для git. Потеря ключа =
+# невозможность обновить уже установленное приложение.
+/apps/web/android/keystore.properties
+/apps/web/android/app/keystore/
+*.jks
+*.p12
 # Кэш gradle (общий для всех локальных сборок Android)
 .cache/
 

@@ -40,7 +40,15 @@ export default defineConfig({
             src: '/icons/icon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            // Отдельная maskable-версия: у неё фон без скруглений, а молния уже внутри
+            // безопасной зоны. Иначе Android обрезает углы и края иконки.
+            src: '/icons/icon-maskable.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'maskable'
           }
         ]
       },

@@ -1,31 +1,45 @@
 #!/usr/bin/env node
 /**
- * Генерация иконок приложения для Android (и PWA) из одного SVG-источника.
+ * Генерация иконок Android и splash из одного SVG-источника.
  *
- * Зачем свой скрипт, а не @capacitor/assets: тот требует `sharp` (нативный модуль, у нас
- * build-скрипты pnpm блокирует, а на хосте нет Android-инструментов). Здесь только чистый JS:
- * SVG → PNG нужных размеров. Исходник иконки — единственный файл правды, все размеры
- * выводятся из него, поэтому иконка приложения и PWA не расходятся.
+ * Источник правды — apps/web/public/icons/icon.svg. В нём две группы:
+ *   <g id="background"> — фон, кольца и блик;
+ *   <g id="foreground"> — молния и искры.
  *
- * Запуск: node apps/web/scripts/generate-android-icons.mjs
+ * Из этих слоёв скрипт собирает:
+ *   • обычную иконку лаунчера (скруглённый квадрат);
+ *   • круглую иконку для лаунчеров с круглой маской;
+ *   • adaptive-иконку Android 8+: отдельный фон и foreground с запасом под маску;
+ *   • maskable-иконку для PWA (полный фон, безопасная зона);
+ *   • splash-экраны для всех плотностей.
+ *
+ * PNG рендерит rsvg-convert. На хосте он не нужен: сборщик APK запускает этот
+ * скрипт внутри Docker-образа svitlo-android-builder (там есть nodejs и librsvg2-bin).
+ * Режим --svg-only пишет только icon-maskable.svg и не требует rsvg — он выполняется
+ * на хосте перед сборкой веба, чтобы maskable-иконка попала в dist.
+ *
+ * Запуск:
+ *   node apps/web/scripts/generate-android-icons.mjs --svg-only
+ *   node apps/web/scripts/generate-android-icons.mjs
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(here, '..');
-const svgPath = path.join(webRoot, 'public/icons/icon.svg');
-const outDir = path.join(webRoot, 'android/app/src/main/res');
+const sourcePath = path.join(webRoot, 'public/icons/icon.svg');
+const publicIconsDir = path.join(webRoot, 'public/icons');
+const resDir = path.join(webRoot, 'android/app/src/main/res');
+const svgOnly = process.argv.includes('--svg-only');
 
-/** Исходная иконка: тот же синий фон с молнией, что и в PWA-манифесте. */
-const SOURCE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#1e40af"/><path d="M290 52 142 278h101l-21 182 148-239H268l22-169Z" fill="#fff"/></svg>`;
+/** Adaptive-слой: 108dp, безопасная зона — центральные 66dp. */
+const ADAPTIVE_SCALE = 0.7;
+/** Maskable PWA: безопасная зона — центральные 80% иконки. */
+const MASKABLE_SCALE = 0.72;
 
-/**
- * Плотности Android → размер иконки в px. Квадраты нужны для launcher'а (здесь Android
- * до сих пор ждёт квадрат, а не adaptive icon с вырезом), плюс отдельный foreground для
- * adaptive-иконки Android 8+ — она сама накладывает маску на любую форму.
- */
 const LAUNCHER_ICONS = [
   { dir: 'mipmap-mdpi', size: 48 },
   { dir: 'mipmap-hdpi', size: 72 },
@@ -34,8 +48,7 @@ const LAUNCHER_ICONS = [
   { dir: 'mipmap-xxxhdpi', size: 192 },
 ];
 
-/** Adaptive icon: слой 108dp, безопасная зона — центральные 72dp (треть с каждой стороны). */
-const ADAPTIVE_FOREGROUND = [
+const ADAPTIVE_LAYERS = [
   { dir: 'mipmap-mdpi', size: 108 },
   { dir: 'mipmap-hdpi', size: 162 },
   { dir: 'mipmap-xhdpi', size: 216 },
@@ -44,166 +57,179 @@ const ADAPTIVE_FOREGROUND = [
 ];
 
 /**
- * Минимальный PNG-энкодер (только truecolor + альфа), без зависимостей.
- *
- * Своя реализация, потому что ради иконок тянуть canvas/sharp несоразмерно: нужен ровно
- * один кадр — заливка фоном и один многоугольник. Формат: 8-бит RGBA, фильтр строки 0,
- * zlib-уровень из стандартной библиотеки node.
+ * Размеры splash совпадают с тем, что уже использует Android-проект. Держим их
+ * здесь, чтобы пересборка не зависела от старых PNG и не оставляла белую заглушку.
  */
-import zlib from 'node:zlib';
-
-function crc32(buf) {
-  let c;
-  const table = crc32.table ?? (crc32.table = Array.from({ length: 256 }, (_, n) => {
-    c = n;
-    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    return c >>> 0;
-  }));
-  let crc = 0xffffffff;
-  for (const byte of buf) crc = table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function pngChunk(type, data) {
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length);
-  const typeAndData = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(typeAndData));
-  return Buffer.concat([length, typeAndData, crc]);
-}
-
-/** Кодирует RGBA-пиксели в PNG. */
-function encodePng(width, height, rgba) {
-  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // бит на канал
-  ihdr[9] = 6; // truecolor + alpha
-  // Каждая строка: filter byte 0 + RGBA-байты.
-  const raw = Buffer.alloc((width * 4 + 1) * height);
-  for (let y = 0; y < height; y += 1) {
-    const rowStart = y * (width * 4 + 1);
-    raw[rowStart] = 0;
-    rgba.copy(raw, rowStart + 1, y * width * 4, (y + 1) * width * 4);
-  }
-  return Buffer.concat([
-    signature,
-    pngChunk('IHDR', ihdr),
-    pngChunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    pngChunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-/** Молния из исходного SVG (координаты 512×512), для перерисовки по пунктиру. */
-const BOLT_PATH = [
-  [290, 52], [142, 278], [243, 278], [222, 460], [370, 221], [268, 221], [290, 52],
+const SPLASHES = [
+  { dir: 'drawable', w: 480, h: 320 },
+  { dir: 'drawable-land-mdpi', w: 480, h: 320 },
+  { dir: 'drawable-land-hdpi', w: 800, h: 480 },
+  { dir: 'drawable-land-xhdpi', w: 1280, h: 720 },
+  { dir: 'drawable-land-xxhdpi', w: 1600, h: 960 },
+  { dir: 'drawable-land-xxxhdpi', w: 1920, h: 1280 },
+  { dir: 'drawable-port-mdpi', w: 320, h: 480 },
+  { dir: 'drawable-port-hdpi', w: 480, h: 800 },
+  { dir: 'drawable-port-xhdpi', w: 720, h: 1280 },
+  { dir: 'drawable-port-xxhdpi', w: 960, h: 1600 },
+  { dir: 'drawable-port-xxxhdpi', w: 1280, h: 1920 },
 ];
 
-/** Точка внутри многоугольника (ray casting). */
-function insidePolygon(px, py, poly) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    const intersects = yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
-    if (intersects) inside = !inside;
+const source = readFileSync(sourcePath, 'utf8');
+// Комментарии могут содержать примеры тегов <g id="...">; для поиска слоёв они только мешают.
+const sourceLayers = source.replace(/<!--[\s\S]*?-->/g, '');
+const defs = source.match(/<defs>[\s\S]*?<\/defs>/)?.[0];
+if (!defs) {
+  throw new Error(`${path.relative(webRoot, sourcePath)}: не найден блок <defs>`);
+}
+
+/** Вырезает группу по id. В исходнике группы не должны содержать вложенных <g>. */
+function extractGroup(svg, id) {
+  const start = svg.indexOf(`<g id="${id}">`);
+  if (start === -1) throw new Error(`В icon.svg нет группы <g id="${id}">`);
+  const end = svg.indexOf('</g>', start);
+  if (end === -1) throw new Error(`В icon.svg не закрыта группа <g id="${id}">`);
+  return svg.slice(start, end + '</g>'.length);
+}
+
+function groupInner(group) {
+  return group.replace(/^<g[^>]*>/, '').replace(/<\/g>$/, '');
+}
+
+function svgDocument(body) {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">\n${defs}\n${body}\n</svg>\n`;
+}
+
+const background = extractGroup(sourceLayers, 'background');
+const foreground = extractGroup(sourceLayers, 'foreground');
+const foregroundInner = groupInner(foreground);
+
+// Полный фон без скруглений: нужен adaptive-фону и maskable-иконке, где маску
+// накладывает система, а не сам рисунок.
+const fullBleedBackground = background.replace(/\brx="\d+"/g, 'rx="0"');
+// Круглая иконка: квадрат 512×512 с радиусом 256 — это круг.
+const roundBackground = background.replace(/\brx="\d+"/g, 'rx="256"');
+
+const maskableSvg = svgDocument(
+  `${fullBleedBackground}\n<g transform="translate(256 256) scale(${MASKABLE_SCALE}) translate(-256 -256)">${foregroundInner}</g>`,
+);
+const adaptiveForegroundSvg = svgDocument(
+  `<g transform="translate(256 256) scale(${ADAPTIVE_SCALE}) translate(-256 -256)">${foregroundInner}</g>`,
+);
+const adaptiveBackgroundSvg = svgDocument(fullBleedBackground);
+const roundSvg = svgDocument(`${roundBackground}\n${foreground}`);
+
+mkdirSync(publicIconsDir, { recursive: true });
+writeFileSync(path.join(publicIconsDir, 'icon-maskable.svg'), maskableSvg, 'utf8');
+console.log('public/icons/icon-maskable.svg');
+
+if (svgOnly) {
+  console.log('режим --svg-only: PNG не рендерились');
+  process.exit(0);
+}
+
+try {
+  execFileSync('rsvg-convert', ['--version'], { stdio: 'pipe' });
+} catch (error) {
+  console.error('Не найден rsvg-convert. Запускайте сборку через ./tools/build-android-apk.sh —');
+  console.error('в образе svitlo-android-builder он уже установлен.');
+  process.exit(1);
+}
+
+const tmpDir = mkdtempSync(path.join(tmpdir(), 'svitlo-icons-'));
+
+function writeTempSvg(name, contents) {
+  const file = path.join(tmpDir, name);
+  writeFileSync(file, contents, 'utf8');
+  return file;
+}
+
+function render(svgPath, outPath, width, height) {
+  mkdirSync(path.dirname(outPath), { recursive: true });
+  execFileSync('rsvg-convert', [
+    '-w', String(width),
+    '-h', String(height),
+    '-o', outPath,
+    svgPath,
+  ], { stdio: 'pipe' });
+}
+
+function splashSvg(width, height, iconHref) {
+  const min = Math.min(width, height);
+  const tile = Math.round(min * 0.34);
+  const cx = width / 2;
+  const cy = Math.round(height * 0.46);
+  const x = (width - tile) / 2;
+  const y = cy - tile / 2;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+${defs}
+<defs>
+  <radialGradient id="splash-glow" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#60a5fa" stop-opacity="0.30"/>
+    <stop offset="1" stop-color="#60a5fa" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="${width}" height="${height}" fill="url(#bg)"/>
+<rect width="${width}" height="${height}" fill="url(#light)"/>
+<circle cx="${cx}" cy="${cy}" r="${min * 0.34}" fill="none" stroke="#93c5fd" stroke-opacity="0.14" stroke-width="${Math.max(1, min * 0.006)}"/>
+<circle cx="${cx}" cy="${cy}" r="${min * 0.43}" fill="none" stroke="#93c5fd" stroke-opacity="0.07" stroke-width="${Math.max(1, min * 0.003)}"/>
+<circle cx="${cx}" cy="${cy}" r="${tile * 0.85}" fill="url(#splash-glow)"/>
+<rect x="${x}" y="${y + min * 0.02}" width="${tile}" height="${tile}" rx="${tile * 0.22}" fill="#020617" opacity="0.38"/>
+<image x="${x}" y="${y}" width="${tile}" height="${tile}" href="${iconHref}"/>
+</svg>`;
+}
+
+try {
+  const iconSvgPath = sourcePath;
+  // Для <image> в splash нужен SVG без комментариев: librsvg не подгружает внешний SVG,
+  // внутри которого есть комментарии, и молния на splash оставалась пустым квадратом.
+  const cleanIconPath = writeTempSvg('icon-clean.svg', sourceLayers);
+  const cleanIconHref = pathToFileURL(cleanIconPath).href;
+  const roundSvgPath = writeTempSvg('icon-round.svg', roundSvg);
+  const adaptiveForegroundPath = writeTempSvg('icon-foreground.svg', adaptiveForegroundSvg);
+  const adaptiveBackgroundPath = writeTempSvg('icon-background.svg', adaptiveBackgroundSvg);
+
+  for (const { dir, size } of LAUNCHER_ICONS) {
+    render(iconSvgPath, path.join(resDir, dir, 'ic_launcher.png'), size, size);
+    render(roundSvgPath, path.join(resDir, dir, 'ic_launcher_round.png'), size, size);
+    console.log(`${dir}/ic_launcher.png ${size}×${size}`);
   }
-  return inside;
-}
 
-/**
- * Рисует иконку: синий скруглённый квадрат + белая молния, сглаженная суперсэмплингом.
- *
- * Сглаживание обязательно: без него на 48×48 диагонали молнии превращаются в лесенку,
- * и лаунчер выглядит «пиксельно» рядом с системными иконками.
- */
-function renderIcon(size, { adaptive = false } = {}) {
-  const rgba = Buffer.alloc(size * size * 4);
-  const samples = 4;
-  // В adaptive-иконке фон не рисуем: его подставляет система своим цветом/маской,
-  // а молня должна занимать только безопасные центральные 2/3.
-  const boltScale = adaptive ? (size / 512) * (72 / 108) * 2.4 : size / 512;
-  const boltOffset = adaptive ? (size - 512 * boltScale) / 2 : 0;
-  const radius = adaptive ? 0 : 112 * (size / 512);
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      let bgHits = 0;
-      let boltHits = 0;
-      for (let sy = 0; sy < samples; sy += 1) {
-        for (let sx = 0; sx < samples; sx += 1) {
-          const px = x + (sx + 0.5) / samples;
-          const py = y + (sy + 0.5) / samples;
-          const boltPoint = [(px - boltOffset) / boltScale, (py - boltOffset) / boltScale];
-          if (insidePolygon(boltPoint[0], boltPoint[1], BOLT_PATH)) boltHits += 1;
-          if (!adaptive) {
-            const inX = px >= 0 && px < size;
-            const inY = py >= 0 && py < size;
-            let inRounded = false;
-            if (inX && inY) {
-              // Скругление углов: внутри «круга» радиуса radius в каждом углу квадрата.
-              const cx = px < radius ? radius : px > size - radius ? size - radius : px;
-              const cy = py < radius ? radius : py > size - radius ? size - radius : py;
-              const dx = px - cx;
-              const dy = py - cy;
-              inRounded = dx * dx + dy * dy <= radius * radius;
-            }
-            if (inRounded) bgHits += 1;
-          }
-        }
-      }
-      const total = samples * samples;
-      const bgAlpha = adaptive ? 0 : bgHits / total;
-      const boltAlpha = boltHits / total;
-      const offset = (y * size + x) * 4;
-      if (boltAlpha > 0) {
-        // Молния непрозрачная поверх фона (или поверх прозрачности в adaptive-режиме).
-        rgba[offset] = Math.round(255 * boltAlpha + rgba[offset] * (1 - boltAlpha));
-        rgba[offset + 1] = Math.round(255 * boltAlpha + rgba[offset + 1] * (1 - boltAlpha));
-        rgba[offset + 2] = Math.round(255 * boltAlpha + rgba[offset + 2] * (1 - boltAlpha));
-      }
-      rgba[offset + 3] = Math.round(255 * (Math.max(bgAlpha, boltAlpha)));
-      if (!adaptive && bgAlpha > 0) {
-        // Фон #1e40af, молния перекрывает его там, где boltAlpha == 1.
-        const bgBlue = [30, 64, 175];
-        const covered = boltAlpha;
-        rgba[offset] = Math.round(bgBlue[0] * bgAlpha * (1 - covered) + rgba[offset]);
-        rgba[offset + 1] = Math.round(bgBlue[1] * bgAlpha * (1 - covered) + rgba[offset + 1]);
-        rgba[offset + 2] = Math.round(bgBlue[2] * bgAlpha * (1 - covered) + rgba[offset + 2]);
-      }
-    }
+  for (const { dir, size } of ADAPTIVE_LAYERS) {
+    render(adaptiveBackgroundPath, path.join(resDir, dir, 'ic_launcher_background.png'), size, size);
+    render(adaptiveForegroundPath, path.join(resDir, dir, 'ic_launcher_foreground.png'), size, size);
+    console.log(`${dir}/ic_launcher_{background,foreground}.png ${size}×${size}`);
   }
-  return encodePng(size, size, rgba);
-}
 
-mkdirSync(outDir, { recursive: true });
-for (const { dir, size } of LAUNCHER_ICONS) {
-  mkdirSync(path.join(outDir, dir), { recursive: true });
-  writeFileSync(path.join(outDir, dir, 'ic_launcher.png'), renderIcon(size));
-  writeFileSync(path.join(outDir, dir, 'ic_launcher_round.png'), renderIcon(size));
-  console.log(`${dir}/ic_launcher.png ${size}×${size}`);
-}
-for (const { dir, size } of ADAPTIVE_FOREGROUND) {
-  mkdirSync(path.join(outDir, dir), { recursive: true });
-  writeFileSync(path.join(outDir, dir, 'ic_launcher_foreground.png'), renderIcon(size, { adaptive: true }));
-  console.log(`${dir}/ic_launcher_foreground.png ${size}×${size} (adaptive)`);
-}
+  const adaptiveXml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>
+`;
+  for (const name of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+    const file = path.join(resDir, 'mipmap-anydpi-v26', name);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, adaptiveXml, 'utf8');
+  }
+  console.log('mipmap-anydpi-v26/ic_launcher{,_round}.xml');
 
-// Фон adaptive-иконки — плотный синий, его рисует система под маской любой формы.
-const BACKGROUND_XML = `<?xml version="1.0" encoding="utf-8"?>
-<!-- Цвет фона adaptive-иконки: та же точка #1e40af, что и у квадратной иконки и PWA-манифеста.
-     Система Android 8+ накладывает на этот слой маску по форме (круг/скруглённый квадрат). -->
+  // Цветной фолбэк для старых ссылок на @color/ic_launcher_background.
+  const colorXml = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1e40af</color>
+    <color name="ic_launcher_background">#081226</color>
 </resources>
 `;
-mkdirSync(path.join(outDir, 'values'), { recursive: true });
-writeFileSync(path.join(outDir, 'values/ic_launcher_background.xml'), BACKGROUND_XML);
-console.log('values/ic_launcher_background.xml');
+  mkdirSync(path.join(resDir, 'values'), { recursive: true });
+  writeFileSync(path.join(resDir, 'values/ic_launcher_background.xml'), colorXml, 'utf8');
 
-// Исходный SVG остаётся в проекте: из него же генерируются PWA-иконки, источник правды один.
-mkdirSync(path.join(webRoot, 'public/icons'), { recursive: true });
-writeFileSync(svgPath, SOURCE_SVG);
-console.log(`источник: ${path.relative(webRoot, svgPath)}`);
+  for (const { dir, w, h } of SPLASHES) {
+    const splashPath = writeTempSvg(`splash-${w}x${h}.svg`, splashSvg(w, h, cleanIconHref));
+    render(splashPath, path.join(resDir, dir, 'splash.png'), w, h);
+    console.log(`${dir}/splash.png ${w}×${h}`);
+  }
+} finally {
+  rmSync(tmpDir, { recursive: true, force: true });
+}
+
+console.log('источник: public/icons/icon.svg');
