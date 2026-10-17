@@ -450,6 +450,88 @@ const REGION_NAMES: Record<string, string> = {
   'chernivetska-oblast': 'Чернівецька область',
 };
 
+/**
+ * Канонические названия областей и их ключи фида — копия `packages/shared/src/regions-catalog.ts`.
+ *
+ * Копия, а не импорт: воркер собирается wrangler'ом отдельно от монорепо и намеренно не тянет
+ * `@svitlo/shared` (тот везёт за собой zod). Источник правды — общий модуль, здесь только то, что
+ * нужно воркеру: какие ключи фида стоят за областью.
+ *
+ * Зачем: человек ищет «Київська область», «Київ», «Дніпропетровська область», а данные зеркала
+ * лежат под `kiivska-oblast`, `kyiv` и двумя ключами м. Дніпро (`dnipro-cek` — ЦЕК,
+ * `dnipro-dnem` — ДнЕМ). Пока каталог отдавал ключи фида, поиск по названию не находил область, а
+ * выбор `dnipropetrovska-oblast` давал пустой график при живой области.
+ *
+ * Порожний `feedKeys` — область, которую фид не отдаёт вовсе: она остаётся в каталоге с нулями,
+ * чтобы человек нашёл свою область и увидел честное «даних немає».
+ */
+const REGION_CATALOG: Array<{ cpu: string; feedKeys: string[] }> = [
+  { cpu: 'vinnytska-oblast', feedKeys: [] },
+  { cpu: 'volynska-oblast', feedKeys: [] },
+  { cpu: 'dnipropetrovska-oblast', feedKeys: ['dnipro-cek', 'dnipro-dnem'] },
+  { cpu: 'donetska-oblast', feedKeys: [] },
+  { cpu: 'zhytomyrska-oblast', feedKeys: ['zhytomyrska-oblast'] },
+  { cpu: 'zakarpatska-oblast', feedKeys: ['zakarpatska-oblast'] },
+  { cpu: 'zaporizka-oblast', feedKeys: ['zaporizka-oblast'] },
+  { cpu: 'ivano-frankivska-oblast', feedKeys: ['ivano-frankivska-oblast'] },
+  { cpu: 'kyiv-city', feedKeys: ['kyiv'] },
+  { cpu: 'kyivska-oblast', feedKeys: ['kiivska-oblast'] },
+  { cpu: 'kirovohradska-oblast', feedKeys: [] },
+  { cpu: 'luhanska-oblast', feedKeys: [] },
+  { cpu: 'lvivska-oblast', feedKeys: ['lvivska-oblast'] },
+  { cpu: 'mykolaivska-oblast', feedKeys: [] },
+  { cpu: 'odeska-oblast', feedKeys: [] },
+  { cpu: 'poltavska-oblast', feedKeys: ['poltavska-oblast'] },
+  { cpu: 'rivnenska-oblast', feedKeys: ['rivnenska-oblast'] },
+  { cpu: 'sumska-oblast', feedKeys: [] },
+  { cpu: 'ternopilska-oblast', feedKeys: ['ternopilska-oblast'] },
+  { cpu: 'kharkivska-oblast', feedKeys: ['kharkivska-oblast'] },
+  { cpu: 'khersonska-oblast', feedKeys: [] },
+  { cpu: 'khmelnytska-oblast', feedKeys: ['khmelnytska-oblast'] },
+  { cpu: 'cherkaska-oblast', feedKeys: ['cherkaska-oblast'] },
+  { cpu: 'chernivetska-oblast', feedKeys: [] },
+  { cpu: 'chernihivska-oblast', feedKeys: ['chernihivska-oblast'] },
+];
+
+/** Опечатки из старых закладок и ссылок: «dnipropetrovnska» (без «е»). */
+const REGION_ALIASES: Record<string, string> = {
+  'dnipropetrovnska-oblast': 'dnipropetrovska-oblast',
+};
+
+const REGION_BY_CPU = new Map(REGION_CATALOG.map((entry) => [entry.cpu, entry]));
+
+/** Канонический `cpu` для того, что пришло снаружи: ключ фида, псевдоним или уже канонический. */
+function canonicalRegionCpu(cpu: string): string {
+  const value = cpu.trim();
+  if (REGION_BY_CPU.has(value)) return value;
+  return REGION_ALIASES[value] ?? value;
+}
+
+/**
+ * Ключи фида, под которыми лежат данные области.
+ *
+ * Порожний массив — область известна, но фид её не отдаёт; неизвестный `cpu` возвращаем как «свой
+ * единственный ключ»: так запрос к нему остаётся честно пустым графиком, а не путается с чужой
+ * областью.
+ */
+function regionFeedKeysOf(cpu: string): string[] {
+  const canonical = canonicalRegionCpu(cpu);
+  const entry = REGION_BY_CPU.get(canonical);
+  if (entry) return [...entry.feedKeys];
+  return [canonical];
+}
+
+/** Название области по-украински: из встроенного списка, дальше — по её ключу фида. */
+function canonicalRegionName(cpu: string, mirrorNames: Record<string, string> = {}): string {
+  const direct = REGION_NAMES[cpu] ?? mirrorNames[cpu];
+  if (direct) return direct;
+  for (const key of regionFeedKeysOf(cpu)) {
+    const viaFeed = REGION_NAMES[key] ?? mirrorNames[key];
+    if (viaFeed) return viaFeed;
+  }
+  return cpu;
+}
+
 /** Читает зеркало. Любая ошибка → `null`: лучше пустой график, чем правдоподобный мусор. */
 async function fetchMirror(env: Env): Promise<{ payload: Record<string, unknown>; timestamp: string | null } | null> {
   try {
@@ -1573,7 +1655,7 @@ async function saveNews(env: Env, items: Array<Omit<NewsRow, 'first_seen_at'>>):
  * фронтенд знает, что автоборт был, и не рисует «свежие» данные из пустоты.
  */
 export async function scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-  await ensureSchema(env);
+  await ensureSchemaOnce(env);
 
   const today = kyivToday();
   const tomorrow = addDays(today, 1);
@@ -1931,30 +2013,117 @@ async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>
     coverageByRegion.set(row.region, entry);
   }
 
-  // Каталог отдаём из встроенных имён и имён зеркала, чтобы список областей не исчезал на
-  // «холодном» D1 и чтобы у области, которой нет в нашем списке, была человеческая подпись.
-  const cpus = new Set([...Object.keys(REGION_NAMES), ...Object.keys(mirrorNames), ...byRegion.keys()]);
-  return [...cpus].sort().map((cpu) => {
-    const entry = byRegion.get(cpu);
-    const coverage = coverageByRegion.get(cpu);
-    const coveredToday = (coverage?.covered.size ?? 0) > 0;
-    return {
-      cpu,
-      nameUa: REGION_NAMES[cpu] ?? mirrorNames[cpu] ?? cpu,
+  // Строки каталога. Каноническая область — одна строка (её `cpu` человек и видит), а данные для
+  // неё берутся из ключей фида: у Киевской области это `kiivska-oblast`, у Киева — `kyiv`.
+  const consumed = new Set<string>();
+  const rows: Array<Record<string, unknown>> = [];
+
+  /** Факты по ключу фида: слоты и черги из БД. Пустая запись законна — область не импортирована. */
+  const factsOf = (cpu: string) => byRegion.get(cpu) ?? { queues: new Set<string>(), slots: 0, lastDate: null };
+
+  for (const entry of REGION_CATALOG) {
+    // Ключ каталога может быть ещё и ключом фида (зеркало когда-то отдавало `dnipropetrovska-oblast`
+    // отдельно от ЦЕК/ДнЕМ): данные под ним не выбрасываем, а складываем в ту же строку.
+    const ownKey = entry.cpu;
+    const ownData = !entry.feedKeys.includes(ownKey) && (byRegion.has(ownKey) || coverageByRegion.has(ownKey)) ? [ownKey] : [];
+    const dataKeys = [...entry.feedKeys, ...ownData];
+    const facts = dataKeys.map(factsOf);
+    const coverages = dataKeys.map((key) => coverageByRegion.get(key));
+    for (const key of dataKeys) consumed.add(key);
+    // Канонический `cpu` тоже считаем «разобранным»: иначе он вернулся бы второй строкой из списка
+    // встроенных имён (`REGION_NAMES`) — дубль «Одеської області» рядом с самой собой.
+    consumed.add(ownKey);
+
+    const queues = new Set<string>();
+    let slots = 0;
+    let lastDate: string | null = null;
+    for (const fact of facts) {
+      for (const queue of fact.queues) queues.add(queue);
+      slots += fact.slots;
+      if (fact.lastDate && (!lastDate || fact.lastDate > lastDate)) lastDate = fact.lastDate;
+    }
+    const coveredNetworks = coverages.filter((coverage) => (coverage?.covered.size ?? 0) > 0).length;
+    // Область считаем покрытой, только когда день опубликовали ВСЕ её источники (у области с одной
+    // сетью — она сама): молчащая сеть — это «не знаем», а не «график есть».
+    const covered = dataKeys.length > 0 && coveredNetworks === dataKeys.length;
+    rows.push({
+      cpu: entry.cpu,
+      nameUa: canonicalRegionName(entry.cpu, mirrorNames),
       nameEn: null,
-      queues: [...(entry?.queues ?? [])].sort(),
-      slots: entry?.slots ?? 0,
+      queues: [...queues].sort(compareQueueCodes),
+      slots,
       // null, пока область не импортирована. Подставлять сегодняшнюю дату значило бы врать:
       // фронтенд по `lastDate` решает, есть ли график, и увидел бы «есть» у пустой области.
-      lastDate: entry?.lastDate ?? null,
-      isActive: cpu in REGION_NAMES || cpu in mirrorNames,
+      lastDate,
+      feedKeys: [...entry.feedKeys],
+      isActive: true,
       // `covered` — график на сегодня опубликован хотя бы по одной очереди;
       // `allClear` — опубликован, но часов отключений в нём нет (человеку это «світло за графіком»).
       // Поля нет вовсе, когда покрытия нет: «не знаем» и «отключений нет» должны различаться.
+      covered,
+      allClear: covered ? coverages.every((coverage) => (coverage?.off.size ?? 0) === 0) : undefined,
+    });
+
+    // Подобласти — только для областей с несколькими сетями: у 1:1 подстановка прозрачна, и
+    // отдельная строка была бы дублем той же области. У ЦЕК и ДнЕМ общая нумерация черг, но
+    // разные графики, поэтому человек выбирает сеть, а не «область целиком».
+    if (entry.feedKeys.length > 1) {
+      for (const key of entry.feedKeys) {
+        const fact = factsOf(key);
+        const coverage = coverageByRegion.get(key);
+        const coveredNetwork = (coverage?.covered.size ?? 0) > 0;
+        rows.push({
+          cpu: key,
+          nameUa: REGION_NAMES[key] ?? mirrorNames[key] ?? key,
+          nameEn: null,
+          queues: [...fact.queues].sort(compareQueueCodes),
+          slots: fact.slots,
+          lastDate: fact.lastDate,
+          feedKeys: [key],
+          parentCpu: entry.cpu,
+          isActive: true,
+          covered: coveredNetwork,
+          allClear: coveredNetwork ? (coverage?.off.size ?? 0) === 0 : undefined,
+        });
+      }
+    }
+  }
+
+  // Ключи фида вне каталога (легасі-области, «мережі» Чернігівщини, имена из зеркала): отдаём как
+  // есть с человеческой подписью — придумывать им область-родителя нельзя.
+  for (const cpu of new Set([...Object.keys(REGION_NAMES), ...Object.keys(mirrorNames), ...byRegion.keys()])) {
+    if (consumed.has(cpu)) continue;
+    const fact = factsOf(cpu);
+    const coverage = coverageByRegion.get(cpu);
+    const coveredToday = (coverage?.covered.size ?? 0) > 0;
+    rows.push({
+      cpu,
+      nameUa: REGION_NAMES[cpu] ?? mirrorNames[cpu] ?? cpu,
+      nameEn: null,
+      queues: [...fact.queues].sort(compareQueueCodes),
+      slots: fact.slots,
+      lastDate: fact.lastDate,
+      feedKeys: [cpu],
+      isActive: cpu in REGION_NAMES || cpu in mirrorNames,
       covered: coveredToday,
       allClear: coveredToday ? (coverage?.off.size ?? 0) === 0 : undefined,
-    };
-  });
+    });
+  }
+
+  // Порядок — как у Node-бэкенда: по украинскому названию, но подобласть сразу за родителем,
+  // иначе «м. Дніпро (ЦЕК)» отрывается от «Дніпропетровської області».
+  const parentNames = new Map(
+    rows
+      .filter((row) => row['parentCpu'])
+      .map((row) => [String(row['cpu']), rows.find((item) => item['cpu'] === row['parentCpu'])?.['nameUa']]),
+  );
+  const sortKeyOf = (row: Record<string, unknown>): string => {
+    const parent = parentNames.get(String(row['cpu']));
+    return parent ? `${String(parent)} ${String(row['nameUa'])}` : String(row['nameUa']);
+  };
+  return rows.sort(
+    (a, b) => sortKeyOf(a).localeCompare(sortKeyOf(b), 'uk') || String(a['cpu']).localeCompare(String(b['cpu'])),
+  );
 }
 
 async function lastImportedAt(env: Env): Promise<string | null> {
@@ -1965,15 +2134,34 @@ async function lastImportedAt(env: Env): Promise<string | null> {
 }
 
 /**
+ * Схема гарантируется один раз на изолят.
+ *
+ * Проверка «`schedule_slots` не пуст → схема есть» оказалась ложной: таблица `schedule_coverage`
+ * появилась в v2.9.0, а `ensureSchema` вызывался только при ПУСТОЙ базе. На живой D1 таблицы не было
+ * вовсе, и `/regions`, `/queues`, `/schedules` падали с `D1_ERROR: no such table: schedule_coverage`.
+ * Поэтому схему накатываем до чтения данных, а флаг в памяти изолята убирает лишние обращения к D1
+ * (все запросы идемпотентны `IF NOT EXISTS`, так что повтор после перезапуска изолята безопасен).
+ */
+let schemaReady = false;
+
+async function ensureSchemaOnce(env: Env): Promise<void> {
+  if (schemaReady) return;
+  await ensureSchema(env);
+  schemaReady = true;
+}
+
+/**
  * Единственная точка, где воркер прикасается к данным по запросу.
  *
  * Если D1 ещё пуст (первый запуск до первого крона), график подтягивается с зеркала прямо
  * сейчас и тут же сохраняется — чтобы приложение не было пустым первые 20 минут после деплоя.
  */
 async function ensureSchedule(env: Env): Promise<void> {
+  // Сначала схема, потом данные: см. `ensureSchemaOnce` — иначе новая таблица не появится на уже
+  // наполненной базе, и чтение падает вместо того, чтобы отдать пустой график.
+  await ensureSchemaOnce(env);
   const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM schedule_slots`).first<{ n: number }>();
   if ((count?.n ?? 0) > 0) return;
-  await ensureSchema(env);
   const mirror = await fetchMirror(env);
   if (mirror) {
     const raw: Slot[] = [];
@@ -2251,24 +2439,38 @@ const SYNC_SETTLEMENTS_LIMIT = 2000;
  *
  * Вынесено из обработчика `/queues` по той же причине, что и новости: тот же список нужен
  * пакету, а две копии одного SQL расходились бы по поведению.
+ *
+ * Ключей фида может быть несколько: область с несколькими сетями (м. Дніпро — ЦЕК и ДнЕМ) отдаётся
+ * одним списком кодов групп, потому что это метаданные, а не часы отключений. «Світло за графіком»
+ * при этом ставится только группе, которую БЕЗ отключений опубликовала КАЖДАЯ сеть: у ЦЕК и ДнЕМ
+ * одинаковая нумерация черг, и молчание одной сети — это «не знаем», а не «светло».
  */
-async function queueSummaries(env: Env, region: string): Promise<Array<Record<string, unknown>>> {
-  if (!region) return [];
-  const [rows, coverage] = await Promise.all([
+async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record<string, unknown>>> {
+  const keys = [...new Set(regions.filter((region) => region))];
+  if (keys.length === 0) return [];
+  const placeholders = keys.map(() => '?').join(', ');
+  const [rows, coverages] = await Promise.all([
     env.DB.prepare(
       `SELECT queue, COUNT(*) AS slots, MAX(date) AS lastDate
-       FROM schedule_slots WHERE region = ? GROUP BY queue ORDER BY queue`,
-    ).bind(region).all<{ queue: string; slots: number; lastDate: string | null }>(),
+       FROM schedule_slots WHERE region IN (${placeholders}) GROUP BY queue ORDER BY queue`,
+    ).bind(...keys).all<{ queue: string; slots: number; lastDate: string | null }>(),
     // Опубликованные на сегодня очереди. В области, где график вышел без отключений, `schedule_slots`
     // пуст (мы храним только «тёмные» часы), и без этого списка экран выбора группы писал
     // «графік не імпортовано» про существующий график.
-    coverageOfDay(env, region, kyivToday()),
+    Promise.all(keys.map((key) => coverageOfDay(env, key, kyivToday()))),
   ]);
   // Очереди без слотов, но с публикацией. `offQueues` исключаем: там пустые слоты значат отставший
-  // импорт, а не «світло за графіком».
-  const cleared = new Set(
-    [...coverage.queues].filter((queue) => queue !== ALL_CLEAR_QUEUE && !coverage.offQueues.has(queue)),
+  // импорт, а не «світло за графіком». Пересечение по сетям: группа остаётся «без отключений», только
+  // если так её опубликовала КАЖДАЯ сеть, а сеть, которая на эту дату вообще ничего не опубликовала,
+  // лишает флага все группы — это «не знаем», а не «светло».
+  const published = coverages.map(
+    (coverage) =>
+      new Set([...coverage.queues].filter((queue) => queue !== ALL_CLEAR_QUEUE && !coverage.offQueues.has(queue))),
   );
+  const cleared =
+    published.length === 0 || coverages.some((coverage) => coverage.queues.size === 0)
+      ? new Set<string>()
+      : published.reduce((acc, here) => new Set([...acc].filter((queue) => here.has(queue))));
   // Порядок «1, 1/2, 2, 2/2, 10» — как в Node-бекенде (`compareQueueCodes`): строковая сортировка
   // ставила «10» перед «2», и список групп в двух сборках выглядел по-разному.
   const sums = new Map<string, { queue: string; slots: number; lastDate: string | null }>();
@@ -2281,9 +2483,14 @@ async function queueSummaries(env: Env, region: string): Promise<Array<Record<st
   }
   const list = [...sums.values()].sort((a, b) => compareQueueCodes(a.queue, b.queue));
   // Списки улиц запрашиваем заранее: await внутри не-async колбэка map невозможен,
-  // а последовательные запросы в цикле удлинили бы ответ.
+  // а последовательные запросы в цикле удлинили бы ответ. По сетям они объединяются без дублей.
   const streetNames = await Promise.all(
-    list.map((row) => streetNamesForQueue(env, region, row.queue)),
+    list.map(async (row) => {
+      const perRegion = await Promise.all(keys.map((key) => streetNamesForQueue(env, key, row.queue)));
+      const merged = new Set<string>();
+      for (const names of perRegion) for (const name of names) merged.add(name);
+      return [...merged].sort((a, b) => a.localeCompare(b, 'uk')).slice(0, 50);
+    }),
   );
   return list.map((row, index) => ({
     queue: row.queue,
@@ -2538,9 +2745,56 @@ async function buildStatusPayload(env: Env, region: string, today: string): Prom
   };
 }
 
+/**
+ * Маршруты, которые читают данные ОДНОЙ сети: многомережную область им передавать нельзя.
+ *
+ * Список ведётся явно, а не «всё, кроме `/regions`»: `/news`, `/changelog`, `/health` и `/incidents`
+ * область не читают вовсе, и отвечать им 400 за параметр, который они игнорируют, значило бы
+ * ломать запросы, которые сейчас работают.
+ */
+const SINGLE_REGION_PATHS = new Set([
+  '/schedules',
+  '/schedules/upcoming',
+  '/addresses/settlements',
+  '/addresses/streets',
+  '/addresses/resolve',
+  '/addresses/suggest',
+  '/addresses/contribute',
+  '/outages',
+  '/outages/stats',
+  '/reliability',
+  '/status',
+  '/sync',
+  '/street-queues',
+  '/street-queues/schedule',
+]);
+
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/^\/api\/v1/u, '').replace(/\/+$/u, '') || '/';
-  const region = url.searchParams.get('region') ?? '';
+  // Область приводим к ключу фида ОДИН раз на запрос: `?region=kyivska-oblast` читает
+  // `kiivska-oblast`, `?region=kyiv-city` — `kyiv`. Данные лежат именно под ключами фида, поэтому
+  // без этой подстановки человек с канонической названием области получал пустой график.
+  const requestedRegion = (url.searchParams.get('region') ?? '').trim();
+  const canonicalRegion = canonicalRegionCpu(requestedRegion);
+  const regionKeys = regionFeedKeysOf(canonicalRegion);
+  // «Область целиком», за которой стоят разные сети (м. Дніпро: ЦЕК и ДнЕМ), читать нельзя: у них
+  // общая нумерация черг, но разные графики, и слияние дало бы часы, которых у человека нет. Отдаём
+  // 400 с перечнем ключей — клиент берёт конкретную сеть из `/regions` (`feedKeys`). Списку групп
+  // (`/queues`) можно: это метаданные, а не часы.
+  if (regionKeys.length > 1 && SINGLE_REGION_PATHS.has(path)) {
+    return json(
+      {
+        error: {
+          code: 'AMBIGUOUS_REGION',
+          message: `Область «${canonicalRegion}» обслуживают несколько сетей (${regionKeys.join(', ')}): укажите конкретный region из /api/v1/regions`,
+        },
+      },
+      400,
+    );
+  }
+  // Ключ фида для чтения данных: область с одним ключом подставляется прозрачно, а область,
+  // которой фид не отдаёт вовсе (порожний `feedKeys`), остаётся собой — ответ будет честно пустым.
+  const region = regionKeys.length === 1 ? regionKeys[0]! : canonicalRegion;
   const today = kyivToday();
 
 
@@ -2569,7 +2823,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (path === '/queues') {
-    return json({ data: await queueSummaries(env, region) }, 200, { 'cache-control': 'public, max-age=300' });
+    // Список групп — метаданные, поэтому многомережную область читаем целиком: коды групп ЦЕК и
+    // ДнЕМ объединяются, а «світло за графіком» ставится только с согласия обеих сетей.
+    const queueRegionKeys = regionKeys.length > 0 ? regionKeys : [region];
+    return json({ data: await queueSummaries(env, queueRegionKeys) }, 200, { 'cache-control': 'public, max-age=300' });
   }
 
   if (path === '/schedules') {
@@ -3070,7 +3327,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         generatedAt: new Date().toISOString(),
         days: dayWindows,
         weeks: weekWindows,
-        months: [await window(`month:${to.slice(0, 7)}`, labelMonthIso(monthStart), monthStart, monthEnd, daysInMonth * 24 * 60)],
+        // Подпись месяца — по дате начала отчёта. Передаём именно дату (`from`), а не
+        // `monthStart` с уже приклеенным временем: `labelMonthIso` сам добавляет `T00:00:00.000Z`,
+        // и на строке с двумя временами `new Date(...)` даёт Invalid Date, то есть 500
+        // «Invalid time value» на всём маршруте `/reliability`.
+        months: [await window(`month:${to.slice(0, 7)}`, labelMonthIso(from), monthStart, monthEnd, daysInMonth * 24 * 60)],
         // По группам — тот же расчёт по фактически прошедшим суткам (без завтрашнего прогноза:
         // у этой сводки нет пометки «прогноз», и подмешивать в неё будущее значило бы выдавать
         // ещё не наступившее за факт). Знаменатель — дни, за которые график есть,
@@ -3204,7 +3465,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       regionSummaries(env),
       region ? upcomingGroupBuckets(env, region, today, days) : Promise.resolve([]),
       newsItems(env, SYNC_NEWS_LIMIT),
-      queueSummaries(env, region),
+      queueSummaries(env, region ? [region] : []),
       offlineSettlements(env, region),
     ]);
 
@@ -3262,8 +3523,11 @@ export default {
       return await handleApi(request, env, url);
     } catch (error) {
       // Отвечаем 500 с внятным телом, но без стектрейса наружу: он бесполезен пользователю
-      // и может засветить внутренние детали воркера.
+      // и может засветить внутренние детали воркера. Стек при этом ОБЯЗАН остаться в логах
+      // (`wrangler tail`): без него 500 на живом воркере не разобрать — тело ответа говорит
+      // только «Invalid time value» и не называет ни строки, ни ветки расчёта.
       const message = error instanceof Error ? error.message : 'unknown';
+      console.error(`handleApi ${url.pathname}: ${message}`, error instanceof Error ? error.stack : String(error));
       return json({ error: { code: 'INTERNAL_ERROR', message } }, 500);
     }
   },
