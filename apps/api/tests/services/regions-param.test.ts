@@ -65,20 +65,13 @@ describe('readRegionParam — граничні значення та валід�
     expect(regionDataKeys('odeska-oblast')).toEqual(['odeska-oblast']);
   });
 
-  it('область із кількома мережами вимагає конкретного ключа (м. Дніпро: ЦЕК і ДнЕМ)', () => {
-    // ЧОМУ: «2/2» у ЦЕК і «2/2» у ДнЕМ — різні фізичні групи. Злити їхні графіки означало б
-    // показати години відключень, яких у людини немає, тому без конкретного ключа — 400 з переліком.
+  it('область із кількома мережами читається під першою мережею каталогу (без 400)', () => {
+    // ЧОМУ: 400 `AMBIGUOUS_REGION` ламала екран «область цілком» — людина бачила «даних графіка
+    // немає» при живому графіку. Тепер такий запит читає ПЕРШУ мережу каталогу (порядок `feedKeys`
+    // у shared/regions-catalog.ts), а конкретну мережу людина обирає в каталозі; `/schedules`
+    // додатково уточнює вибір за фактичними даними на чергу й дату.
     expect(regionDataKeys('dnipropetrovska-oblast')).toEqual(['dnipro-cek', 'dnipro-dnem']);
-    expect(() => readRegionParam('dnipropetrovska-oblast')).toThrow(AppError);
-    try {
-      readRegionParam('dnipropetrovska-oblast');
-    } catch (err) {
-      const appErr = err as AppError;
-      expect(appErr.statusCode).toBe(400);
-      expect(appErr.code).toBe('AMBIGUOUS_REGION');
-      expect(appErr.message).toContain('dnipro-cek');
-      expect(appErr.message).toContain('dnipro-dnem');
-    }
+    expect(readRegionParam('dnipropetrovska-oblast')).toBe('dnipro-cek');
     // Список черг — метадані, його зводити безпечно, тому `/queues` просить `grouped: 'keep'`.
     expect(readRegionParam('dnipropetrovska-oblast', { grouped: 'keep' })).toBe('dnipropetrovska-oblast');
   });

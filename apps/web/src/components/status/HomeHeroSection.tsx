@@ -73,8 +73,22 @@ export const HomeHeroSection: React.FC = () => {
   const [selectedDayOffset, setSelectedDayOffset] = useState<0 | 1>(0);
   const selectedDate = useMemo(() => kyivDateOffsetKey(selectedDayOffset), [selectedDayOffset]);
 
-  // Черга, збережена окремо для кожної області
-  const availableQueues = currentRegionData.queues ?? [];
+  // Черга, збережена окремо для кожної області.
+  //
+  // Список групп берём из строки каталога, а если она пуста — из `/queues` (тот же список, но
+  // посчитанный по данным на сегодня). Это важно для областей, где оператор опубликовал день БЕЗ
+  // отключений: слотов в БД нет, и каталог мог отдать пустой список — тогда человек не видел ни
+  // одной кнопки группы. Если и `/queues` пуст, селектор покажет стандартные 12 подгрупп.
+  const { data: queuesResponse } = useQueues(currentRegion);
+  const queuesFromApi = useMemo(
+    () => (queuesResponse?.data ?? []).map((item) => item.queue),
+    [queuesResponse],
+  );
+  const availableQueues = useMemo(() => {
+    const fromCatalog = currentRegionData.queues ?? [];
+    if (fromCatalog.length > 0) return fromCatalog;
+    return queuesFromApi;
+  }, [currentRegionData.queues, queuesFromApi]);
   const { selectedQueue, selectQueue } = useRegionQueue(currentRegion, availableQueues);
 
   /** Перемикання на збережену закладку: зміна області + вибір її черги в один клік. */
@@ -104,8 +118,8 @@ export const HomeHeroSection: React.FC = () => {
   // область, тому окремо для кожної кнопки додаткових запитів не робимо.
   useUpcomingGroupOutages(currentRegion, 2);
 
-  // Список групп области: он же несёт привязку «населённые пункты / улицы → группа».
-  const { data: queuesResponse } = useQueues(currentRegion);
+  // Список групп области: он же несёт привязку «населённые пункты / улицы → группа» (тот же
+  // `queuesResponse`, что и выше, — запрос один, кеш TanStack Query общий).
   const selectedQueuePlaces = (queuesResponse?.data ?? []).find((item) => item.queue === selectedQueue);
 
   // API отдаёт конверт { data: { queue, date, intervals, source, lastImportedAt } }, а fetcher()
@@ -122,7 +136,7 @@ export const HomeHeroSection: React.FC = () => {
   // Показываем hasRegionData true, если регион синхронизирован (даже если для этой очереди интервалов нет)
   // или если по выбранной очереди реально пришли интервалы: пустой блок «Даних графіка немає»
   // не должен показываться, когда API уже вернул график.
-  const hasRegionData = currentRegionData.slots > 0 || hasSchedule || hasIntervals;
+  const hasRegionData = (currentRegionData.todaySlots ?? currentRegionData.slots) > 0 || hasSchedule || hasIntervals;
 
   // Секундний тик для обратного отсчёта. Зупиняється, коли вкладка не видна: иначе таймер
   // будил бы CPU телефона каждую секунду, пока приложение лежит в кармане.

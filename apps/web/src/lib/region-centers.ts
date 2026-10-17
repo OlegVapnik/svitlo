@@ -34,7 +34,6 @@ export const REGION_CENTERS: Record<string, { center: [number, number]; zoom: nu
   'luhanska-oblast': { center: [48.6, 39.3], zoom: 8 },
   'sumska-oblast': { center: [51.0, 34.1], zoom: 8 },
   'kirovohradska-oblast': { center: [48.5, 32.0], zoom: 8 },
-  'chernihivska-oblast-tyn': { center: [51.3, 31.3], zoom: 8 },
   'sevastopol': { center: [44.6, 33.5], zoom: 10 },
 };
 

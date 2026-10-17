@@ -28,7 +28,7 @@ import {
 // что и Node-бэкенд, поэтому список «Що нового» одинаков на обоих серверах.
 import changelog from './data/changelog.json';
 
-export interface Env {
+interface Env {
   DB: D1Database;
   MIRROR_SCHEDULE_URL: string;
   NEWS_CHANNELS: string;
@@ -48,24 +48,53 @@ const OFF_STATE = { code: 3 as const, name: 'Відключення', color: '#E
 /** Зеркало отдаёт код 2 = «свет выключен»; остальные коды — свет есть. */
 const MIRROR_OFF_CODE = 2;
 
-/** Часовой пояс, в котором оператор публикует график. */
-const KYIV_TZ = 'Europe/Kyiv';
+/**
+ * Момент перевода часов: последнее воскресенье месяца (0 — январь) в 01:00 UTC.
+ *
+ * Украина переходит на летнее время в последнее воскресенье марта в 03:00 по местному (01:00 UTC),
+ * а возвращается к зимнему — в последнее воскресенье октября в 04:00 по местному (01:00 UTC).
+ * Правило действует с 1996 года и не менялось, поэтому его можно считать арифметикой.
+ */
+function lastSundayOneUtc(year: number, monthIndex: number): number {
+  const lastDayOfMonth = new Date(Date.UTC(year, monthIndex + 1, 0));
+  const day = lastDayOfMonth.getUTCDate() - lastDayOfMonth.getUTCDay();
+  return Date.UTC(year, monthIndex, day, 1, 0, 0);
+}
 
-/** Сколько минут в часовом поясе Киева для указанной даты — зимой UTC+2, летом UTC+3. */
-function kyivOffsetMinutes(date: string): number {
-  try {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: KYIV_TZ,
-      timeZoneName: 'longOffset',
-    });
-    const part = formatter.formatToParts(new Date(`${date}T00:00:00Z`)).find((item) => item.type === 'timeZoneName');
-    const match = /GMT([+-])(\d{1,2})(?::(\d{2}))?/u.exec(part?.value ?? '');
-    if (!match) return 120;
-    const sign = match[1] === '-' ? -1 : 1;
-    return sign * (Number(match[2]) * 60 + Number(match[3] ?? 0));
-  } catch {
-    return 120;
+/**
+ * Сдвиг киевского времени относительно UTC в минутах для момента `ms`: +120 зимой, +180 летом.
+ *
+ * Раньше здесь стоял `Intl.DateTimeFormat` с `timeZoneName: 'longOffset'`, а в `localSlotToUtc` —
+ * ещё один форматтер с итеративным уточнением через `formatToParts`. Оба создавались ЗАНОВО на
+ * каждый слот: область с сотнями получасовок давала десятки миллисекунд CPU, а лимит воркера на
+ * бесплатном тарифе — 10 мс, и `/status`, `/sync`, `/reliability` отвечали 503 `error 1102`
+ * («Worker exceeded CPU time limit»). Арифметика вместо ICU даёт тот же результат (совпадение
+ * проверено сверкой с прежним расчётом на всех получасовках 2024–2027 годов) и стоит доли
+ * микросекунды.
+ */
+/**
+ * Границы летнего времени по годам (последнее воскресенье марта и октября) и последний
+ * использованный год: слоты одного ответа лежат в одном-двух годах, а `lastSundayOneUtc` — это
+ * `new Date` на каждую границу.
+ */
+const KYIV_DST_BOUNDS = new Map<number, [number, number]>();
+
+/** Год, для которого уже посчитаны границы, вместе с его началом и концом в UTC. */
+let kyivYearCache = { year: 0, start: 0, end: 0 };
+
+function kyivOffsetMinutesAt(ms: number): number {
+  // Границы летнего времени ищем один раз на год и запоминаем: `lastSundayOneUtc` строит `Date`,
+  // а `localSlotToUtc` спрашивает сдвиг до трёх раз на каждую границу слота — на месяце слотов
+  // это тысячи лишних `Date` в горячем пути `/reliability` и `/status`.
+  let year = kyivYearCache.year;
+  if (year === 0 || ms < kyivYearCache.start || ms >= kyivYearCache.end) {
+    year = new Date(ms).getUTCFullYear();
+    const bounds = KYIV_DST_BOUNDS.get(year) ?? [lastSundayOneUtc(year, 2), lastSundayOneUtc(year, 9)];
+    KYIV_DST_BOUNDS.set(year, bounds);
+    kyivYearCache = { year, start: Date.UTC(year, 0, 1), end: Date.UTC(year + 1, 0, 1) };
   }
+  const bounds = KYIV_DST_BOUNDS.get(year)!;
+  return ms >= bounds[0] && ms < bounds[1] ? 180 : 120;
 }
 
 /**
@@ -83,39 +112,53 @@ function localSlotToUtc(date: string, time: string, end: boolean): string {
     const next = new Date(`${date}T00:00:00Z`);
     next.setUTCDate(next.getUTCDate() + 1);
     const nextDate = next.toISOString().slice(0, 10);
-    return new Date(Date.parse(`${nextDate}T00:00:00Z`) - kyivOffsetMinutes(nextDate) * 60_000).toISOString();
+    const nextMidnight = Date.parse(`${nextDate}T00:00:00Z`);
+    return new Date(nextMidnight - kyivOffsetMinutesAt(nextMidnight) * 60_000).toISOString();
   }
   const [year, month, day] = date.split('-').map(Number) as [number, number, number];
   const [hour, minute] = time.split(':').map(Number) as [number, number];
   const target = Date.UTC(year, month - 1, day, hour, minute);
-  // Итеративное уточнение: Intl отдаёт локальное представление момента, и разница между ним и
-  // «хотимым» локальным временем и есть искомый сдвиг. Двух-трёх проходов достаточно.
+  // Сдвиг ищем сходимостью, но без ICU: на каждом проходе сравниваем «желаемое» локальное время с
+  // тем, которое даёт текущая догадка, и сдвигаем её на разницу. Это ровно тот же алгоритм, что был
+  // здесь на `Intl`/`formatToParts`, только представление локального времени считается арифметикой
+  // (3 прохода по числу). В час перевода стрелок локальное время неоднозначно; сохраняем прежний
+  // выбор — тот, к которому приводила итерация с `Intl`, чтобы уже отданные интервалы не поехали.
   let guess = target;
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: KYIV_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  });
   for (let i = 0; i < 3; i += 1) {
-    const parts = Object.fromEntries(
-      formatter.formatToParts(new Date(guess)).map((part) => [part.type, part.value]),
-    );
-    const represented = Date.UTC(
-      Number(parts['year']),
-      Number(parts['month']) - 1,
-      Number(parts['day']),
-      Number(parts['hour']),
-      Number(parts['minute']),
-    );
-    const delta = target - represented;
+    const wallClock = guess + kyivOffsetMinutesAt(guess) * 60_000;
+    const delta = target - wallClock;
     if (!delta) break;
     guess += delta;
   }
   return new Date(guess).toISOString();
+}
+
+/**
+ * Київське «дата + час» в UTC-миллисекунды — тот же расчёт, что у `localSlotToUtc`.
+ *
+ * Отдельная функция нужна из-за цены строк: `localSlotToUtc` строит ISO-строку, а вызывающий её тут
+ * же разбирает `Date.parse`. В отчёте надёжности это по два преобразования на каждую границу каждого
+ * слота (месяц × группы × 2), то есть миллисекунды CPU на пустом месте. `end && time === '00:00'` —
+ * полночь СЛЕДУЮЩЕГО дня: так зеркало записывает «до конца суток».
+ */
+function kyivWallClockMs(date: string, time: string, end: boolean): number {
+  const wallMs =
+    Date.UTC(
+      Number(date.slice(0, 4)),
+      Number(date.slice(5, 7)) - 1,
+      Number(date.slice(8, 10)),
+      Number(time.slice(0, 2)),
+      Number(time.slice(3, 5)),
+    ) + (end && time === '00:00' ? 86_400_000 : 0);
+  // Сходимость та же, что в `localSlotToUtc`: сравниваем желаемое локальное время с тем, которое
+  // даёт текущая догадка, и сдвигаем её на разницу.
+  let guess = wallMs;
+  for (let i = 0; i < 3; i += 1) {
+    const delta = wallMs - (guess + kyivOffsetMinutesAt(guess) * 60_000);
+    if (!delta) break;
+    guess += delta;
+  }
+  return guess;
 }
 
 /** 48 получасовых подписей суток: `00:00`, `00:30`, … `23:30`. */
@@ -201,7 +244,7 @@ interface Slot {
  * Зеркало отдаёт полезную нагрузку JSON-строкой внутри поля `body`, поэтому без этого шага
  * слоты не найдутся. Поддерживаем и вариант без обёртки — тогда `regions` лежит в корне.
  */
-export function unwrapMirrorPayload(raw: unknown): Record<string, unknown> | null {
+function unwrapMirrorPayload(raw: unknown): Record<string, unknown> | null {
   if (!isJsonObject(raw)) return null;
   const body = raw['body'];
   if (typeof body === 'string') {
@@ -226,7 +269,7 @@ function regionsOf(payload: Record<string, unknown>): unknown[] | null {
 }
 
 /** Слоты отключений одной области из разобранного payload зеркала. Чистая функция. */
-export function extractSlots(payload: Record<string, unknown>, regionCpu: string): Slot[] {
+function extractSlots(payload: Record<string, unknown>, regionCpu: string): Slot[] {
   const regions = regionsOf(payload);
   if (!regions) return [];
   const region = regions.find((item) => isJsonObject(item) && item['cpu'] === regionCpu);
@@ -278,7 +321,7 @@ export function extractSlots(payload: Record<string, unknown>, regionCpu: string
  * «оператор на эту дату ничего не публиковал»: и то, и другое давало пустой список слотов, и
  * приложение писало «Немає даних» там, где график есть.
  */
-export interface CoverageEntry {
+interface CoverageEntry {
   region: string;
   date: string;
   queue: string;
@@ -293,7 +336,109 @@ export interface CoverageEntry {
  * говорит про область и дату, а не про номер очереди. Такой пост — это покрытие (график
  * опубликован) без отключений, и именно поэтому регион перестаёт выглядеть «без данных».
  */
-export const ALL_CLEAR_QUEUE = '*';
+const ALL_CLEAR_QUEUE = '*';
+
+/**
+ * Кэш в памяти изолята. TTL — минута: данные обновляет крон раз в 20 минут, поэтому минута не
+ * отдаёт человеку устаревший график, зато снимает с D1 и с CPU всё, что повторяется в пределах
+ * минуты.
+ *
+ * Зачем это вообще нужно на бесплатном тарифе Cloudflare: лимит — 10 мс CPU на запрос, а `/sync`
+ * собирает пакет из десятков запросов к D1 (статус, каталог областей, слоты, список групп,
+ * справочник НП, новости). Воркер отвечал людям `503` с `error 1102`. Кэш на изоляте превращает
+ * повторные вызовы в `JSON.stringify` готового тела (десятые доли миллисекунды), а `scheduled()`
+ * чистит кэш сразу после обхода — свежие данные не ждут минуту.
+ *
+ * Хранилище — `Map`, поэтому перебор (`clear()`, вставка) дешёвый, а ключи уникальны; порядок
+ * вставки позволяет вытеснять самую старую запись при переполнении.
+ */
+const MEMORY_CACHE_TTL_MS = 60_000;
+
+/** Сколько записей держим: ключ включает область и параметры, поэтому записей немного. */
+const MEMORY_CACHE_LIMIT = 120;
+
+const memoryCache = new Map<string, { expiresAt: number; payload: unknown }>();
+
+/**
+ * Результат `producer` на `MEMORY_CACHE_TTL_MS` по строковому ключу.
+ *
+ * Отдаётся тот же объект, что и в первый раз: вызывающие только читают его (кладут в `json` или в
+ * тело пакета), поэтому копировать не нужно.
+ */
+async function cached<T>(key: string, producer: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const hit = memoryCache.get(key);
+  if (hit && hit.expiresAt > now) return hit.payload as T;
+  const payload = await producer();
+  remember(key, payload);
+  return payload;
+}
+
+/**
+ * Кладёт готовое значение в кэш изолята.
+ *
+ * Нужен там, где тело ответа собирается не одной функцией (`/reliability`, `/sync`): кэшировать
+ * приходится уже собранный объект, а не результат вызова-обёртки.
+ */
+function remember(key: string, payload: unknown): void {
+  if (memoryCache.size >= MEMORY_CACHE_LIMIT) {
+    // `Map` хранит порядок вставки: первый ключ — самая старая запись.
+    const oldest = memoryCache.keys().next();
+    if (!oldest.done) memoryCache.delete(oldest.value);
+  }
+  memoryCache.set(key, { expiresAt: Date.now() + MEMORY_CACHE_TTL_MS, payload });
+}
+
+/** Сбрасывает кэш изолята: вызывается после крона, который переписал данные. */
+function clearMemoryCache(): void {
+  memoryCache.clear();
+}
+
+/**
+ * Секундомер подзапросов для диагностики бюджета CPU.
+ *
+ * Включается `?timing=1` и пишет один `console.log` на запрос. В обычном запросе накладных
+ * расходов нет вовсе: при `enabled === false` ни один метод не вызывает `performance.now()`,
+ * потому что лимит — 10 мс и любая «просто диагностика» в горячем пути съедает его.
+ */
+function stepTimer(enabled: boolean) {
+  const started = enabled ? performance.now() : 0;
+  const marks: Array<{ step: string; ms: number }> = [];
+  /** Оборачивает ожидание: время пишется, только если секундомер включён. */
+  const measure = async <T,>(step: string, work: Promise<T>): Promise<T> => {
+    if (!enabled) return work;
+    const at = performance.now();
+    try {
+      return await work;
+    } finally {
+      marks.push({ step, ms: Math.round((performance.now() - at) * 10) / 10 });
+    }
+  };
+  /** Отметка шага, который считается не запросом, а чистым JS. */
+  const mark = (step: string, at: number): void => {
+    if (enabled) marks.push({ step, ms: Math.round((performance.now() - at) * 10) / 10 });
+  };
+  const done = (label: string): void => {
+    if (!enabled) return;
+    marks.push({ step: 'total', ms: Math.round((performance.now() - started) * 10) / 10 });
+    console.log(`${label} timing: ${JSON.stringify(marks)}`);
+  };
+  return { enabled, now: (): number => (enabled ? performance.now() : 0), mark, measure, done };
+}
+
+type StepTimer = ReturnType<typeof stepTimer>;
+
+/**
+ * Одна коллация на изолят: `.localeCompare(other, 'uk')` создаёт новый `Collator` на КАЖДЫЙ вызов,
+ * а сортировка списка НП и названий областей — это тысячи сравнений в горячем пути `/sync`. Общий
+ * экземпляр стоит одной инициализации на изолят и снимает миллисекунды CPU с каждого пакета.
+ */
+const UK_COLLATOR = new Intl.Collator('uk');
+
+/** Сравнение украинских строк по алфавиту — общим коллатором, а не новым на каждый вызов. */
+function compareUk(a: string, b: string): number {
+  return UK_COLLATOR.compare(a, b);
+}
 
 /**
  * Порядок «1, 1/2, 2, 2/2, 10»: сначала основная очередь, затем под-очередь.
@@ -302,7 +447,7 @@ export const ALL_CLEAR_QUEUE = '*';
  * `computeSyncEtag`: воркер собирается wrangler'ом отдельно и не тянет `@svitlo/shared`. Копия
  * должна вести себя одинаково: список групп в облачной и серверной сборках — один и тот же экран.
  */
-export function compareQueueCodes(a: string, b: string): number {
+function compareQueueCodes(a: string, b: string): number {
   const parse = (code: string): [number, number] => {
     const [major, minor] = code.split('/');
     return [Number(major), Number(minor ?? 0)];
@@ -314,7 +459,7 @@ export function compareQueueCodes(a: string, b: string): number {
 }
 
 /** Покрытие одной области из разобранного payload зеркала. Чистая функция. */
-export function extractCoverage(payload: Record<string, unknown>, regionCpu: string): CoverageEntry[] {
+function extractCoverage(payload: Record<string, unknown>, regionCpu: string): CoverageEntry[] {
   const regions = regionsOf(payload);
   if (!regions) return [];
   const region = regions.find((item) => isJsonObject(item) && item['cpu'] === regionCpu);
@@ -358,6 +503,16 @@ export function extractCoverage(payload: Record<string, unknown>, regionCpu: str
       if (!isYmd(date) || !isJsonObject(day)) continue;
       push(queue, date, labels.map((label) => cellCode(day[label])));
     }
+  }
+
+  // Регион отдал список групп, но НИ ОДНОЙ даты с графиком (`schedule: { "1.1": {} }`) — именно так
+  // зеркало присылает Киев. Это не «нет данных», а «график опубликован, отключений не
+  // запланировано»: без служебной строки покрытия область с живым графиком показывала «Даних
+  // графіка немає». Пишем `ALL_CLEAR_QUEUE` на сегодня — по ней `covered`/`allClear` станут true, и
+  // человек увидит «Світло за графіком (відключень не заплановано)».
+  if (entries.length === 0 && Object.keys(schedule).length > 0) {
+    const date = dateToday && isYmd(dateToday) ? dateToday : kyivToday();
+    entries.push({ region: regionCpu, date, queue: ALL_CLEAR_QUEUE, hasOutages: false });
   }
   return entries;
 }
@@ -421,7 +576,6 @@ function mergeSlots(slots: Slot[]): Slot[] {
  */
 const REGION_NAMES: Record<string, string> = {
   'chernihivska-oblast': 'Чернігівська область',
-  'chernihivska-oblast-tyn': 'Чернігівська область (мережі)',
   'kyiv': 'Київ',
   'kiivska-oblast': 'Київська область',
   'lvivska-oblast': 'Львівська область',
@@ -500,11 +654,125 @@ const REGION_ALIASES: Record<string, string> = {
 
 const REGION_BY_CPU = new Map(REGION_CATALOG.map((entry) => [entry.cpu, entry]));
 
+/** Ключ фида → канонический `cpu`. Копия той же карты, что в shared: без неё `kyiv` не находил
+ * `kyiv-city`, и запрос со старым ключом из закладки читал пустую область. */
+const CANONICAL_BY_FEED_KEY = new Map<string, string>();
+for (const entry of REGION_CATALOG) {
+  for (const feedKey of entry.feedKeys) {
+    if (feedKey !== entry.cpu) CANONICAL_BY_FEED_KEY.set(feedKey, entry.cpu);
+  }
+}
+
+/** Все ключи фида, какие вообще бывают: по ним отличаем «сеть» (`dnipro-cek`) от «области». */
+const FEED_KEYS = new Set<string>(REGION_CATALOG.flatMap((entry) => entry.feedKeys));
+
 /** Канонический `cpu` для того, что пришло снаружи: ключ фида, псевдоним или уже канонический. */
 function canonicalRegionCpu(cpu: string): string {
   const value = cpu.trim();
   if (REGION_BY_CPU.has(value)) return value;
-  return REGION_ALIASES[value] ?? value;
+  const alias = REGION_ALIASES[value];
+  if (alias) return alias;
+  return CANONICAL_BY_FEED_KEY.get(value) ?? value;
+}
+
+/**
+ * Все ключи, под которыми данные запрошенного кода могут лежать в D1.
+ *
+ * Зачем единая точка: после введения канонических `cpu` (`kyiv-city`, `kyivska-oblast`,
+ * `dnipropetrovska-oblast`) в `schedule_slots`/`schedule_coverage` данные остались под ключами фида
+ * (`kyiv`, `kiivska-oblast`, `dnipro-cek`), а закладки и `localStorage` людей хранят вообще старые
+ * коды. Чтение по одному ключу молча давало «даних графіка немає» при живом графике, поэтому SQL
+ * ищет сразу по ВСЕМ ключам области.
+ *
+ * Одно исключение — многомережная область: если человек назвал конкретную сеть (`dnipro-cek`),
+ * расширять её до всей области нельзя (у ЦЕК и ДнЕМ общая нумерация черг, но разные графики).
+ * Названа область целиком (`dnipropetrovska-oblast`) — возвращаются все её сети, а конкретную
+ * выбирает `resolveReadRegions` по фактическим данным.
+ */
+function resolveDbRegions(regionParam: string): string[] {
+  const value = (regionParam ?? '').trim().toLowerCase();
+  if (!value) return [];
+  const canonical = canonicalRegionCpu(value);
+  const feedKeys = regionFeedKeysOf(canonical);
+  const isNamedNetwork = value !== canonical && FEED_KEYS.has(value);
+  // Сеть названа явно, а сетей у области несколько — читаем ТОЛЬКО её: чужие часы показать нельзя.
+  if (isNamedNetwork && feedKeys.length > 1) return [value];
+  return [...new Set([value, canonical, ...feedKeys])];
+}
+
+/** `column IN (?, …)` по ключам чтения. Пустой список — фильтра по области нет («вся страна»). */
+function regionIn(regions: string[], column = 'region'): { clause: string; bindings: string[] } {
+  const keys = [...new Set(regions.filter((key) => key))];
+  if (keys.length === 0) return { clause: '', bindings: [] };
+  return { clause: `${column} IN (${keys.map(() => '?').join(', ')})`, bindings: keys };
+}
+
+/** Сколько данных у каждой сети многомережной области на дату: слоты, слоты нужной черги, покрытие. */
+async function networkDataOn(
+  env: Env,
+  keys: string[],
+  date: string,
+  queue: string | null,
+): Promise<Map<string, { slots: number; queueSlots: number; coverage: number }>> {
+  const filter = regionIn(keys);
+  const stats = new Map<string, { slots: number; queueSlots: number; coverage: number }>();
+  const [slots, coverage] = await Promise.all([
+    env.DB.prepare(
+      `SELECT region, COUNT(*) AS slots,
+              SUM(CASE WHEN queue = ? THEN 1 ELSE 0 END) AS queueSlots
+       FROM schedule_slots WHERE ${filter.clause} AND date = ? GROUP BY region`,
+    )
+      .bind(queue ?? '', ...filter.bindings, date)
+      .all<{ region: string; slots: number; queueSlots: number }>(),
+    env.DB.prepare(
+      `SELECT region, COUNT(*) AS n FROM schedule_coverage WHERE ${filter.clause} AND date = ? GROUP BY region`,
+    )
+      .bind(...filter.bindings, date)
+      .all<{ region: string; n: number }>(),
+  ]);
+  for (const row of slots.results ?? []) {
+    stats.set(row.region, { slots: row.slots ?? 0, queueSlots: row.queueSlots ?? 0, coverage: 0 });
+  }
+  for (const row of coverage.results ?? []) {
+    const current = stats.get(row.region) ?? { slots: 0, queueSlots: 0, coverage: 0 };
+    current.coverage = row.n ?? 0;
+    stats.set(row.region, current);
+  }
+  return stats;
+}
+
+/**
+ * Ключи чтения конкретного запроса. Область с одной сетью читается по всем своим ключам (канонический
+ * + ключ фида + легаси): данные под ними — это один и тот же график, а подстановка ключа не должна
+ * зависеть от того, что именно лежит у человека в закладке.
+ *
+ * Многомережная область сужается до ОДНОЙ сети по фактическим данным: сеть, у которой на запрошенную
+ * дату есть слоты нужной черги, затем — у которой есть слоты вообще, затем — покрытие. Раньше здесь
+ * отдавался 400 `AMBIGUOUS_REGION`, и экран области целиком падал в «даних графіка немає» при живом
+ * графике; теперь побеждает сеть с данными, а какую именно сеть человек хочет — он выбирает в
+ * каталоге (`dnipro-cek` / `dnipro-dnem`).
+ */
+async function resolveReadRegions(
+  env: Env,
+  dbRegions: string[],
+  date: string,
+  queue: string | null = null,
+): Promise<string[]> {
+  const keys = [...new Set(dbRegions.filter((key) => key))];
+  if (keys.length <= 1) return keys;
+  // Проверяем данные ТОЛЬКО когда у области несколько СЕТЕЙ (ключей фида): у `kyiv-city` ключи
+  // `kyiv-city` и `kyiv` — это один и тот же график, и лишние два запроса к D1 тут ничего не решают,
+  // а CPU-бюджет воркера (10 мс на запрос) решают: тяжёлые маршруты упирались в лимит 1102.
+  const feedKeys = regionFeedKeysOf(canonicalRegionCpu(keys[0]!));
+  if (feedKeys.length <= 1) return keys;
+  const candidates = keys.filter((key) => feedKeys.includes(key));
+  const stats = await networkDataOn(env, candidates.length > 0 ? candidates : keys, date, queue);
+  const pick =
+    candidates.find((key) => (stats.get(key)?.queueSlots ?? 0) > 0) ??
+    candidates.find((key) => (stats.get(key)?.slots ?? 0) > 0) ??
+    candidates.find((key) => (stats.get(key)?.coverage ?? 0) > 0) ??
+    candidates[0];
+  return pick ? [pick] : keys;
 }
 
 /**
@@ -600,7 +868,7 @@ function stripHtml(html: string): string {
  * Берём только то, что видно любому посетителю без токена бота: текст поста, ссылку и время
  * публикации. Ничего не выдумываем — если разметка неожиданная, возвращаем пустой массив.
  */
-export function parseTelegramChannel(html: string, sourceKey: string): Array<Omit<NewsRow, 'first_seen_at'>> {
+function parseTelegramChannel(html: string, sourceKey: string): Array<Omit<NewsRow, 'first_seen_at'>> {
   const items: Array<Omit<NewsRow, 'first_seen_at'>> = [];
   // Каждый пост — блок `.tgme_widget_message`; внутри него дата в `time[datetime]` и текст.
   const blocks = html.split('tgme_widget_message_wrap').slice(1);
@@ -629,7 +897,7 @@ export function parseTelegramChannel(html: string, sourceKey: string): Array<Omi
 }
 
 /** Минимальный разбор RSS/Atom: только заголовок, ссылка и дата. */
-export function parseRssFeed(xml: string, sourceKey: string): Array<Omit<NewsRow, 'first_seen_at'>> {
+function parseRssFeed(xml: string, sourceKey: string): Array<Omit<NewsRow, 'first_seen_at'>> {
   const items: Array<Omit<NewsRow, 'first_seen_at'>> = [];
   const blocks = xml.match(/<item[\s\S]*?<\/item>/giu) ?? [];
   for (const block of blocks.slice(0, 40)) {
@@ -751,10 +1019,10 @@ async function runChernihiv(env: Env): Promise<boolean> {
     }
   }
 
-  const today = kyivToday();
   const outages = await collectChernihivOutages(
     { cityIds, types: [1, 2, 6], baseUrl },
-    kyivOffsetMinutes(today),
+    // Сдвиг на сегодняшний момент: оператор отдаёт время по Киеву, а события пишем в UTC.
+    kyivOffsetMinutesAt(Date.now()),
   );
   if (outages.length === 0) return false;
 
@@ -765,129 +1033,341 @@ async function runChernihiv(env: Env): Promise<boolean> {
   return true;
 }
 
-/** Активные отключения оператора: начались и ещё не закончились. */
-async function countActiveOutages(env: Env, region: string): Promise<number> {
-  const now = new Date().toISOString();
+/**
+ * Счётчики статуса — ОДНИМ запросом к D1 вместо семи.
+ *
+ * Раньше здесь было семь последовательных `DB.prepare(...).first()`: каждый — отдельный
+ * round-trip, и `/status` вместе с `/sync` упирались в 10 мс CPU (Cloudflare отдавал 503
+ * `error 1102`). Скалярные подзапросы дают ровно те же числа: фильтр по области одинаковый,
+ * а `countIncidents` его и раньше не имел (считает аварии по всей стране).
+ *
+ * Порядок биндингов обязан совпадать с порядком `?` в запросе: `?` идут подзапрос за подзапросом
+ * слева направо, поэтому `filter.bindings` повторяются там, где повторяется `region IN (?, …)`.
+ */
+async function statusCounters(
+  env: Env,
+  regions: string[],
+  today: string,
+): Promise<{
+  totalQueues: number;
+  activeOutages: number;
+  scheduledOutages: number;
+  incidents: number;
+  outagesToday: number;
+  outages24h: number;
+  importedAt: string | null;
+}> {
+  const filter = regionIn(regions);
+  const where = filter.clause ? `${filter.clause} AND ` : '';
+  const nowIso = new Date().toISOString();
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // `importedAt` берём из `updated_at`, а не из `value`: `value` — это JSON сводки обхода
+  // (`{"fetchedAt":…,"slots":…}`), и в `lastUpdatedAt` уезжала вся строка целиком, а `Date.parse`
+  // в проверке `dataStale` давал `NaN`. `updated_at` cron пишет тем же ISO-моментом.
   const row = await env.DB.prepare(
-    region
-      ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND starts_at <= ? AND ends_at >= ?`
-      : `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at <= ? AND ends_at >= ?`,
-  ).bind(...(region ? [region, now, now] : [now, now])).first<{ n: number }>();
-  return row?.n ?? 0;
-}
-
-/** Отключения, которые начнутся позже. */
-async function countScheduledOutages(env: Env, region: string): Promise<number> {
-  const row = await env.DB.prepare(
-    region ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND starts_at > ?`
-           : `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at > ?`,
-  ).bind(...(region ? [region, new Date().toISOString()] : [new Date().toISOString()])).first<{ n: number }>();
-  return row?.n ?? 0;
-}
-
-/** Сколько групп области сейчас без света по графику. */
-async function countGroupsOffNow(env: Env, region: string, today: string): Promise<number> {
-  const rows = await region
-    ? await loadSlots(env, region, today)
-    : await env.DB.prepare(`SELECT * FROM schedule_slots WHERE date = ?`).bind(today).all<SlotRow>().then((r) => r.results ?? []);
-  const nowMs = Date.now();
-  const off = new Set<string>();
-  for (const row of rows) {
-    const startsAt = localSlotToUtc(row.date, row.time_from, false);
-    const endsAt = localSlotToUtc(row.date, row.time_to, true);
-    if (Date.parse(startsAt) <= nowMs && nowMs < Date.parse(endsAt)) off.add(normalizeQueue(row.queue));
-  }
-  return off.size;
-}
-
-/** Сколько групп области погашены дальше сегодня. */
-async function countGroupsOffLater(env: Env, region: string, today: string): Promise<number> {
-  const rows = await region
-    ? await loadSlots(env, region, today)
-    : await env.DB.prepare(`SELECT * FROM schedule_slots WHERE date = ?`).bind(today).all<SlotRow>().then((r) => r.results ?? []);
-  const nowMs = Date.now();
-  const later = new Set<string>();
-  for (const row of rows) {
-    if (Date.parse(localSlotToUtc(row.date, row.time_from, false)) > nowMs) {
-      later.add(normalizeQueue(row.queue));
-    }
-  }
-  return later.size;
-}
-
-async function countIncidents(env: Env): Promise<number> {
-  const row = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM outage_events WHERE kind = 'emergency' AND ends_at >= ?`,
-  ).bind(new Date().toISOString()).first<{ n: number }>();
-  return row?.n ?? 0;
-}
-
-async function countOutagesToday(env: Env, region: string): Promise<number> {
-  const day = kyivToday();
-  const row = await env.DB.prepare(
-    region ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND substr(starts_at,1,10) = ?`
-           : `SELECT COUNT(*) AS n FROM outage_events WHERE substr(starts_at,1,10) = ?`,
-  ).bind(...(region ? [region, day] : [day])).first<{ n: number }>();
-  return row?.n ?? 0;
-}
-
-async function countOutages24h(env: Env, region: string): Promise<number> {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const row = await env.DB.prepare(
-    region ? `SELECT COUNT(*) AS n FROM outage_events WHERE region = ? AND starts_at >= ?`
-           : `SELECT COUNT(*) AS n FROM outage_events WHERE starts_at >= ?`,
-  ).bind(...(region ? [region, since] : [since])).first<{ n: number }>();
-  return row?.n ?? 0;
+    `SELECT
+       (SELECT COUNT(DISTINCT region || '|' || queue) FROM schedule_slots) AS totalQueues,
+       (SELECT COUNT(*) FROM outage_events WHERE ${where}starts_at <= ? AND ends_at >= ?) AS activeOutages,
+       (SELECT COUNT(*) FROM outage_events WHERE ${where}starts_at > ?) AS scheduledOutages,
+       (SELECT COUNT(*) FROM outage_events WHERE kind = 'emergency' AND ends_at >= ?) AS incidents,
+       (SELECT COUNT(*) FROM outage_events WHERE ${where}substr(starts_at, 1, 10) = ?) AS outagesToday,
+       (SELECT COUNT(*) FROM outage_events WHERE ${where}starts_at >= ?) AS outages24h,
+       (SELECT updated_at FROM snapshot_meta WHERE key = 'schedule') AS importedAt`,
+  )
+    .bind(
+      ...filter.bindings,
+      nowIso,
+      nowIso,
+      ...filter.bindings,
+      nowIso,
+      nowIso,
+      ...filter.bindings,
+      today,
+      ...filter.bindings,
+      since24h,
+    )
+    .first<{
+      totalQueues: number | null;
+      activeOutages: number | null;
+      scheduledOutages: number | null;
+      incidents: number | null;
+      outagesToday: number | null;
+      outages24h: number | null;
+      importedAt: string | null;
+    }>();
+  return {
+    totalQueues: row?.totalQueues ?? 0,
+    activeOutages: row?.activeOutages ?? 0,
+    scheduledOutages: row?.scheduledOutages ?? 0,
+    incidents: row?.incidents ?? 0,
+    outagesToday: row?.outagesToday ?? 0,
+    outages24h: row?.outages24h ?? 0,
+    importedAt: row?.importedAt ?? null,
+  };
 }
 
 /**
- * Сколько минут без света по графику группы за указанные даты.
+ * Что даёт ОДИН список слотов за сутки: сколько групп без света сейчас, сколько погасят позже и
+ * сколько минут без света в среднем на группу.
  *
- * Считаем по интервалам, а не числу записей: иначе в «надёжности» отключение на полчаса и
- * на шесть часов считались бы одинаково.
+ * Раньше это были три независимые функции, каждая заново читала слоты той же даты из D1
+ * (`countGroupsOffNow` + `countGroupsOffLater` + `outageMinutesInWindow`): четыре чтения вместо
+ * двух и четыре прохода по одним и тем же строкам. Считаем один раз и отдаём все числа.
  */
-async function outageMinutesInWindow(env: Env, region: string, date: string): Promise<number> {
-  const rows = await region
-    ? await loadSlots(env, region, date)
-    : await env.DB.prepare(`SELECT * FROM schedule_slots WHERE date = ?`).bind(date).all<SlotRow>().then((r) => r.results ?? []);
-  const byQueue = new Map<string, SlotRow[]>();
+function daySlotStats(
+  rows: SlotRow[],
+  nowMs: number,
+): { activeGroups: number; scheduledGroups: number; outageMinutes: number } {
+  const active = new Set<string>();
+  const later = new Set<string>();
+  const byQueue = new Map<string, Array<[number, number]>>();
   for (const row of rows) {
-    const key = normalizeQueue(row.queue);
-    const list = byQueue.get(key);
-    if (list) list.push(row);
-    else byQueue.set(key, [row]);
+    const queue = normalizeQueue(row.queue);
+    const startMs = kyivWallClockMs(row.date, row.time_from, false);
+    const endMs = kyivWallClockMs(row.date, row.time_to, true);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
+    if (startMs <= nowMs && nowMs < endMs) active.add(queue);
+    if (startMs > nowMs) later.add(queue);
+    const intervals = byQueue.get(queue) ?? [];
+    intervals.push([startMs, endMs]);
+    byQueue.set(queue, intervals);
   }
+
   // Усредняем ПО ГРУППАМ, а не складываем. Отключения разных групп идут параллельно:
   // сумма по 12 группам легко превышает сутки и давала бы отрицательную надёжность
-  // («минус 145%»), что бессмысленно. Человека интересует «сколько времени у меня",
+  // («минус 145%»), что бессмысленно. Человека интересует «сколько времени у меня»,
   // а у человека одна группа — значит, среднее по группам и есть честный ответ.
-  if (byQueue.size === 0) return 0;
+  //
+  // Слияние считаем в миллисекундах: раньше интервалы заворачивались в ISO-строки и разбирались
+  // обратно `Date.parse` — два лишних преобразования на каждый слот в горячем пути `/status`.
   let sum = 0;
-  for (const queueRows of byQueue.values()) {
-    sum += mergedMinutes(queueRows.map((row) => ({
-      startsAt: localSlotToUtc(row.date, row.time_from, false),
-      endsAt: localSlotToUtc(row.date, row.time_to, true),
-    })));
+  for (const intervals of byQueue.values()) {
+    intervals.sort((a, b) => a[0] - b[0]);
+    let total = 0;
+    let cursor = Number.NEGATIVE_INFINITY;
+    for (const [startMs, endMs] of intervals) {
+      const from = Math.max(startMs, cursor);
+      if (endMs > from) {
+        total += endMs - from;
+        cursor = endMs;
+      }
+    }
+    sum += Math.round(total / 60_000);
   }
-  return Math.round(sum / byQueue.size);
+  return {
+    activeGroups: active.size,
+    scheduledGroups: later.size,
+    outageMinutes: byQueue.size === 0 ? 0 : Math.round(sum / byQueue.size),
+  };
 }
 
-/** Длина объединённых интервалов в минутах — пересечения не считаются дважды. */
-function mergedMinutes(intervals: Array<{ startsAt: string; endsAt: string }>): number {
-  const sorted = intervals
-    .map((item) => ({ from: Date.parse(item.startsAt), to: Date.parse(item.endsAt) }))
-    .filter((item) => Number.isFinite(item.from) && Number.isFinite(item.to) && item.to > item.from)
-    .sort((a, b) => a.from - b.from);
+/**
+ * Слот отчёта, подготовленный один раз: границы — в миллисекундах UTC, дата — дата НАЧАЛА слота.
+ *
+ * Перевод київського времени в UTC — самая дорогая операция отчёта, и раньше он выполнялся заново
+ * для каждого окна (день, неделя, месяц, сводки), то есть десятки раз на одни и те же строки.
+ */
+interface ReliabilitySlot {
+  date: string;
+  startMs: number;
+  endMs: number;
+}
+
+/**
+ * Слоты месяца, прочитанные ОДНИМ запросом и разложенные по парам «область + группа».
+ *
+ * Окна отчёта — это наборы целых дат внутри месяца, поэтому все они считаются по этому же набору
+ * чисел. Раньше каждое окно делало собственный запрос к D1 и заново разбирало те же строки:
+ * ~40 обращений и ~40 разборов на один заход — именно это съедало бюджет CPU воркера и давало
+ * `503 error 1102` на `/reliability`.
+ */
+interface ReliabilityIndex {
+  byQueue: Map<string, { region: string; queue: string; slots: ReliabilitySlot[] }>;
+}
+
+/** Итоги окна отчёта в той форме, которую читает фронтенд. */
+interface ReliabilityTotals {
+  windowMinutes: number;
+  outageMinutes: number;
+  poweredMinutes: number;
+  reliabilityPct: number;
+  hasData: boolean;
+  outageCount: number;
+}
+
+/** Читает слоты за период (все области сразу) и готовит их к расчёту окон. */
+async function loadReliabilityIndex(env: Env, fromDate: string, toDate: string): Promise<ReliabilityIndex> {
+  const result = await env.DB.prepare(
+    `SELECT region, queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
+  )
+    .bind(fromDate, toDate)
+    .all<{ region: string; queue: string; date: string; time_from: string; time_to: string }>();
+
+  const byQueue = new Map<string, { region: string; queue: string; slots: ReliabilitySlot[] }>();
+  for (const row of result.results ?? []) {
+    const startMs = kyivWallClockMs(row.date, row.time_from, false);
+    const endMs = kyivWallClockMs(row.date, row.time_to, true);
+    // Битый слот (пустое время, конец раньше начала) не считаем: правдоподобной цифры из него не
+    // выйдет, а отрицательная длительность сломала бы и сумму, и процент.
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) continue;
+    const queue = normalizeQueue(row.queue);
+    const key = `${row.region}|${queue}`;
+    const entry = byQueue.get(key) ?? { region: row.region, queue, slots: [] };
+    entry.slots.push({ date: row.date, startMs, endMs });
+    byQueue.set(key, entry);
+  }
+  // Порядок строк в ответе D1 не гарантирован, а объединение интервалов требует сортировки.
+  for (const entry of byQueue.values()) entry.slots.sort((a, b) => a.startMs - b.startMs);
+  return { byQueue };
+}
+
+/**
+ * Объединение интервалов в пределах окна: минуты без света и число интервалов.
+ *
+ * Пересечения не считаются дважды (`22:00–01:00` и `00:00–02:00` — это три часа, а не пять), а
+ * границы окна обрезают слот, как в Node-бэкенде: иначе вчерашний слот целиком попадал в
+ * сегодняшний бакет. Слоты обязаны быть отсортированы по началу — это делает `loadReliabilityIndex`.
+ */
+function unionInWindow(slots: ReliabilitySlot[], fromMs: number, toMs: number): { minutes: number; count: number } {
   let total = 0;
-  let cursor = Number.NEGATIVE_INFINITY;
-  for (const item of sorted) {
-    const start = Math.max(item.from, cursor);
-    if (item.to > start) {
-      total += item.to - start;
-      cursor = item.to;
+  let count = 0;
+  let cursor = fromMs;
+  for (const slot of slots) {
+    const start = Math.max(slot.startMs, fromMs, cursor);
+    const end = Math.min(slot.endMs, toMs);
+    if (end > start) {
+      total += end - start;
+      count += 1;
+      cursor = end;
     }
   }
-  return Math.round(total / 60_000);
+  return { minutes: Math.round(total / 60_000), count };
+}
+
+/** Слоты пары «область + группа», попавшие в диапазон дат окна (дата начала слота). */
+function slotsInRange(entry: { slots: ReliabilitySlot[] }, fromDate: string, toDate: string): ReliabilitySlot[] {
+  return entry.slots.filter((slot) => slot.date >= fromDate && slot.date <= toDate);
+}
+
+/**
+ * Сводка по окну отчёта: сколько минут без света, сколько со светом и какой процент.
+ *
+ * Считается СРЕДНИМ по группам, а не суммой: отключения разных групп идут параллельно, и сумма
+ * за месяц легко превысила бы длину окна в несколько раз, дав надёжность ниже нуля. У конкретного
+ * человека одна группа — значит, среднее и есть его «сколько часов без света».
+ *
+ * Знаменатель — только дни, по которым слоты ЕСТЬ: иначе месячное окно в 31 день с данными за
+ * одни сутки давало «99,3% надійності», посчитанное по 30 дням, о которых мы ничего не знаем.
+ * Для окна в сутки знаменатель берём таким, каким его передал вызывающий (сегодняшние сутки ещё не
+ * прожиты — подмешивать в них будущее время значило бы врать).
+ *
+ * hasData=false, когда по окну нет ни одного слота: это «нет данных», а не «100% надёжности».
+ * Проверяем именно пересечение с окном, а не попадание в диапазон дат: слот, который целиком
+ * остался за границей окна (например, вчерашний, когда на сегодня график ещё не опубликован), —
+ * это не «сьогодні 100%», а «даних за сьогодні немає».
+ */
+function reliabilityTotals(
+  index: ReliabilityIndex,
+  regions: ReadonlySet<string>,
+  queueFilter: string | null,
+  fromDate: string,
+  toDate: string,
+  fromMs: number,
+  toMs: number,
+  windowMinutes: number,
+): ReliabilityTotals {
+  let sumMinutes = 0;
+  let queues = 0;
+  let outageCount = 0;
+  const daysWithData = new Set<string>();
+  for (const entry of index.byQueue.values()) {
+    if (!regions.has(entry.region)) continue;
+    if (queueFilter !== null && entry.queue !== queueFilter) continue;
+    const slots = slotsInRange(entry, fromDate, toDate);
+    if (slots.length === 0) continue;
+    const union = unionInWindow(slots, fromMs, toMs);
+    if (union.count === 0) continue;
+    queues += 1;
+    sumMinutes += union.minutes;
+    outageCount += union.count;
+    for (const slot of slots) {
+      // В `daysWithData` попадают только дни, чьи слоты реально задеты окном: слот целиком за его
+      // пределами (например, завтрашний в отчёте «по факт») — это не «день с данными».
+      if (slot.endMs >= fromMs && slot.startMs <= toMs) daysWithData.add(slot.date);
+    }
+  }
+  if (queues === 0) {
+    return { windowMinutes, outageMinutes: 0, poweredMinutes: 0, reliabilityPct: 0, hasData: false, outageCount: 0 };
+  }
+  const effectiveWindow =
+    windowMinutes <= 24 * 60
+      ? Math.max(1, windowMinutes)
+      : Math.max(24 * 60, Math.min(windowMinutes, daysWithData.size * 24 * 60));
+  const average = Math.round(sumMinutes / queues);
+  // Окно не может быть «переполнено»: если расчёт дал больше, данные противоречивы и показывать их
+  // — значит соврать. Тогда честно отдаём полное отключение без нуля.
+  const counted = Math.min(effectiveWindow, average);
+  return {
+    windowMinutes: effectiveWindow,
+    outageMinutes: counted,
+    poweredMinutes: Math.max(0, effectiveWindow - counted),
+    reliabilityPct:
+      effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
+    hasData: true,
+    outageCount,
+  };
+}
+
+/**
+ * Надёжность всех областей за окно — для сравнения «як у мене і як поруч».
+ *
+ * Пустые области в список не попадают: область без слотов — это «нет данных», и строка «0%» рядом
+ * с ней читалась бы как «там вообще нет света». Считаем тем же способом, что и по одной области
+ * (среднее по группам, знаменатель — только дни с данными), иначе цифры в сравнении были бы
+ * получены другим правилом и не сходились бы с цифрой своей области.
+ *
+ * Порядок — от худшей надёжности к лучшей: человек ищет свою область и то, что рядом с ней,
+ * а не алфавит.
+ */
+function reliabilityByRegion(
+  index: ReliabilityIndex,
+  fromDate: string,
+  toDate: string,
+  windowMinutes: number,
+  mirrorNames: Record<string, string>,
+): Array<Record<string, unknown>> {
+  const byRegion = new Map<string, { minutes: number; queues: number; days: Set<string>; count: number }>();
+  for (const entry of index.byQueue.values()) {
+    const slots = slotsInRange(entry, fromDate, toDate);
+    if (slots.length === 0) continue;
+    const target = byRegion.get(entry.region) ?? { minutes: 0, queues: 0, days: new Set<string>(), count: 0 };
+    target.minutes += unionInWindow(slots, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY).minutes;
+    target.queues += 1;
+    target.count += slots.length;
+    for (const slot of slots) target.days.add(slot.date);
+    byRegion.set(entry.region, target);
+  }
+
+  const summary: Array<Record<string, unknown>> = [];
+  for (const [cpu, data] of byRegion) {
+    const daysKnown = data.days.size;
+    const effectiveWindow = Math.max(24 * 60, Math.min(windowMinutes, daysKnown * 24 * 60));
+    const counted = Math.min(effectiveWindow, Math.round(data.minutes / Math.max(1, data.queues)));
+    summary.push({
+      region: cpu,
+      nameUa: REGION_NAMES[cpu] ?? mirrorNames[cpu] ?? cpu,
+      windowMinutes: effectiveWindow,
+      outageMinutes: counted,
+      poweredMinutes: Math.max(0, effectiveWindow - counted),
+      reliabilityPct:
+        effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
+      // Число интервалов по области: здесь это именно строки слотов, как и раньше.
+      outageCount: data.count,
+      hasData: true,
+      daysKnown,
+    });
+  }
+  return summary.sort((a, b) => Number(a['reliabilityPct']) - Number(b['reliabilityPct']) || compareUk(String(a['region']), String(b['region'])));
 }
 
 /**
@@ -908,180 +1388,9 @@ interface ReliabilityWindow {
   isForecast?: boolean;
 }
 
-/**
- * Сводка по окну времени: сколько минут без света, сколько со светом и какой процент.
- *
- * Считается СРЕДНИМ по группам, а не суммой: отключения разных групп идут параллельно,
- * и сумма за месяц легко превысила бы длину окна в несколько раз, дав надёжность ниже нуля.
- * У конкретного человека одна группа — значит, среднее и есть его «сколько часов без света».
- *
- * hasData=false, когда по окну нет ни одного слота: это «нет данных», а не «100% надёжности».
- */
-async function reliabilityForRange(
-  env: Env,
-  region: string,
-  fromMs: number,
-  toMs: number,
-  windowMinutes: number,
-  queueFilter?: string,
-): Promise<{
-  windowMinutes: number;
-  outageMinutes: number;
-  poweredMinutes: number;
-  reliabilityPct: number;
-  hasData: boolean;
-  outageCount: number;
-}> {
-  const rows = await env.DB.prepare(
-    region
-      ? `SELECT queue, date, time_from, time_to FROM schedule_slots WHERE region = ? AND date >= ? AND date <= ?`
-      : `SELECT queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
-  )
-    .bind(...(region ? [region, isoDate(fromMs), isoDate(toMs)] : [isoDate(fromMs), isoDate(toMs)]))
-    .all<{ queue: string; date: string; time_from: string; time_to: string }>();
-
-  // Фильтр по группе делаем в JS, а не в SQL: коды черг приходят из разных источников и
-  // сравнивать их надо той же нормализацией, что и везде (`2.2` → `2/2`), иначе «2.2» из
-  // Telegram не нашёлся бы в отчёте вовсе.
-  const wanted = queueFilter ? normalizeQueue(queueFilter) : null;
-  const list = (rows.results ?? []).filter((row) => !wanted || normalizeQueue(row.queue) === wanted);
-  if (list.length === 0) {
-    return {
-      windowMinutes,
-      outageMinutes: 0,
-      poweredMinutes: 0,
-      reliabilityPct: 0,
-      hasData: false,
-      outageCount: 0,
-    };
-  }
-
-  // Интервалы обрезаем по границам окна — ровно так же, как Node-бэкенд
-  // (`computeWindowSummary`). Иначе вчерашний слот с 22:00 до 01:00 целиком попадал в сегодняшний
-  // бакет, и «без світла» за сутки выходило больше, чем есть.
-  const byQueue = new Map<string, Array<{ startsAt: string; endsAt: string }>>();
-  const daysWithData = new Set<string>();
-  for (const row of list) {
-    const startMs = Date.parse(localSlotToUtc(row.date, row.time_from, false));
-    const endMs = Date.parse(localSlotToUtc(row.date, row.time_to, true));
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
-    // Слот целиком за пределами окна (например, завтрашний в отчёте «по факт») не считаем вовсе.
-    if (endMs < fromMs || startMs > toMs) continue;
-    const queue = normalizeQueue(row.queue);
-    const intervals = byQueue.get(queue) ?? [];
-    intervals.push({
-      startsAt: new Date(Math.max(fromMs, startMs)).toISOString(),
-      endsAt: new Date(Math.min(toMs, endMs)).toISOString(),
-    });
-    byQueue.set(queue, intervals);
-    daysWithData.add(row.date);
-  }
-  if (byQueue.size === 0) {
-    return {
-      windowMinutes,
-      outageMinutes: 0,
-      poweredMinutes: 0,
-      reliabilityPct: 0,
-      hasData: false,
-      outageCount: 0,
-    };
-  }
-
-  // Знаменатель — только дни, по которым слоты ЕСТЬ. Иначе месячное окно в 31 день с
-  // данными за одни сутки давало «99,3% надійності» — цифра выглядит отличной, но
-  // посчитана по 30 дням, о которых мы ничего не знаем. Это ровно тот случай, где
-  // «нет данных» не должно выглядеть как «почти идеально».
-  // Для окна в одни сутки (день, а тем более сегодняшний — он ещё не прожит) знаменатель берём
-  // ровно таким, каким его передал вызывающий: подмешивать сюда «минимум сутки» значило бы
-  // записать в знаменатель время, которого ещё не было.
-  const effectiveWindow = windowMinutes <= 24 * 60
-    ? Math.max(1, windowMinutes)
-    : Math.max(24 * 60, Math.min(windowMinutes, daysWithData.size * 24 * 60));
-
-  let sum = 0;
-  for (const intervals of byQueue.values()) sum += mergedMinutes(intervals);
-  const average = Math.round(sum / byQueue.size);
-  // Окно не может быть «переполнено»: если расчёт дал больше, данные противоречивы и
-  // показывать их — значит соврать. Тогда честно отдаём полное отключение без нуля.
-  const counted = Math.min(effectiveWindow, average);
-  return {
-    windowMinutes: effectiveWindow,
-    outageMinutes: counted,
-    poweredMinutes: Math.max(0, effectiveWindow - counted),
-    reliabilityPct: effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
-    hasData: true,
-    outageCount: [...byQueue.values()].reduce((total, intervals) => total + intervals.length, 0),
-  };
-}
-
 /** Момент времени → YYYY-MM-DD (по UTC, как слоты лежат в базе). */
 function isoDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
-}
-
-/**
- * Надёжность всех областей за окно — для сравнения «як у мене і як поруч».
- *
- * Пустые области в список не попадают: область без слотов — это «нет данных», и строка «0%»
- * рядом с ней читалась бы как «там вообще нет света». Считаем тем же способом, что и по одной
- * области (среднее по группам, знаменатель — только дни с данными), иначе цифры в сравнении
- * были бы получены другим правилом и не сходились бы с цифрой своей области.
- *
- * Порядок — от худшей надёжности к лучшей: человек ищет свою область и то, что рядом с ней,
- * а не алфавит.
- */
-async function reliabilityByRegion(
-  env: Env,
-  fromMs: number,
-  toMs: number,
-  windowMinutes: number,
-  mirrorNames: Record<string, string>,
-): Promise<Array<Record<string, unknown>>> {
-  const rows = await env.DB.prepare(
-    `SELECT region, queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
-  )
-    .bind(isoDate(fromMs), isoDate(toMs))
-    .all<SlotRow>();
-
-  const byRegion = new Map<string, SlotRow[]>();
-  for (const row of rows.results ?? []) {
-    const list = byRegion.get(row.region);
-    if (list) list.push(row);
-    else byRegion.set(row.region, [row]);
-  }
-
-  const summary: Array<Record<string, unknown>> = [];
-  for (const [cpu, list] of byRegion) {
-    const daysKnown = new Set(list.map((row) => row.date)).size;
-    const effectiveWindow = Math.max(24 * 60, Math.min(windowMinutes, daysKnown * 24 * 60));
-    const byQueue = new Map<string, Array<{ startsAt: string; endsAt: string }>>();
-    for (const row of list) {
-      const key = normalizeQueue(row.queue);
-      const intervals = byQueue.get(key) ?? [];
-      intervals.push({
-        startsAt: localSlotToUtc(row.date, row.time_from, false),
-        endsAt: localSlotToUtc(row.date, row.time_to, true),
-      });
-      byQueue.set(key, intervals);
-    }
-    let sum = 0;
-    for (const intervals of byQueue.values()) sum += mergedMinutes(intervals);
-    const counted = Math.min(effectiveWindow, Math.round(sum / Math.max(1, byQueue.size)));
-    summary.push({
-      region: cpu,
-      nameUa: REGION_NAMES[cpu] ?? mirrorNames[cpu] ?? cpu,
-      windowMinutes: effectiveWindow,
-      outageMinutes: counted,
-      poweredMinutes: Math.max(0, effectiveWindow - counted),
-      reliabilityPct: effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
-      outageCount: list.length,
-      hasData: true,
-      daysKnown,
-    });
-  }
-  return summary.sort(
-    (a, b) => Number(a['reliabilityPct']) - Number(b['reliabilityPct']) || String(a['region']).localeCompare(String(b['region'])),
-  );
 }
 
 /**
@@ -1089,18 +1398,56 @@ async function reliabilityByRegion(
  * «9 жовт.», «6 жовт. – 12 жовт.», «жовтень 2026 р.». Без этого одна и та же карточка
  * «Статистика електропостачання» выглядела по-разному в зависимости от того, с кем разговаривает
  * фронтенд, а «2026-10-01» в узкой колонке обрезалось до многоточия.
+ *
+ * Названия месяцев — константы, а не `Intl.DateTimeFormat('uk-UA', …)`: построение двух ICU-форматтеров
+ * (и форматирование каждого дня месяца через них) съедало в `/reliability` до 8–10 мс CPU, то есть
+ * почти весь бюджет воркера (10 мс) ещё до обращения к данным. Строки совпадают с выводом ICU для
+ * `uk-UA` символ в символ: `{day:'numeric', month:'short'}` → «9 жовт.»,
+ * `{month:'long', year:'numeric'}` → «жовтень 2026 р.» (сокращения — «січ.», «лют.», «бер.»,
+ * «квіт.», «трав.», «черв.», «лип.», «серп.», «вер.», «жовт.», «лист.», «груд.»).
  */
-const dayLabelFormatter = new Intl.DateTimeFormat('uk-UA', { timeZone: 'UTC', day: 'numeric', month: 'short' });
-const monthLabelFormatter = new Intl.DateTimeFormat('uk-UA', { timeZone: 'UTC', month: 'long', year: 'numeric' });
+const UK_MONTHS_SHORT = [
+  'січ.',
+  'лют.',
+  'бер.',
+  'квіт.',
+  'трав.',
+  'черв.',
+  'лип.',
+  'серп.',
+  'вер.',
+  'жовт.',
+  'лист.',
+  'груд.',
+];
+
+/** Полные названия месяцев в именительном падеже — так их печатает ICU для «жовтень 2026 р.». */
+const UK_MONTHS_LONG = [
+  'січень',
+  'лютий',
+  'березень',
+  'квітень',
+  'травень',
+  'червень',
+  'липень',
+  'серпень',
+  'вересень',
+  'листопад',
+  'грудень',
+];
 
 /** Київская дата (YYYY-MM-DD) → подпись дня для человека. */
 function labelDayIso(iso: string): string {
-  return dayLabelFormatter.format(new Date(`${iso}T00:00:00.000Z`));
+  const [, month, day] = iso.split('-').map(Number) as [number, number, number];
+  const name = UK_MONTHS_SHORT[month - 1];
+  return name && Number.isFinite(day) ? `${day} ${name}` : iso;
 }
 
 /** Київская дата (YYYY-MM-DD) → подпись месяца. */
 function labelMonthIso(iso: string): string {
-  return monthLabelFormatter.format(new Date(`${iso}T00:00:00.000Z`));
+  const [year, month] = iso.split('-').map(Number) as [number, number];
+  const name = UK_MONTHS_LONG[month - 1];
+  return name && Number.isFinite(year) ? `${name} ${year} р.` : iso;
 }
 
 /** Сколько суток между двумя київскими датами (YYYY-MM-DD). */
@@ -1111,66 +1458,52 @@ function daysBetweenIso(fromIso: string, toIso: string): number {
 /**
  * Надёжность по группам области за окно: доля времени со светом по графику ГПВ.
  *
- * Знаменатель — только дни, за которые по группе ЕСТЬ слоты: за месяц в 31 день с данными за
- * одну добу получалось «99,9% надійності», посчитанное по 30 дням, о которых мы ничего не знаем.
- * Это ровно тот случай, где «нет данных» нельзя показывать как «почти идеально».
+ * Знаменатель — только дни, за которые по группе ЕСТЬ слоты: за месяц в 31 день с данными за одну
+ * добу получалось «99,9% надійності», посчитанное по 30 дням, о которых мы ничего не знаем.
  *
- * Завтрашний прогноз в разбивку по группам не берём: там рядом с фактом стояла бы цифра из
- * ещё не наступившего дня. Порядок — от худшей надёжности к лучшей, как в Node-отчёте.
+ * Завтрашний прогноз в разбивку по группам не берём: там рядом с фактом стояла бы цифра из ещё не
+ * наступившего дня. Порядок — от худшей надёжности к лучшей, как в Node-отчёте.
  */
-async function reliabilityByQueue(
-  env: Env,
-  region: string,
+function reliabilityByQueue(
+  index: ReliabilityIndex,
+  regions: ReadonlySet<string>,
   fromDate: string,
   toDate: string,
   windowMinutes: number,
 ) {
-  const rows = await env.DB.prepare(
-    region
-      ? `SELECT queue, date, time_from, time_to FROM schedule_slots WHERE region = ? AND date >= ? AND date <= ?`
-      : `SELECT queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
-  )
-    .bind(...(region ? [region, fromDate, toDate] : [fromDate, toDate]))
-    .all<{ queue: string; date: string; time_from: string; time_to: string }>();
-
-  const byQueue = new Map<string, Array<{ date: string; time_from: string; time_to: string }>>();
-  for (const row of rows.results ?? []) {
-    const key = normalizeQueue(row.queue);
-    const list = byQueue.get(key);
-    if (list) list.push(row);
-    else byQueue.set(key, [row]);
+  // Одна группа может прийти из нескольких сетей области: считаем её один раз и по объединению
+  // интервалов всех сетей — иначе группа с двумя источниками попала бы в отчёт дважды.
+  const byQueue = new Map<string, { slots: ReliabilitySlot[]; days: Set<string> }>();
+  for (const entry of index.byQueue.values()) {
+    if (!regions.has(entry.region)) continue;
+    const slots = slotsInRange(entry, fromDate, toDate);
+    if (slots.length === 0) continue;
+    const target = byQueue.get(entry.queue) ?? { slots: [], days: new Set<string>() };
+    for (const slot of slots) {
+      target.slots.push(slot);
+      target.days.add(slot.date);
+    }
+    byQueue.set(entry.queue, target);
   }
 
   return [...byQueue.entries()]
-    .map(([queue, queueRows]) => {
-      const daysWithData = new Set(queueRows.map((row) => row.date)).size;
+    .map(([queue, data]) => {
+      data.slots.sort((a, b) => a.startMs - b.startMs);
+      const daysWithData = data.days.size;
       const effectiveWindow = Math.max(24 * 60, Math.min(windowMinutes, daysWithData * 24 * 60));
-      const outageMinutes = mergedMinutes(
-        queueRows.map((row) => ({
-          startsAt: localSlotToUtc(row.date, row.time_from, false),
-          endsAt: localSlotToUtc(row.date, row.time_to, true),
-        })),
-      );
+      const outageMinutes = unionInWindow(data.slots, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY).minutes;
       const counted = Math.min(effectiveWindow, outageMinutes);
       return {
         queue,
         windowMinutes: effectiveWindow,
         outageMinutes: counted,
         poweredMinutes: Math.max(0, effectiveWindow - counted),
-        reliabilityPct: effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
+        reliabilityPct:
+          effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
         hasData: outageMinutes > 0,
       };
     })
     .sort((a, b) => a.reliabilityPct - b.reliabilityPct || b.outageMinutes - a.outageMinutes);
-}
-
-/** Улицы, привязанные к очереди, — из справочника и привязок (до 50 по алфавиту). */
-async function streetNamesForQueue(env: Env, region: string, queue: string): Promise<string[]> {
-  const bound = await env.DB.prepare(
-    `SELECT DISTINCT street_name AS name FROM address_queues
-     WHERE region = ? AND queue = ? AND street_name <> '' ORDER BY street_name LIMIT 50`,
-  ).bind(region, queue).all<{ name: string }>();
-  return (bound.results ?? []).map((row) => row.name);
 }
 
 /** Прибавляет одно отключение к накопителю «сколько раз» и «сколько минут». */
@@ -1178,8 +1511,14 @@ function addBucket(current: { count: number; minutes: number } | undefined, minu
   return { count: (current?.count ?? 0) + 1, minutes: (current?.minutes ?? 0) + minutes };
 }
 
-/** Гарантирует наличие таблиц. Вызывается перед записью: D1 не знает про `IF NOT EXISTS` при CREATE? */
+/**
+ * Гарантирует наличие таблиц.
+ *
+ * Все DDL-запросы идемпотентны (`IF NOT EXISTS`), поэтому их безопасно повторять после перезапуска
+ * изолята; отправляем их одной пачкой, а не десятью последовательными запросами.
+ */
 async function ensureSchema(env: Env): Promise<void> {
+  const prepared: D1PreparedStatement[] = [];
   const statements = [
     `CREATE TABLE IF NOT EXISTS schedule_slots (
       region TEXT NOT NULL, queue TEXT NOT NULL, date TEXT NOT NULL,
@@ -1209,8 +1548,12 @@ async function ensureSchema(env: Env): Promise<void> {
       PRIMARY KEY (provider, city_id))`,
   ];
   for (const sql of statements) {
-    await env.DB.prepare(sql).run();
+    prepared.push(env.DB.prepare(sql));
   }
+  // `batch()` — один round-trip к D1 вместо десяти последовательных `run()`: DDL идемпотентны
+  // (`IF NOT EXISTS`), порядок внутри batch сохраняется, а каждый лишний round-trip на холодном
+  // изоляте — это CPU, которого при лимите 10 мс и так не хватает.
+  await env.DB.batch(prepared);
 }
 
 /**
@@ -1354,11 +1697,12 @@ async function saveCoverage(
 }
 
 /** Покрытие одной области за диапазон дат (включительно). */
-async function loadCoverage(env: Env, region: string, from: string, to: string): Promise<CoverageRow[]> {
+async function loadCoverage(env: Env, regions: string[], from: string, to: string): Promise<CoverageRow[]> {
+  const filter = regionIn(regions);
   const result = await env.DB.prepare(
     `SELECT region, date, queue, has_outages, source FROM schedule_coverage
-     WHERE region = ? AND date >= ? AND date <= ?`,
-  ).bind(region, from, to).all<CoverageRow>();
+     WHERE ${filter.clause ? `${filter.clause} AND ` : ''}date >= ? AND date <= ?`,
+  ).bind(...filter.bindings, from, to).all<CoverageRow>();
   return result.results ?? [];
 }
 
@@ -1373,8 +1717,8 @@ interface DayCoverage {
 }
 
 /** Покрытие области за одну дату: пустой набор — «оператор на эту дату ничего не публиковал». */
-async function coverageOfDay(env: Env, region: string, date: string): Promise<DayCoverage> {
-  const rows = await loadCoverage(env, region, date, date);
+async function coverageOfDay(env: Env, regions: string[], date: string): Promise<DayCoverage> {
+  const rows = await loadCoverage(env, regions, date, date);
   const coverage: DayCoverage = { queues: new Set(), offQueues: new Set(), sources: new Set() };
   for (const row of rows) {
     const queue = normalizeQueue(row.queue);
@@ -1499,7 +1843,7 @@ async function saveTelegramOutageEvents(env: Env, events: TelegramOutageEvent[])
 }
 
 /** Один пост канала так, как он виден на публичной странице `t.me/s/<канал>`. */
-export interface TelegramSchedulePost {
+interface TelegramSchedulePost {
   text: string;
   /** Ссылка на пост (`https://t.me/<канал>/<номер>`) или `null`, если разметка её не отдала. */
   url: string | null;
@@ -1516,7 +1860,7 @@ export interface TelegramSchedulePost {
  * поста (для разбора ГПВ) и его идентификатор — по нему дедуплицируются точковые события.
  * Токен бота не нужен: это открытая веб-версия канала.
  */
-export function parseTelegramChannelPosts(html: string): TelegramSchedulePost[] {
+function parseTelegramChannelPosts(html: string): TelegramSchedulePost[] {
   const posts: TelegramSchedulePost[] = [];
   for (const block of html.split('tgme_widget_message_wrap').slice(1)) {
     const datetime = /<time[^>]*datetime="([^"]+)"/u.exec(block)?.[1];
@@ -1746,6 +2090,14 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
     }
   }
 
+  // Данные переписаны — кэш изолята больше не актуален. У изолятов, которые обслуживают запросы,
+  // свой кэш (и он живёт не дольше `MEMORY_CACHE_TTL_MS`), а здесь сбрасываем свой: иначе
+  // следующий обход читал бы собственные старые ответы.
+  if (mirror || telegram.slots > 0) {
+    scheduleSeeded = true;
+    clearMemoryCache();
+  }
+
   ctx.waitUntil(cacheApiRefresh());
 }
 
@@ -1887,15 +2239,15 @@ function json(data: unknown, status = 200, headers: Record<string, string> = {})
   });
 }
 
-/** Сегодня по Киеву (`YYYY-MM-DD`). */
+/**
+ * Сегодня по Киеву (`YYYY-MM-DD`).
+ *
+ * Без `Intl`: форматтер создавался на каждый вызов, а `kyivToday()` зовут и в горячем пути
+ * (`/status`, `/queues`, `/schedules`), где каждый миллисекунд CPU на счету.
+ */
 function kyivToday(): string {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: KYIV_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return formatter.format(new Date());
+  const now = Date.now();
+  return new Date(now + kyivOffsetMinutesAt(now) * 60_000).toISOString().slice(0, 10);
 }
 
 function addDays(date: string, offset: number): string {
@@ -1914,10 +2266,18 @@ interface SlotRow {
   source?: string;
 }
 
-async function loadSlots(env: Env, region: string, date: string): Promise<SlotRow[]> {
+/**
+ * Слоты графика по ключам области за дату.
+ *
+ * Пустой список ключей — «вся страна»: фильтра по области нет. Так же читали счётчики статуса до
+ * появления канонических `cpu`, и это поведение сохранено (`/status` без `?region=`).
+ */
+async function loadSlots(env: Env, regions: string[], date: string): Promise<SlotRow[]> {
+  const filter = regionIn(regions);
   const result = await env.DB.prepare(
-    `SELECT region, queue, date, time_from, time_to, source FROM schedule_slots WHERE region = ? AND date = ?`,
-  ).bind(region, date).all<SlotRow>();
+    `SELECT region, queue, date, time_from, time_to, source FROM schedule_slots
+     WHERE ${filter.clause ? `${filter.clause} AND ` : ''}date = ?`,
+  ).bind(...filter.bindings, date).all<SlotRow>();
   return result.results ?? [];
 }
 
@@ -1981,25 +2341,54 @@ function toIntervals(rows: SlotRow[], queue: string, date: string) {
     }));
 }
 
-async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>> {
+/**
+ * Каталог областей: `cpu`, имя, группы, последняя дата, покрытие на сегодня.
+ *
+ * Дублируется с кэшем изолята (`regionSummaries`): функция читает ВСЕ слоты и ВСЁ покрытие
+ * таблицы группами, и `/regions` с `/sync` звали её на каждый запрос.
+ */
+async function regionSummariesUncached(env: Env): Promise<Array<Record<string, unknown>>> {
   const today = kyivToday();
-  const [result, mirrorNames, coverageRows] = await Promise.all([
+  const [result, mirrorNames, coverageRows, todayRows] = await Promise.all([
+    // Слоты + коды групп из покрытия одним запросом: у области, где оператор опубликовал день без
+    // отключений, `schedule_slots` пуст по определению (мы храним только «тёмные» часы), и список
+    // групп выходил пустым — человек не видел ни одной кнопки группы. Отдельным запросом это стоило
+    // бы лишнего раунда к D1, а CPU-бюджет воркера — 10 мс на запрос. `*` — служебный код «день
+    // опубликован целиком», а не группа, поэтому исключаем его здесь же.
     env.DB.prepare(
       `SELECT region AS cpu, queue, COUNT(*) AS slots, MAX(date) AS lastDate
-       FROM schedule_slots GROUP BY region, queue`,
-    ).all<{ cpu: string; queue: string; slots: number; lastDate: string | null }>(),
+       FROM schedule_slots GROUP BY region, queue
+       UNION ALL
+       SELECT region AS cpu, queue, 0 AS slots, NULL AS lastDate
+       FROM schedule_coverage WHERE queue <> ? GROUP BY region, queue`,
+    ).bind(ALL_CLEAR_QUEUE).all<{ cpu: string; queue: string; slots: number; lastDate: string | null }>(),
     loadMirrorRegionNames(env),
     // Покрытие за сегодня: «график опубликован, отключений в нём нет» — это не «нет данных».
     // Раньше область с опубликованным ГПВ без отключений выглядела ровно как неотданная зеркалом.
     env.DB.prepare(`SELECT region, queue, has_outages FROM schedule_coverage WHERE date = ?`)
       .bind(today)
       .all<{ region: string; queue: string; has_outages: number }>(),
+    // Слоты ТОЛЬКО на сегодня и завтра. Без этого бейдж области показывал «6 сл.», хотя эти
+    // полчаса лежали в БД с 1 июля: человек читал «N сл.» как «график на сегодня загружен» и не
+    // понимал, почему на экране пусто. Считаем отдельным групповым запросом (одно чтение D1),
+    // а `slots` оставляем как общее число загруженных слотов — по нему видно историю.
+    env.DB.prepare(
+      `SELECT region AS cpu, COUNT(*) AS n FROM schedule_slots WHERE date >= ? AND date <= ? GROUP BY region`,
+    )
+      .bind(today, addDays(today, 1))
+      .all<{ cpu: string; n: number }>(),
   ]);
+
+  const todaySlotsByRegion = new Map<string, number>();
+  for (const row of todayRows.results ?? []) todaySlotsByRegion.set(row.cpu, row.n ?? 0);
 
   const byRegion = new Map<string, { queues: Set<string>; slots: number; lastDate: string | null }>();
   for (const row of result.results ?? []) {
+    const queue = normalizeQueue(row.queue);
+    // Мусорные коды в список кнопок не пускаем: там попадаются «черга» из чужих источников.
+    if (!isQueueCode(queue)) continue;
     const entry = byRegion.get(row.cpu) ?? { queues: new Set<string>(), slots: 0, lastDate: null };
-    entry.queues.add(normalizeQueue(row.queue));
+    entry.queues.add(queue);
     entry.slots += row.slots ?? 0;
     if (row.lastDate && (!entry.lastDate || row.lastDate > entry.lastDate)) entry.lastDate = row.lastDate;
     byRegion.set(row.cpu, entry);
@@ -2036,12 +2425,14 @@ async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>
 
     const queues = new Set<string>();
     let slots = 0;
+    let todaySlots = 0;
     let lastDate: string | null = null;
     for (const fact of facts) {
       for (const queue of fact.queues) queues.add(queue);
       slots += fact.slots;
       if (fact.lastDate && (!lastDate || fact.lastDate > lastDate)) lastDate = fact.lastDate;
     }
+    for (const key of dataKeys) todaySlots += todaySlotsByRegion.get(key) ?? 0;
     const coveredNetworks = coverages.filter((coverage) => (coverage?.covered.size ?? 0) > 0).length;
     // Область считаем покрытой, только когда день опубликовали ВСЕ её источники (у области с одной
     // сетью — она сама): молчащая сеть — это «не знаем», а не «график есть».
@@ -2052,6 +2443,10 @@ async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>
       nameEn: null,
       queues: [...queues].sort(compareQueueCodes),
       slots,
+      // Часы отключений на сегодня/завтра: по этому полю бейдж области показывает «N сл.», а не
+      // «сколько слотов когда-либо лежало в БД». Может быть 0 при `covered`: график вышел без
+      // отключений — это «світло за графіком», а не «немає даних».
+      todaySlots,
       // null, пока область не импортирована. Подставлять сегодняшнюю дату значило бы врать:
       // фронтенд по `lastDate` решает, есть ли график, и увидел бы «есть» у пустой области.
       lastDate,
@@ -2078,6 +2473,7 @@ async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>
           nameEn: null,
           queues: [...fact.queues].sort(compareQueueCodes),
           slots: fact.slots,
+          todaySlots: todaySlotsByRegion.get(key) ?? 0,
           lastDate: fact.lastDate,
           feedKeys: [key],
           parentCpu: entry.cpu,
@@ -2102,6 +2498,7 @@ async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>
       nameEn: null,
       queues: [...fact.queues].sort(compareQueueCodes),
       slots: fact.slots,
+      todaySlots: todaySlotsByRegion.get(cpu) ?? 0,
       lastDate: fact.lastDate,
       feedKeys: [cpu],
       isActive: cpu in REGION_NAMES || cpu in mirrorNames,
@@ -2112,18 +2509,23 @@ async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>
 
   // Порядок — как у Node-бэкенда: по украинскому названию, но подобласть сразу за родителем,
   // иначе «м. Дніпро (ЦЕК)» отрывается от «Дніпропетровської області».
-  const parentNames = new Map(
-    rows
-      .filter((row) => row['parentCpu'])
-      .map((row) => [String(row['cpu']), rows.find((item) => item['cpu'] === row['parentCpu'])?.['nameUa']]),
-  );
-  const sortKeyOf = (row: Record<string, unknown>): string => {
-    const parent = parentNames.get(String(row['cpu']));
-    return parent ? `${String(parent)} ${String(row['nameUa'])}` : String(row['nameUa']);
-  };
-  return rows.sort(
-    (a, b) => sortKeyOf(a).localeCompare(sortKeyOf(b), 'uk') || String(a['cpu']).localeCompare(String(b['cpu'])),
-  );
+  //
+  // Ключ сортировки считаем ОДИН раз на строку: раньше `sortKeyOf` вызывался дважды на каждое
+  // сравнение и лепил новую строку, а `.localeCompare(…, 'uk')` на каждое сравнение создавал
+  // коллатор — на каталоге страны это миллисекунды CPU в каждом `/sync`.
+  const nameByCpu = new Map(rows.map((row) => [String(row['cpu']), String(row['nameUa'])]));
+  const decorated = rows.map((row) => {
+    const parent = nameByCpu.get(String(row['parentCpu'] ?? ''));
+    return { row, key: parent ? `${parent} ${String(row['nameUa'])}` : String(row['nameUa']) };
+  });
+  return decorated
+    .sort((a, b) => compareUk(a.key, b.key) || compareUk(String(a.row['cpu']), String(b.row['cpu'])))
+    .map((item) => item.row);
+}
+
+/** Каталог областей с кэшем изолята: он меняется от крона к крону, а не от запроса к запросу. */
+async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>> {
+  return cached('regions:all', () => regionSummariesUncached(env));
 }
 
 async function lastImportedAt(env: Env): Promise<string | null> {
@@ -2144,6 +2546,15 @@ async function lastImportedAt(env: Env): Promise<string | null> {
  */
 let schemaReady = false;
 
+/**
+ * Флаг «данные в базе уже есть». `ensureSchedule` зовётся на КАЖДЫЙ запрос, и каждый раз считал
+ * строки в `schedule_slots`, хотя после первого успешного импорта делать это незачем: данные
+ * переписывает крон, а не читатель. Флаг живёт в изоляте и сбрасывается вместе с ним; если базу
+ * действительно очистят, крон (раз в 20 минут) вернёт график, и следующий холодный изолят
+ * импортирует его сразу.
+ */
+let scheduleSeeded = false;
+
 async function ensureSchemaOnce(env: Env): Promise<void> {
   if (schemaReady) return;
   await ensureSchema(env);
@@ -2160,8 +2571,14 @@ async function ensureSchedule(env: Env): Promise<void> {
   // Сначала схема, потом данные: см. `ensureSchemaOnce` — иначе новая таблица не появится на уже
   // наполненной базе, и чтение падает вместо того, чтобы отдать пустой график.
   await ensureSchemaOnce(env);
+  // Проверка «данные уже есть» нужна только один раз на изолят: она открывает отдельный запрос к
+  // D1 на каждом вызове, а `/sync` и `/status` зовут эту функцию всегда.
+  if (scheduleSeeded) return;
   const count = await env.DB.prepare(`SELECT COUNT(*) AS n FROM schedule_slots`).first<{ n: number }>();
-  if ((count?.n ?? 0) > 0) return;
+  if ((count?.n ?? 0) > 0) {
+    scheduleSeeded = true;
+    return;
+  }
   const mirror = await fetchMirror(env);
   if (mirror) {
     const raw: Slot[] = [];
@@ -2195,6 +2612,8 @@ async function ensureSchedule(env: Env): Promise<void> {
   }
 
   const written = await env.DB.prepare(`SELECT COUNT(*) AS n FROM schedule_slots`).first<{ n: number }>();
+  // Если данные всё-таки появились, второй раз считать строки незачем — до перезапуска изолята.
+  if ((written?.n ?? 0) > 0) scheduleSeeded = true;
   console.log(`ensureSchedule: в D1 теперь ${written?.n ?? 0} слотов`);
 }
 
@@ -2219,7 +2638,7 @@ function isStreetLike(name: string): boolean {
  */
 async function resolveAddress(
   env: Env,
-  input: { region: string; settlement: string; street: string; house: string },
+  input: { regions: string[]; settlement: string; street: string; house: string },
 ): Promise<{
   queue: string | null;
   reason: 'exact-house' | 'whole-street' | 'whole-settlement' | 'not-found';
@@ -2227,11 +2646,15 @@ async function resolveAddress(
   options: Array<{ housePattern: string; queue: string }>;
 }> {
   const settlementNormalized = normalizeAddress(input.settlement);
+  const filter = regionIn(input.regions);
+  // Без области искать негде: привязки размечены по областям, и запрос «по всей стране» вернул бы
+  // чужой адрес. Раньше сюда подставлялся пустой `region = ''` — тот же «не найдено», но с запросом.
+  if (filter.clause === '') return { queue: null, reason: 'not-found', source: null, options: [] };
   const rows = await env.DB.prepare(
     `SELECT region, settlement_name, settlement_normalized, street_name, street_normalized,
             house_pattern, queue, source, updated_at
-     FROM address_queues WHERE region = ? AND settlement_normalized = ?`,
-  ).bind(input.region, settlementNormalized).all<AddressQueueRow>();
+     FROM address_queues WHERE ${filter.clause} AND settlement_normalized = ?`,
+  ).bind(...filter.bindings, settlementNormalized).all<AddressQueueRow>();
   const entries = rows.results ?? [];
   if (entries.length === 0) {
     return { queue: null, reason: 'not-found', source: null, options: [] };
@@ -2429,6 +2852,14 @@ function etagSource(body: Record<string, unknown>): unknown {
 const SYNC_NEWS_LIMIT = 20;
 
 /**
+ * Сколько строк привязок улиц читаем на область за один запрос.
+ *
+ * Справочник `address_queues` — это тысячи строк, но отдаём мы не больше 50 улиц на группу, поэтому
+ * большой выборки не нужно. Лимит защищает CPU воркера от разбора всего справочника страны.
+ */
+const STREETS_ROW_LIMIT = 4000;
+
+/**
  * Лимит НП в офлайн-пакете. Тот же, что в Node-бекенде, и по той же причине: список должен
  * покрывать реальную область, но не превращать стартовый пакет в мегабайты.
  */
@@ -2445,7 +2876,7 @@ const SYNC_SETTLEMENTS_LIMIT = 2000;
  * при этом ставится только группе, которую БЕЗ отключений опубликовала КАЖДАЯ сеть: у ЦЕК и ДнЕМ
  * одинаковая нумерация черг, и молчание одной сети — это «не знаем», а не «светло».
  */
-async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record<string, unknown>>> {
+async function queueSummariesUncached(env: Env, regions: string[]): Promise<Array<Record<string, unknown>>> {
   const keys = [...new Set(regions.filter((region) => region))];
   if (keys.length === 0) return [];
   const placeholders = keys.map(() => '?').join(', ');
@@ -2457,7 +2888,7 @@ async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record
     // Опубликованные на сегодня очереди. В области, где график вышел без отключений, `schedule_slots`
     // пуст (мы храним только «тёмные» часы), и без этого списка экран выбора группы писал
     // «графік не імпортовано» про существующий график.
-    Promise.all(keys.map((key) => coverageOfDay(env, key, kyivToday()))),
+    Promise.all(keys.map((key) => coverageOfDay(env, [key], kyivToday()))),
   ]);
   // Очереди без слотов, но с публикацией. `offQueues` исключаем: там пустые слоты значат отставший
   // импорт, а не «світло за графіком». Пересечение по сетям: группа остаётся «без отключений», только
@@ -2482,15 +2913,30 @@ async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record
     if (!sums.has(queue)) sums.set(queue, { queue, slots: 0, lastDate: null });
   }
   const list = [...sums.values()].sort((a, b) => compareQueueCodes(a.queue, b.queue));
-  // Списки улиц запрашиваем заранее: await внутри не-async колбэка map невозможен,
-  // а последовательные запросы в цикле удлинили бы ответ. По сетям они объединяются без дублей.
-  const streetNames = await Promise.all(
-    list.map(async (row) => {
-      const perRegion = await Promise.all(keys.map((key) => streetNamesForQueue(env, key, row.queue)));
-      const merged = new Set<string>();
-      for (const names of perRegion) for (const name of names) merged.add(name);
-      return [...merged].sort((a, b) => a.localeCompare(b, 'uk')).slice(0, 50);
-    }),
+  // Улицы всех групп одним запросом. Раньше на каждую группу шёл отдельный `SELECT` (у области с
+  // 60 группами — 60 обращений к D1), и `/sync` упирался в лимит подзапросов бесплатного тарифа,
+  // отвечая `503 error 1102` ещё до того, как успевал собрать пакет.
+  //
+  // Группируем по нормализованному коду: в привязках встречается `2.2`, а в списке групп — `2/2`,
+  // и точное сравнение оставляло такие группы вовсе без улиц.
+  const streetsByQueue = new Map<string, Set<string>>();
+  if (list.length > 0) {
+    const bound = await env.DB.prepare(
+      `SELECT queue, street_name AS name FROM address_queues
+       WHERE region IN (${placeholders}) AND queue <> '' AND street_name <> ''
+       LIMIT ${STREETS_ROW_LIMIT}`,
+    )
+      .bind(...keys)
+      .all<{ queue: string; name: string }>();
+    for (const row of bound.results ?? []) {
+      const queue = normalizeQueue(row.queue);
+      const names = streetsByQueue.get(queue) ?? new Set<string>();
+      names.add(row.name);
+      streetsByQueue.set(queue, names);
+    }
+  }
+  const streetNames = list.map((row) =>
+    [...(streetsByQueue.get(row.queue) ?? [])].sort(compareUk).slice(0, 50),
   );
   return list.map((row, index) => ({
     queue: row.queue,
@@ -2509,6 +2955,18 @@ async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record
 }
 
 /**
+ * Очереди области с кэшем изолята.
+ *
+ * Список групп — метаданные, но собирается он недёшево: покрытие дня по каждой сети плюс выборка
+ * привязок улиц. До правки на каждую группу шёл отдельный запрос улиц (12 групп × 2 сети = 24
+ * обращения, у большой области — за 60), и `/sync` упирался в лимит подзапросов.
+ */
+async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record<string, unknown>>> {
+  const keys = [...new Set(regions.filter((region) => region))].sort();
+  return cached(`queues:${keys.join(',')}`, () => queueSummariesUncached(env, regions));
+}
+
+/**
  * НП области для офлайн-поиска адреса (мастер «область → НП → вулиця → дім»).
  *
  * Два источника сливаются, как и в Node-бекенде: `address_queues` — НП с известными группами
@@ -2516,22 +2974,23 @@ async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record
  * источник отдаёт `kind: null`: KOATUU-справочника типов в воркере нет, а выдумывать «село»
  * по названию нельзя.
  */
-async function offlineSettlements(
+async function offlineSettlementsUncached(
   env: Env,
-  region: string,
+  regions: string[],
 ): Promise<{ items: Array<Record<string, unknown>>; total: number }> {
-  if (!region) return { items: [], total: 0 };
+  const filter = regionIn(regions);
+  if (filter.clause === '') return { items: [], total: 0 };
   const [bound, directory] = await Promise.all([
     env.DB.prepare(
       `SELECT settlement_name AS name, settlement_normalized AS normalized,
               GROUP_CONCAT(DISTINCT queue) AS queues
        FROM address_queues
-       WHERE region = ? AND settlement_name <> ''
+       WHERE ${filter.clause} AND settlement_name <> ''
        GROUP BY settlement_normalized, settlement_name`,
-    ).bind(region).all<{ name: string; normalized: string; queues: string | null }>(),
+    ).bind(...filter.bindings).all<{ name: string; normalized: string; queues: string | null }>(),
     env.DB.prepare(
-      `SELECT name, normalized FROM directory_settlements WHERE region = ?`,
-    ).bind(region).all<{ name: string; normalized: string }>(),
+      `SELECT name, normalized FROM directory_settlements WHERE ${filter.clause}`,
+    ).bind(...filter.bindings).all<{ name: string; normalized: string }>(),
   ]);
 
   // Ключ — `normalized`: только по нему два источника и один НП опознаются как одно место.
@@ -2554,12 +3013,24 @@ async function offlineSettlements(
   // Сначала НП с группами: в списке подсказок они полезнее, чем название из справочника без
   // графика. Сортировка именно по числу групп, а не по алфавиту — иначе нужное село уезжает
   // в хвост обрезанного списка.
-  const all = [...merged.values()].sort((a, b) => {
-    const byQueues = b.queues.length - a.queues.length;
-    if (byQueues !== 0) return byQueues;
-    return a.name.localeCompare(b.name, 'uk');
-  });
+  const all = [...merged.values()].sort((a, b) => b.queues.length - a.queues.length || compareUk(a.name, b.name));
   return { items: all.slice(0, SYNC_SETTLEMENTS_LIMIT), total: all.length };
+}
+
+/**
+ * НП области с кэшем изолята.
+ *
+ * Ключ — те же ключи области, а не их порядок: `kyiv-city` и `kyiv` должны попадать в одну запись,
+ * иначе кэш промахивался бы на каждом варианте написания. Сам запрос читает `directory_settlements`
+ * целиком (тысячи строк) и сливает их в JS, поэтому кэш тут даёт больше всего: офлайн-пакет просит
+ * НП почти на каждом старте приложения.
+ */
+async function offlineSettlements(
+  env: Env,
+  regions: string[],
+): Promise<{ items: Array<Record<string, unknown>>; total: number }> {
+  const keys = [...new Set(regions.filter((region) => region))].sort();
+  return cached(`settlements:${keys.join(',')}`, () => offlineSettlementsUncached(env, regions));
 }
 
 /**
@@ -2605,16 +3076,18 @@ async function newsItems(env: Env, limit: number): Promise<Array<Record<string, 
  * тот же список. Возвращает готовые бакеты контракта `GroupOutageSummary`; пустой массив — честное
  * «отключений по графику нет».
  */
-async function upcomingGroupBuckets(
+async function upcomingGroupBucketsUncached(
   env: Env,
-  region: string,
+  regions: string[],
   today: string,
   days: number,
 ): Promise<Array<Record<string, unknown>>> {
-  const regionRows = region
-    ? await env.DB.prepare(`SELECT DISTINCT date FROM schedule_slots WHERE region = ? ORDER BY date`)
-        .bind(region).all<{ date: string }>()
-    : await env.DB.prepare(`SELECT DISTINCT date FROM schedule_slots ORDER BY date`).all<{ date: string }>();
+  // Без области бакетов нет: «отключения по всей стране» — не тот список, который поместится на
+  // главной, и раньше этот вызов молча отдавал пустой массив.
+  if (regions.length === 0) return [];
+  const regionRows = await env.DB.prepare(
+    `SELECT DISTINCT date FROM schedule_slots ORDER BY date`,
+  ).all<{ date: string }>();
 
   // Срез только по тем датам, что уже начались или вот-вот начнутся: прошедшие дни человеку
   // не нужны, а тянуть их в приложение незачем.
@@ -2623,7 +3096,7 @@ async function upcomingGroupBuckets(
 
   const buckets: Array<Record<string, unknown>> = [];
   for (const date of dates) {
-    const rows = region ? await loadSlots(env, region, date) : [];
+    const rows = await loadSlots(env, regions, date);
     const byQueue = new Map<string, SlotRow[]>();
     for (const row of rows) {
       const key = normalizeQueue(row.queue);
@@ -2658,6 +3131,19 @@ async function upcomingGroupBuckets(
   return buckets;
 }
 
+/** Отключения на ближайшие дни с кэшем изолята: `/schedules/upcoming` и `/sync` зовут её всегда. */
+async function upcomingGroupBuckets(
+  env: Env,
+  regions: string[],
+  today: string,
+  days: number,
+): Promise<Array<Record<string, unknown>>> {
+  const keys = [...new Set(regions.filter((region) => region))].sort();
+  return cached(`upcoming:${keys.join(',')}:${today}:${days}`, () =>
+    upcomingGroupBucketsUncached(env, regions, today, days),
+  );
+}
+
 /**
  * Тело `StatusResponse` для области: тот же расчёт, что и у `/status`.
  *
@@ -2665,21 +3151,32 @@ async function upcomingGroupBuckets(
  * считаются по каноническим `outage_events` и по слотам графика (`schedule_slots`), а поля, которых
  * у воркера нет, заполняются нулями и null — не выдуманными значениями.
  */
-async function buildStatusPayload(env: Env, region: string, today: string): Promise<Record<string, unknown>> {
+async function buildStatusPayloadUncached(
+  env: Env,
+  regions: string[],
+  today: string,
+): Promise<Record<string, unknown>> {
   // Контракт повторяет StatusResponse из @svitlo/shared. Раньше здесь отдавался другой
   // набор полей (totalOutages/regionsWithData), и главная читала status.grid.level —
   // то есть `undefined.level`, и React падал в белый экран. Поля, которых у нас нет,
   // заполняем честными нулями и null, а НЕ выдумываем значения.
-  const totalQueues = await env.DB.prepare(
-    `SELECT COUNT(DISTINCT region || '|' || queue) AS n FROM schedule_slots`,
-  ).first<{ n: number }>();
-
-  const nowIso = new Date().toISOString();
-  const activeOutages = await countActiveOutages(env, region);
-  const scheduledOutages = await countScheduledOutages(env, region);
-  const activeGroups = await countGroupsOffNow(env, region, today);
-  const scheduledGroups = await countGroupsOffLater(env, region, today);
-  const importedAt = await lastImportedAt(env);
+  //
+  // Все шесть счётчиков приходят одним запросом (`statusCounters`), а слоты суток читаются ДВА
+  // раза (сегодня и вчера) на все производные числа сразу: до этой правки `/status` делал 11
+  // обращений к D1 и четыре прохода по одним и тем же слотам, и на бесплатном тарифе вылетал по
+  // CPU (`503`, `error 1102`).
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const [counters, todaySlots, yesterdaySlots] = await Promise.all([
+    statusCounters(env, regions, today),
+    loadSlots(env, regions, today),
+    loadSlots(env, regions, addDays(today, -1)),
+  ]);
+  const todayStats = daySlotStats(todaySlots, nowMs);
+  const yesterdayStats = daySlotStats(yesterdaySlots, nowMs);
+  const importedAt = counters.importedAt;
+  const activeOutages = counters.activeOutages;
+  const activeGroups = todayStats.activeGroups;
 
   // Окно «за добу» и «за 24 години»: считаем по интервалам выбранной области. Пока
   // воркер знает только графики групп, честная надёжность равна доле времени без света.
@@ -2700,9 +3197,6 @@ async function buildStatusPayload(env: Env, region: string, today: string): Prom
     };
   };
 
-  const outageMinutesToday = await outageMinutesInWindow(env, region, today);
-  const outageMinutes24h = await outageMinutesInWindow(env, region, addDays(today, -1));
-
   // Возвращается ТЕЛО статуса, без конверта `{ data }`. Конверт навешивают вызывающие: `/status`
   // оборачивает сам, а пакет `/sync` кладёт это же тело в `bundle.status`. Пока конверт жил здесь,
   // `/status` отдавал двойную вложенность (главная читает `data.grid.level` — то есть
@@ -2721,81 +3215,145 @@ async function buildStatusPayload(env: Env, region: string, today: string): Prom
             : '',
     },
     activeOutages,
-    scheduledOutages,
+    scheduledOutages: counters.scheduledOutages,
     activeGroups,
-    scheduledGroups,
+    scheduledGroups: todayStats.scheduledGroups,
     activeIncidents: activeOutages,
     scheduledIncidents: 0,
-    totalIncidents: await countIncidents(env),
+    totalIncidents: counters.incidents,
     lastUpdatedAt: importedAt,
     // Данные старше двух часов помечаем как устаревшие: показывать их как свежие нельзя.
-    dataStale: importedAt !== null && Date.now() - Date.parse(importedAt) > 2 * 60 * 60 * 1000,
+    dataStale: importedAt !== null && nowMs - Date.parse(importedAt) > 2 * 60 * 60 * 1000,
     lastError: null,
     pausedUntil: null,
     nextAttemptAt: null,
     consecutiveParseFailures: 0,
     powerSummary: {
-      today: buildWindow('за добу', 24 * 60, outageMinutesToday, await countOutagesToday(env, region)),
-      last24h: buildWindow('за 24 години', 24 * 60, outageMinutes24h, await countOutages24h(env, region)),
+      today: buildWindow('за добу', 24 * 60, todayStats.outageMinutes, counters.outagesToday),
+      last24h: buildWindow('за 24 години', 24 * 60, yesterdayStats.outageMinutes, counters.outages24h),
     },
     // Служебное: сколько всего групп знает воркер. Фронтенд это поле не читает, но оно
     // нужно для диагностики через curl, поэтому не выбрасываем.
-    totalQueues: totalQueues?.n ?? 0,
+    totalQueues: counters.totalQueues,
     generatedAt: nowIso,
   };
 }
 
+/** `buildStatusPayload` с кэшем изолята: ключ — набор ключей области и дата. */
+async function buildStatusPayload(env: Env, regions: string[], today: string): Promise<Record<string, unknown>> {
+  return cached(`status:${regions.join(',')}:${today}`, () => buildStatusPayloadUncached(env, regions, today));
+}
+
 /**
- * Маршруты, которые читают данные ОДНОЙ сети: многомережную область им передавать нельзя.
+ * Справка по маршрутам, которые читают данные одной области: `/schedules`, `/schedules/upcoming`,
+ * `/addresses/*`, `/outages`, `/outages/stats`, `/reliability`, `/status`, `/sync`,
+ * `/street-queues*`. Публичные маршруты без области (`/news`, `/changelog`, `/health`, `/incidents`)
+ * параметр `region` игнорируют.
  *
- * Список ведётся явно, а не «всё, кроме `/regions`»: `/news`, `/changelog`, `/health` и `/incidents`
- * область не читают вовсе, и отвечать им 400 за параметр, который они игнорируют, значило бы
- * ломать запросы, которые сейчас работают.
+ * Отдельного списка «сюда нельзя многомережную область» больше нет: резолвинг ключей живёт в
+ * `resolveDbRegions`/`resolveReadRegions`, и 400 `AMBIGUOUS_REGION` не отдаётся вовсе.
  */
-const SINGLE_REGION_PATHS = new Set([
-  '/schedules',
-  '/schedules/upcoming',
-  '/addresses/settlements',
-  '/addresses/streets',
-  '/addresses/resolve',
-  '/addresses/suggest',
-  '/addresses/contribute',
-  '/outages',
-  '/outages/stats',
-  '/reliability',
-  '/status',
-  '/sync',
-  '/street-queues',
-  '/street-queues/schedule',
-]);
+
+
+/**
+ * Собирает офлайн-пакет `/sync` (тело без `syncedAt` и его ETag).
+ *
+ * Вынесено из обработчика, чтобы результат можно было положить в кэш изолята: пакет стоит десятков
+ * запросов к D1, а между обходами крона не меняется.
+ */
+async function syncBundle(
+  env: Env,
+  params: {
+    requestedRegion: string;
+    canonicalRegion: string;
+    dbRegions: string[];
+    readRegions: string[];
+    today: string;
+    days: number;
+    /** Диагностика `?timing=1`: без него таймер выключен и ничего не стоит. */
+    timer?: StepTimer;
+  },
+): Promise<{ body: Record<string, unknown>; etag: string }> {
+  const { requestedRegion, canonicalRegion, dbRegions, readRegions, today, days } = params;
+  const timer = params.timer;
+  /** Обёртка ожидания: без `?timing=1` возвращает тот же промис, ничего не замеряя. */
+  const measure = <T,>(step: string, work: Promise<T>): Promise<T> => (timer ? timer.measure(step, work) : work);
+  const wantedDays = Array.from({ length: days }, (_, index) => addDays(today, index));
+  // Ключи фида для метаданных области (черги, НП): у многомережной области это обе сети, у
+  // остальных — её единственный ключ. Область, которой фид не отдаёт, остаётся под своим кодом.
+  const syncFeedKeyList = regionFeedKeysOf(canonicalRegion);
+  const syncFeedKeys = syncFeedKeyList.length > 0 ? syncFeedKeyList : dbRegions;
+
+  // Параллельно: D1 в воркері допускає одночасні запити, а послідовний виклик склався б у суму
+  // затримок. `status` і каталог обов'язкові — без них пакет безглуздий; порожній графік чи
+  // порожня стрічка новин — законний стан, і пакет із ними все одно цінніший за порожній.
+  // Справочник НП без привязок і список очередей — теж законний стан: без них офлайн-шар
+  // просто не покаже підказок адреси, але графік віддасть.
+  const [status, regions, buckets, news, queues, settlementList] = await Promise.all([
+    measure('status', buildStatusPayload(env, readRegions, today)),
+    measure('regions', regionSummaries(env)),
+    measure(
+      'buckets',
+      readRegions.length > 0 ? upcomingGroupBuckets(env, readRegions, today, days) : Promise.resolve([]),
+    ),
+    measure('news', newsItems(env, SYNC_NEWS_LIMIT)),
+    // Список групп — по ключах ФИДА: канонічний/легаси-дубль без покрытия обнулял бы «согласие всех
+    // сетей», и офлайн-пакет приносил бы пустой перечень групп при живом графике.
+    measure('queues', queueSummaries(env, syncFeedKeys)),
+    // НП — тоже по всем сетям области: село может быть привязано к любой из них, а поиск идёт по
+    // названию, поэтому объединение ничего не путает (у каждой подсказки свои коды групп).
+    measure('settlements', offlineSettlements(env, syncFeedKeys)),
+  ]);
+
+  // График кладём под ВСЕ ключи области сразу: канонический `cpu` (то, что лежит в каталоге и в
+  // ссылке), ключ фида (`kyiv`, `kiivska-oblast`) и сам запрошенный код. Клиент ищет слоты по
+  // `schedulesByRegion[region]`, где `region` — то, что он отправил (а у людей в localStorage
+  // остались и старые коды). Один ключ вместо трёх означал бы «графіка немає» при живом графике.
+  const schedulesByRegion: Record<string, { days: string[]; buckets: Array<Record<string, unknown>> }> = {};
+  if (requestedRegion) {
+    const keys = new Set<string>([requestedRegion, canonicalRegion, ...readRegions]);
+    for (const key of keys) if (key) schedulesByRegion[key] = { days: wantedDays, buckets };
+  }
+
+  const body = {
+    // Эхо ключа, по которому реально прочитаны данные: так же отвечает Node-бэкенд (там это
+    // результат `readRegionParam`). Для многомережной области это конкретная сеть (`dnipro-cek`) —
+    // клиент узнаёт, чей график он получил, а в `schedulesByRegion` лежат и его собственные ключи.
+    region: (readRegions[0] ?? requestedRegion) || null,
+    status,
+    regions,
+    queues,
+    schedulesByRegion,
+    settlements: settlementList.items,
+    settlementsTotal: settlementList.total,
+    news,
+    contacts: [],
+  };
+  // ETag считаем от содержимого, без полей, производных от времени запроса (`syncedAt`,
+  // `status.nextAttemptAt`, `status.generatedAt`): иначе хеш менялся бы каждый вызов, и
+  // `If-None-Match` не срабатывал бы никогда — то есть заголовок был бы декоративным.
+  return { body, etag: computeSyncEtag(etagSource(body)) };
+}
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/^\/api\/v1/u, '').replace(/\/+$/u, '') || '/';
-  // Область приводим к ключу фида ОДИН раз на запрос: `?region=kyivska-oblast` читает
-  // `kiivska-oblast`, `?region=kyiv-city` — `kyiv`. Данные лежат именно под ключами фида, поэтому
-  // без этой подстановки человек с канонической названием области получал пустой график.
+  // Данные в D1 лежат под ключами фида (`kyiv`, `kiivska-oblast`, `dnipro-cek`), а каталог отдаёт
+  // канонические `cpu` (`kyiv-city`, `kyivska-oblast`, `dnipropetrovska-oblast`). Плюс у людей в
+  // закладках и `localStorage` остались вообще старые коды. Поэтому ключи чтения собирает один
+  // `resolveDbRegions`, а не «одна подстановка на запрос»: иначе запрос с ключом, которого нет в
+  // слотах, отвечал «даних графіка немає» при живом графике.
   const requestedRegion = (url.searchParams.get('region') ?? '').trim();
   const canonicalRegion = canonicalRegionCpu(requestedRegion);
-  const regionKeys = regionFeedKeysOf(canonicalRegion);
-  // «Область целиком», за которой стоят разные сети (м. Дніпро: ЦЕК и ДнЕМ), читать нельзя: у них
-  // общая нумерация черг, но разные графики, и слияние дало бы часы, которых у человека нет. Отдаём
-  // 400 с перечнем ключей — клиент берёт конкретную сеть из `/regions` (`feedKeys`). Списку групп
-  // (`/queues`) можно: это метаданные, а не часы.
-  if (regionKeys.length > 1 && SINGLE_REGION_PATHS.has(path)) {
-    return json(
-      {
-        error: {
-          code: 'AMBIGUOUS_REGION',
-          message: `Область «${canonicalRegion}» обслуживают несколько сетей (${regionKeys.join(', ')}): укажите конкретный region из /api/v1/regions`,
-        },
-      },
-      400,
-    );
-  }
-  // Ключ фида для чтения данных: область с одним ключом подставляется прозрачно, а область,
-  // которой фид не отдаёт вовсе (порожний `feedKeys`), остаётся собой — ответ будет честно пустым.
-  const region = regionKeys.length === 1 ? regionKeys[0]! : canonicalRegion;
+  const dbRegions = resolveDbRegions(requestedRegion);
   const today = kyivToday();
+
+  // Ключи чтения по умолчанию: для многомережной области это одна сеть с данными на сегодня, для
+  // остальных — все ключи области сразу (канонический + ключ фида). Тот, кто читает конкретную
+  // очередь и дату (`/schedules`), уточняет выбор через `?queue=`: сеть с графиком именно этой черги.
+  let readRegions = await resolveReadRegions(env, dbRegions, today);
+  // Первичный ключ для эха в JSON (`/addresses/streets` возвращает `region`) и для проверки
+  // «область не задана» (`/outages?region=all`).
+  const region = readRegions[0] ?? requestedRegion;
 
 
   if (path === '/health') {
@@ -2824,8 +3382,13 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
   if (path === '/queues') {
     // Список групп — метаданные, поэтому многомережную область читаем целиком: коды групп ЦЕК и
-    // ДнЕМ объединяются, а «світло за графіком» ставится только с согласия обеих сетей.
-    const queueRegionKeys = regionKeys.length > 0 ? regionKeys : [region];
+    // ДнЕМ объединяются, а «світло за графіком» ставится только с согласия обеих сетей. Ключи берём
+    // именно ключи ФИДА (`dnipro-cek`/`dnipro-dnem`, `kyiv`, `kiivska-oblast`): канонический или
+    // легаси-дубль без покрытия обнулял бы «согласие всех сетей» — и человек видел пустой список
+    // групп там, где оператор опубликовал график. Область, которой фид не отдаёт, читается под своим
+    // кодом — ответ честно пустой.
+    const feedKeys = regionFeedKeysOf(canonicalRegion);
+    const queueRegionKeys = feedKeys.length > 0 ? feedKeys : dbRegions.length > 0 ? dbRegions : [region];
     return json({ data: await queueSummaries(env, queueRegionKeys) }, 200, { 'cache-control': 'public, max-age=300' });
   }
 
@@ -2833,7 +3396,9 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const queue = normalizeQueue(url.searchParams.get('queue') ?? '');
     const date = url.searchParams.get('date') ?? today;
     if (!queue) return json({ error: { code: 'VALIDATION_ERROR', message: 'queue обовʼязковий' } }, 400);
-    const [rows, coverage] = await Promise.all([loadSlots(env, region, date), coverageOfDay(env, region, date)]);
+    // Сеть многомережной области выбираем по факту: та, у которой на эту дату есть график этой черги.
+    readRegions = await resolveReadRegions(env, dbRegions, date, queue);
+    const [rows, coverage] = await Promise.all([loadSlots(env, readRegions, date), coverageOfDay(env, readRegions, date)]);
     const intervals = toIntervals(rows, queue, date);
     // Три состояния, которые раньше сливались в одно «пусто» и давали «Немає даних»:
     //   интервалы есть          → график опубликован, есть часы отключений;
@@ -2863,7 +3428,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   if (path === '/schedules/upcoming') {
     const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
     // Список отключений области считает общий помощник: он же наполняет `/sync`.
-    return json({ data: await upcomingGroupBuckets(env, region, today, days) }, 200, {
+    return json({ data: await upcomingGroupBuckets(env, readRegions, today, days) }, 200, {
       'cache-control': 'public, max-age=60',
     });
   }
@@ -2908,10 +3473,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const needle = normalizeAddress(query);
 
     // Сначала наши данные: они проверены и размечены своим источником.
+    const settlementsFilter = regionIn(readRegions.length > 0 ? readRegions : [''], 'd.region');
     const ours = await env.DB.prepare(
       `SELECT d.name AS name, d.normalized AS normalized, 'curated' AS source
-       FROM directory_settlements d WHERE d.region = ? AND d.normalized LIKE ?`,
-    ).bind(region, `%${needle}%`).all<{ name: string; normalized: string; source: 'curated' }>();
+       FROM directory_settlements d WHERE ${settlementsFilter.clause} AND d.normalized LIKE ?`,
+    ).bind(...settlementsFilter.bindings, `%${needle}%`).all<{ name: string; normalized: string; source: 'curated' }>();
 
     // Тип аннотирован явно: без него TypeScript сужает `source` до литерала 'curated'
     // и не даёт потом положить рядом подсказки из OSM.
@@ -2981,16 +3547,17 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
     // Улицы берём из двух мест: справочник (знаем улицу, но не её очередь) и привязки
     // (знаем и улицу, и очередь). Показываем оба — очереди может ещё не быть, и это честно.
+    const streetRegions = regionIn(readRegions.length > 0 ? readRegions : ['']);
     const known = await env.DB.prepare(
       `SELECT name, normalized FROM directory_streets
-       WHERE region = ? AND settlement_normalized = ? AND normalized LIKE ?`,
-    ).bind(region, settlementNormalized, `%${needle}%`)
+       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND normalized LIKE ?`,
+    ).bind(...streetRegions.bindings, settlementNormalized, `%${needle}%`)
       .all<{ name: string; normalized: string }>();
 
     const bound = await env.DB.prepare(
       `SELECT DISTINCT street_name AS name, street_normalized AS normalized FROM address_queues
-       WHERE region = ? AND settlement_normalized = ? AND street_normalized <> '' AND street_normalized LIKE ?`,
-    ).bind(region, settlementNormalized, `%${needle}%`)
+       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized <> '' AND street_normalized LIKE ?`,
+    ).bind(...streetRegions.bindings, settlementNormalized, `%${needle}%`)
       .all<{ name: string; normalized: string }>();
 
     const streets: Array<{ name: string; normalized: string; source: PlaceSource }> = [
@@ -3020,8 +3587,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Если на всё село известна одна очередь — отдаём её, чтобы мастер сразу показал ответ.
     const whole = await env.DB.prepare(
       `SELECT DISTINCT queue FROM address_queues
-       WHERE region = ? AND settlement_normalized = ? AND street_normalized = ''`,
-    ).bind(region, settlementNormalized).all<{ queue: string }>();
+       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized = ''`,
+    ).bind(...streetRegions.bindings, settlementNormalized).all<{ queue: string }>();
     const queues = [...new Set((whole.results ?? []).map((row) => normalizeQueue(row.queue)))];
 
     return json({
@@ -3039,7 +3606,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const street = (url.searchParams.get('street') ?? '').trim();
     const house = (url.searchParams.get('house') ?? '').trim();
 
-    const resolved = await resolveAddress(env, { region, settlement, street, house });
+    const resolved = await resolveAddress(env, { regions: readRegions, settlement, street, house });
     if (!resolved.queue) {
       return json({
         data: { queue: null, options: resolved.options, reason: 'not-found', source: null, schedule: null },
@@ -3049,8 +3616,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Расписание найденной группы на сегодня отдаём сразу: человек узнал номер группы и
     // заодно видит, есть ли сейчас свет, не делая второй запрос.
     const [rows, coverage] = await Promise.all([
-      loadSlots(env, region, today),
-      coverageOfDay(env, region, today),
+      loadSlots(env, readRegions, today),
+      coverageOfDay(env, readRegions, today),
     ]);
     const intervals = toIntervals(rows, resolved.queue, today);
     // Покрытие читаем и здесь: иначе мастер поиска писал «графіку на сьогодні немає» про группу,
@@ -3084,12 +3651,14 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   // Остальные разделы зеркало не отдаёт, и выдумывать их нельзя. Честная пустая выдача:
   // фронтенд на ней показывает свой EmptyState, а не рисует вымышленные отключения.
   if (path === '/outages') {
-    const filters = region && region !== 'all' ? 'region = ?' : '1=1';
+    // `region=all` и запрос без области — список по стране; иначе читаем все ключи области: каждое
+    // событие несёт свой `regionCpu`, поэтому события двух сетей м. Дніпро не путаются между собой.
+    const outageFilter = !region || region === 'all' ? regionIn([]) : regionIn(dbRegions);
     const rows = await env.DB.prepare(
       `SELECT external_id, region, starts_at, ends_at, area_name, addresses_raw, reason, kind, source_url
-       FROM outage_events WHERE ${filters} AND ends_at >= ? ORDER BY starts_at DESC LIMIT 300`,
+       FROM outage_events WHERE ${outageFilter.clause || '1=1'} AND ends_at >= ? ORDER BY starts_at DESC LIMIT 300`,
     )
-      .bind(...(region && region !== 'all' ? [region] : []), new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .bind(...outageFilter.bindings, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .all<Record<string, string>>();
     const data = (rows.results ?? []).map((row) => ({
       id: row['external_id']!,
@@ -3209,36 +3778,62 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       return json({ error: { code: 'VALIDATION_ERROR', message: 'queue має бути кодом черги, напр. 2/2' } }, 400);
     }
 
+    // Отчёт строится по десяткам окон (дни месяца + недели + месяц + сводки) и меняется от крона к
+    // крону, а не от запроса к запросу. Без кэша каждый заход на «Надійність» занимал больше 10 мс
+    // CPU и получал от Cloudflare `503 error 1102`, хотя данные те же.
+    //
+    // `?timing=1` — диагностика: печатает в `wrangler tail`, из чего сложился CPU отчёта, и
+    // считает отчёт заново (отдельный ключ кэша), иначе замер попал бы на готовый ответ.
+    const timer = stepTimer(url.searchParams.get('timing') === '1');
+    const reportCacheKey = `reliability:${readRegions.join(',')}:${today}:${queueCode ?? ''}${timer.enabled ? ':timing' : ''}`;
+    const cachedReport = memoryCache.get(reportCacheKey);
+    if (cachedReport && cachedReport.expiresAt > Date.now()) return json({ data: cachedReport.payload });
+
     const monthStart = `${from}T00:00:00.000Z`;
     const monthEnd = `${to}T23:59:59.999Z`;
 
     // Считаем по слотам графика, а не отдаём пустые оболочки. Раньше бакеты дней/недель/
     // месяцев были заглушками с hasData:false, и «Статистика електропостачання» выглядела
     // обнулённой, хотя графики в базе есть и считать их умеем.
-    // Функция обязана быть async: reliabilityForRange ходит в D1, и синхронный вариант
-    // разворачивал бы промис в объект (то есть ни во что) — бакеты выходили без цифр вовсе.
-    const window = async (
+    //
+    // Все окна отчёта считаются из ОДНОГО чтения слотов (`loadReliabilityIndex`): день, неделя и
+    // месяц — это наборы целых дат внутри месяца, а сводка по областям берёт те же строки без
+    // фильтра области. Раньше каждое окно ходило в D1 само (около 40 запросов на заход) — это
+    // и был весь CPU отчёта.
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+    const tomorrow = addDays(today, 1);
+    const loadPhaseAt = timer.now();
+    const index = await loadReliabilityIndex(env, from, tomorrow);
+    timer.mark('load', loadPhaseAt);
+    const regionSet = new Set(readRegions);
+    /** Окно отчёта по уже прочитанным слотам: даты окна берём в UTC, как в запросе к D1. */
+    const window = (
       key: string,
       label: string,
       startIso: string,
       endIso: string,
       windowMinutes: number,
-    ): Promise<ReliabilityWindow> => {
-      const totals = await reliabilityForRange(
-        env,
-        region,
-        Date.parse(startIso),
-        Date.parse(endIso),
-        windowMinutes,
-        queueCode ?? undefined,
-      );
-      return { key, label, start: startIso, end: endIso, ...totals };
+    ): ReliabilityWindow => {
+      const fromMs = Date.parse(startIso);
+      const toMs = Date.parse(endIso);
+      return {
+        key,
+        label,
+        start: startIso,
+        end: endIso,
+        ...reliabilityTotals(
+          index,
+          regionSet,
+          queueCode,
+          isoDate(fromMs),
+          isoDate(toMs),
+          fromMs,
+          toMs,
+          windowMinutes,
+        ),
+      };
     };
 
-    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
-    const tomorrow = addDays(today, 1);
-    // Считаем дни пачками по одному, но параллельно: 31 запроса подряд медленно, а
-    // лимит параллельных запросов к D1 в воркере позволяет собрать их разом.
     // Дни берём только по сегодня включительно, плюс завтра — оператор уже публикует график на
     // завтра, и без него «Надійність» отставала бы от расписания на сутки.
     const daySpecs = Array.from({ length: daysInMonth }, (_, index) => {
@@ -3251,26 +3846,26 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const nowMs = Date.now();
     const kyivMidnight = localSlotToUtc(today, '00:00', false);
     const elapsedTodayMinutes = Math.max(1, Math.round((nowMs - Date.parse(kyivMidnight)) / 60_000));
-    const dayTotals = await Promise.all(
-      daySpecs.map(async ({ iso, label }) => {
-        const isToday = iso === today;
-        return {
-          iso,
-          bucket: await window(
-            `day:${iso}`,
-            label,
-            isToday ? kyivMidnight : `${iso}T00:00:00.000Z`,
-            isToday ? new Date(nowMs).toISOString() : `${iso}T23:59:59.999Z`,
-            isToday ? elapsedTodayMinutes : 24 * 60,
-          ),
-        };
-      }),
-    );
+    const daysPhaseAt = timer.now();
+    const dayTotals = daySpecs.map(({ iso, label }) => {
+      const isToday = iso === today;
+      return {
+        iso,
+        bucket: window(
+          `day:${iso}`,
+          label,
+          isToday ? kyivMidnight : `${iso}T00:00:00.000Z`,
+          isToday ? new Date(nowMs).toISOString() : `${iso}T23:59:59.999Z`,
+          isToday ? elapsedTodayMinutes : 24 * 60,
+        ),
+      };
+    });
     const dayWindows: ReliabilityWindow[] = dayTotals
       // Завтрашний день показываем только если на него уже есть график: пустой прогноз — это
       // снова «день без света», только подписанный будущим числом.
       .filter(({ iso, bucket }) => iso <= today || bucket.hasData)
       .map(({ iso, bucket }) => (iso > today ? { ...bucket, isForecast: true } : bucket));
+    timer.mark('days', daysPhaseAt);
 
     // Недели режем по календарным понедельникам, как в Node-отчёте: окно недели — от её
     // понедельника до воскресенья, но не дальше `tomorrow` (дальше графика ещё нет), поэтому
@@ -3278,6 +3873,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Если понедельника в отчётном периоде ещё не было (месяц начался во вторник или позже),
     // отдаём одну неделю-остаток от начала месяца: пустой раздел «Тижні» при наличии данных
     // выглядел бы как поломка.
+    const weeksPhaseAt = timer.now();
     const weekWindows: ReliabilityWindow[] = [];
     for (let day = 1; day <= daysInMonth; day += 1) {
       const iso = `${from.slice(0, 8)}${String(day).padStart(2, '0')}`;
@@ -3286,7 +3882,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       const sunday = addDays(iso, 6);
       const spanEnd = sunday < tomorrow ? sunday : tomorrow;
       weekWindows.push(
-        await window(
+        window(
           `week:${iso}`,
           `${labelDayIso(iso)} – ${labelDayIso(spanEnd)}`,
           `${iso}T00:00:00.000Z`,
@@ -3297,7 +3893,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     }
     if (weekWindows.length === 0) {
       weekWindows.push(
-        await window(
+        window(
           `week:${from}`,
           `${labelDayIso(from)} – ${labelDayIso(tomorrow)}`,
           monthStart,
@@ -3306,49 +3902,75 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         ),
       );
     }
+    timer.mark('weeks', weeksPhaseAt);
 
     // Сводка по одной группе: те же правила и то же окно, что у месячного бакета, но по её слотам.
+    const queuePhaseAt = timer.now();
     const queueSummary = queueCode
-      ? await reliabilityForRange(env, region, Date.parse(monthStart), Date.parse(monthEnd), daysInMonth * 24 * 60, queueCode)
-          .then((totals) => ({
+      ? (() => {
+          const totals = reliabilityTotals(
+            index,
+            regionSet,
+            queueCode,
+            from,
+            today,
+            Date.parse(monthStart),
+            Date.parse(monthEnd),
+            daysInMonth * 24 * 60,
+          );
+          return {
             queue: queueCode,
             windowMinutes: totals.windowMinutes,
             outageMinutes: totals.outageMinutes,
             poweredMinutes: totals.poweredMinutes,
             reliabilityPct: totals.reliabilityPct,
             hasData: totals.hasData,
-          }))
+          };
+        })()
       : null;
+    timer.mark('queue', queuePhaseAt);
+    const monthPhaseAt = timer.now();
+    const monthWindows = [
+      window(`month:${to.slice(0, 7)}`, labelMonthIso(from), monthStart, monthEnd, daysInMonth * 24 * 60),
+    ];
+    timer.mark('month', monthPhaseAt);
+    const groupsPhaseAt = timer.now();
+    // По группам — тот же расчёт по фактически прошедшим суткам (без завтрашнего прогноза:
+    // у этой сводки нет пометки «прогноз», и подмешивать в неё будущее значило бы выдавать
+    // ещё не наступившее за факт). Знаменатель — дни, за которые график есть,
+    // см. reliabilityByQueue.
+    const groupWindows = reliabilityByQueue(index, regionSet, from, today, daysInMonth * 24 * 60);
+    timer.mark('groups', groupsPhaseAt);
+    const regionPhaseAt = timer.now();
+    // Сводка по областям: сравнение «як у мене і як поруч». Регион берём из слота, поэтому
+    // она не зависит от параметра `region`.
+    const regionSummary = reliabilityByRegion(
+      index,
+      from,
+      today,
+      daysInMonth * 24 * 60,
+      await loadMirrorRegionNames(env),
+    );
+    timer.mark('byRegion', regionPhaseAt);
 
-    return json({
-      data: {
-        from,
-        to,
-        generatedAt: new Date().toISOString(),
-        days: dayWindows,
-        weeks: weekWindows,
-        // Подпись месяца — по дате начала отчёта. Передаём именно дату (`from`), а не
-        // `monthStart` с уже приклеенным временем: `labelMonthIso` сам добавляет `T00:00:00.000Z`,
-        // и на строке с двумя временами `new Date(...)` даёт Invalid Date, то есть 500
-        // «Invalid time value» на всём маршруте `/reliability`.
-        months: [await window(`month:${to.slice(0, 7)}`, labelMonthIso(from), monthStart, monthEnd, daysInMonth * 24 * 60)],
-        // По группам — тот же расчёт по фактически прошедшим суткам (без завтрашнего прогноза:
-        // у этой сводки нет пометки «прогноз», и подмешивать в неё будущее значило бы выдавать
-        // ещё не наступившее за факт). Знаменатель — дни, за которые график есть,
-        // см. reliabilityByQueue.
-        groups: await reliabilityByQueue(env, region, from, today, daysInMonth * 24 * 60),
-        // Сводка по областям: сравнение «як у мене і як поруч». Регион берём из слота, поэтому
-        // она не зависит от параметра `region`.
-        byRegionSummary: await reliabilityByRegion(
-          env,
-          Date.parse(monthStart),
-          Date.parse(monthEnd),
-          daysInMonth * 24 * 60,
-          await loadMirrorRegionNames(env),
-        ),
-        queue: queueSummary,
-      },
-    });
+    const report = {
+      from,
+      to,
+      generatedAt: new Date().toISOString(),
+      days: dayWindows,
+      weeks: weekWindows,
+      // Подпись месяца — по дате начала отчёта. Передаём именно дату (`from`), а не
+      // `monthStart` с уже приклеенным временем: `labelMonthIso` сам добавляет `T00:00:00.000Z`,
+      // и на строке с двумя временами `new Date(...)` даёт Invalid Date, то есть 500
+      // «Invalid time value» на всём маршруте `/reliability`.
+      months: monthWindows,
+      groups: groupWindows,
+      byRegionSummary: regionSummary,
+      queue: queueSummary,
+    };
+    remember(reportCacheKey, report);
+    timer.done('/reliability');
+    return json({ data: report }, 200, { 'cache-control': 'public, max-age=60' });
   }
 
   if (path === '/street-queues') return json({ data: [] });
@@ -3404,17 +4026,21 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // приводящие обе таблицы к общему виду.
     // Без области фильтровать не по чему, и жёсткое `region = ''` возвращало пустоту:
     // адресная строка в мастере работает ДО выбора области. Поэтому фильтр по области
-    // добавляется только тогда, когда область действительно задана.
+    // добавляется только тогда, когда область действительно задана (иначе ключей нет и условия нет).
+    const queueRegion = regionIn(readRegions);
+    const streetRegion = regionIn(readRegions, 'ds.region');
+    const whereRegion = queueRegion.clause ? `AND ${queueRegion.clause}` : '';
+    const whereStreetRegion = streetRegion.clause ? `AND ${streetRegion.clause}` : '';
     // Порядок биндингов обязан совпадать с порядком плейсхолдеров В SQL, а он здесь
     // «LIKE, потом region», а не наоборот. Раньше область подставлялась первым, и при
     // заданном регионе запрос молча возвращал пустоту.
-    const whereRegion = region ? 'AND region = ?' : '';
-    const whereStreetRegion = region ? 'AND ds.region = ?' : '';
-    const bindings: string[] = [`%${needle}%`];
-    if (region) bindings.push(region);
-    bindings.push(`%${needle}%`);
-    if (region) bindings.push(region);
-    bindings.push(String(limit));
+    const bindings: string[] = [
+      `%${needle}%`,
+      ...queueRegion.bindings,
+      `%${needle}%`,
+      ...streetRegion.bindings,
+      String(limit),
+    ];
 
     const rows = await env.DB.prepare(
       `SELECT name, settlement, normalized FROM (
@@ -3445,55 +4071,39 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
   if (path === '/status') {
     // Расчёт вынесен в `buildStatusPayload`: тем же телом гідратується офлайн-пакет `/sync`.
-    return json({ data: await buildStatusPayload(env, region, today) });
+    const timer = stepTimer(url.searchParams.get('timing') === '1');
+    const started = timer.now();
+    const status = timer.enabled
+      ? await timer.measure('status', buildStatusPayloadUncached(env, readRegions, today))
+      : await buildStatusPayload(env, readRegions, today);
+    timer.mark('all', started);
+    timer.done('/status');
+    return json({ data: status });
   }
 
   if (path === '/sync') {
     // Один пакет для офлайн-старту застосунку: стан мережі + каталог областей + графік на сьогодні
     // й завтра + останні новини. Контракт той самий, що у Node-бекенда (`/api/v1/sync`), тому
     // фронтенд не знає й не має знати, з ким саме він розмовляє.
+    //
+    // Сборка пакета — самый тяжёлый путь воркера (десятки запросов к D1: статус, каталог, слоты,
+    // список групп с улицами, справочник НП, новости). В пределах минуты он не меняется, поэтому
+    // готовое тело и ETag держим в кэше изолята: иначе первый же `/sync` на холодном изоляте
+    // вылетал по CPU (`503`, `error 1102`), и приложение оставалось без офлайн-пакета.
     const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
-    const wantedDays = Array.from({ length: days }, (_, index) => addDays(today, index));
-
-    // Параллельно: D1 в воркері допускає одночасні запити, а послідовний виклик склався б у суму
-    // затримок. `status` і каталог обов'язкові — без них пакет безглуздий; порожній графік чи
-    // порожня стрічка новин — законний стан, і пакет із ними все одно цінніший за порожній.
-    // Справочник НП без привязок і список очередей — теж законний стан: без них офлайн-шар
-    // просто не покаже підказок адреси, але графік віддасть.
-    const [status, regions, buckets, news, queues, settlementList] = await Promise.all([
-      buildStatusPayload(env, region, today),
-      regionSummaries(env),
-      region ? upcomingGroupBuckets(env, region, today, days) : Promise.resolve([]),
-      newsItems(env, SYNC_NEWS_LIMIT),
-      queueSummaries(env, region ? [region] : []),
-      offlineSettlements(env, region),
-    ]);
-
-    const schedulesByRegion: Record<string, { days: string[]; buckets: Array<Record<string, unknown>> }> = {};
-    // Ключ области появляется только когда область действительно запрошена: пустой ключ ''
-    // заставлял бы клиента искать график «области без имени».
-    if (region) schedulesByRegion[region] = { days: wantedDays, buckets };
-
-    const body = {
-      region: region || null,
-      status,
-      regions,
-      queues,
-      schedulesByRegion,
-      settlements: settlementList.items,
-      settlementsTotal: settlementList.total,
-      news,
-      contacts: [],
-    };
-    // ETag считаем от содержимого, без полей, производных от времени запроса (`syncedAt`,
-    // `status.nextAttemptAt`, `status.generatedAt`): иначе хеш менялся бы каждый вызов, и
-    // `If-None-Match` не срабатывал бы никогда — то есть заголовок был бы декоративным.
-    const etag = computeSyncEtag(etagSource(body));
-    const headers = { 'cache-control': 'no-store', etag };
-    if (etagMatches(request.headers.get('if-none-match'), etag)) return notModified(headers);
+    // `?timing=1` — диагностика: считаем пакет заново (кэш обходим) и печатаем разбивку по шагам
+    // в `wrangler tail`. Обычный запрос этой ветки не касается и платит только за `cached()`.
+    const timer = stepTimer(url.searchParams.get('timing') === '1');
+    const syncCacheKey = `sync:${requestedRegion}|${canonicalRegion}|${readRegions.join(',')}|${days}|${today}`;
+    const bundle = timer.enabled
+      ? await syncBundle(env, { requestedRegion, canonicalRegion, dbRegions, readRegions, today, days, timer })
+      : await cached(syncCacheKey, () => syncBundle(env, { requestedRegion, canonicalRegion, dbRegions, readRegions, today, days }));
+    timer.done('/sync');
+    const headers = { 'cache-control': 'no-store', etag: bundle.etag };
+    if (etagMatches(request.headers.get('if-none-match'), bundle.etag)) return notModified(headers);
     // Конверт `{ data }` — как у Node-бекенда и как у остальных маршрутов: офлайн-шар клиента
     // не должен иметь отдельного случая для одного эндпоинта.
-    return json({ data: { syncedAt: new Date().toISOString(), etag, ...body } }, 200, headers);
+    return json({ data: { syncedAt: new Date().toISOString(), etag: bundle.etag, ...bundle.body } }, 200, headers);
   }
   return json({ error: { code: 'NOT_FOUND', message: `Немає маршруту ${path}` } }, 404);
 }

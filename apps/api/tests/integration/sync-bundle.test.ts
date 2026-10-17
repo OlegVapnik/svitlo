@@ -152,6 +152,23 @@ describeWithDb('GET /api/v1/sync: пакет офлайн-старту', () => {
     expect(lviv.etag).not.toBe(chernihiv.etag);
   });
 
+  it('графік лежить і під кодом клієнта: канонічним і ключем фіда', async () => {
+    // Клієнт читає `schedulesByRegion[region]` рівно тим кодом, який сам надіслав. У каталозі це
+    // `kyivska-oblast`, а в старих закладках і `localStorage` — `kiivska-oblast`. Один ключ означав
+    // би «даних графіка немає» при живому графіку.
+    await db.insert(scheduleSlots).values([slot({ region: 'kiivska-oblast', queue: '4/1' })]);
+
+    const canonical = (await getSync('region=kyivska-oblast')).body.data;
+    expect(canonical.schedulesByRegion['kyivska-oblast']?.buckets.map((bucket) => bucket.queue)).toEqual(['4/1']);
+    expect(canonical.schedulesByRegion['kiivska-oblast']?.buckets.map((bucket) => bucket.queue)).toEqual(['4/1']);
+
+    const feedKey = (await getSync('region=kiivska-oblast')).body.data;
+    expect(feedKey.schedulesByRegion['kiivska-oblast']?.buckets.map((bucket) => bucket.queue)).toEqual(['4/1']);
+    expect(feedKey.schedulesByRegion['kyivska-oblast']?.buckets.map((bucket) => bucket.queue)).toEqual(['4/1']);
+    // Дані чужої області під цими ключами не з'являються.
+    expect(canonical.schedulesByRegion[CHERNIHIV]).toBeUndefined();
+  });
+
   it('ETag стабільний між викликами, а `If-None-Match` дає 304 без тіла', async () => {
     await db.insert(scheduleSlots).values(slot());
 

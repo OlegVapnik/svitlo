@@ -119,6 +119,12 @@ export const RegionProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const currentRegionData = useMemo<RegionSummary>(() => {
     const found = regions.find((r) => r.cpu === currentRegion);
     if (found) return found;
+    // Область могла прийти старым кодом (ключом фида) из закладки, ссылки или офлайн-пакета:
+    // каталог таких строк больше не отдаёт, зато у нужной строки этот код лежит в `feedKeys`.
+    // Раньше поиск не находил ничего, и главная показывала «Черга:» без кнопок и «Даних графіка
+    // немає» при живом графике.
+    const viaFeedKey = regions.find((r) => (r.feedKeys ?? []).includes(currentRegion));
+    if (viaFeedKey) return viaFeedKey;
     if (currentRegion === DEFAULT_REGION) return DEFAULT_REGION_FALLBACK;
     return {
       cpu: currentRegion,

@@ -19,10 +19,14 @@ import { buildSyncBundle } from '../services/sync.service.js';
 export default async function syncRoutes(fastify: FastifyInstance) {
   fastify.get<{ Querystring: { region?: string; days?: string } }>('/api/v1/sync', async (request, reply) => {
     const region = readRegionParam(request.query.region);
+    // Сырой код области передаём отдельно: пакет кладёт график и под него тоже (у людей в
+    // `localStorage` остались `kyiv`/`kiivska-oblast`, а каталог отдаёт `kyiv-city`/`kyivska-oblast`).
+    const requestedRegion = String(request.query.region ?? '').trim();
     const days = Number.parseInt(String(request.query.days ?? ''), 10);
     const bundle = await buildSyncBundle(region, {
       now: new Date(),
       days: Number.isFinite(days) ? days : undefined,
+      requestedRegion,
     });
 
     reply.header('Cache-Control', 'no-store');

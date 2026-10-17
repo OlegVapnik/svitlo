@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, MapPin, Search, X } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
-import { filterRegions, regionDataBadge, regionOptions, type RegionSummary } from '../../lib/region.js';
+import { filterRegions, regionDataBadge, regionOptions, regionSlotsForBadge, type RegionSummary } from '../../lib/region.js';
 import { cn } from '../../lib/cn.js';
 
 interface RegionPickerProps {
@@ -160,7 +160,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
         <div className="flex shrink-0 items-center gap-2">
           {variant === 'prominent' && currentBadge === 'slots' ? (
             <span className="hidden rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success sm:inline-block">
-              {t('regions.slotsAvailable', { count: currentRegionData.slots })}
+              {t('regions.slotsAvailable', { count: regionSlotsForBadge(currentRegionData) })}
             </span>
           ) : variant === 'prominent' ? (
             <span
@@ -303,7 +303,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                     <div className="shrink-0 text-right">
                       {badge === 'slots' ? (
                         <span className="inline-block rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
-                          {t('regions.slotsCount', { count: region.slots })}
+                          {t('regions.slotsCount', { count: regionSlotsForBadge(region) })}
                         </span>
                       ) : (
                         <span

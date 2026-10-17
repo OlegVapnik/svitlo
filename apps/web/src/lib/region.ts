@@ -13,6 +13,11 @@ export interface RegionSummary {
   nameEn: string | null;
   queues: string[];
   slots: number;
+  /**
+   * Слоты только на сегодня и завтра (см. `@svitlo/shared`). `slots` — вся история, поэтому бейдж
+   * «N сл.» по нему врал: у Закарпатской области 6 слотов лежали с 1 июля, а графика на сегодня нет.
+   */
+  todaySlots?: number;
   lastDate: string | null;
   /**
    * На сьогодні оператор опублікував ГПВ, і жодної години відключення в ньому немає.
@@ -43,23 +48,54 @@ export interface RegionListResponse {
 
 const REGION_CPU_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/**
+ * Старые коды областей → канонические `cpu`.
+ *
+ * Зачем: каталог раньше отдавал ключи фида (`kyiv`, `kiivska-oblast`), и эти коды остались у людей
+ * в `localStorage`, закладках и ссылках. После перехода на канонические `cpu` поиск строки каталога
+ * по старому коду не находил ничего: главная показывала пустой список групп («Черга:» без кнопок) и
+ * «Даних графіка немає». Таблица — копия правил `@svitlo/shared` (`canonicalRegionCpu`), но без
+ * импорта пакета: он тянет zod в веб-бандл ради двух строк. Тест `region.test.ts` сверяет оба списка.
+ */
+const LEGACY_REGION_ALIASES: Record<string, string> = {
+  kyiv: 'kyiv-city',
+  'kiivska-oblast': 'kyivska-oblast',
+  'dnipropetrovnska-oblast': 'dnipropetrovska-oblast',
+};
+
 /** Перевіряє, чи відповідає значення формату cpu області (kebab-case). */
 export function isRegionCpu(value: unknown): value is string {
   return typeof value === 'string' && REGION_CPU_REGEX.test(value.trim());
 }
 
-/** Нормалізує cpu області (trim, lowercase). */
+/**
+ * Нормалізує cpu області (trim, lowercase) і мігрує старі коди до канонічних.
+ *
+ * Міграція безпечна: `kyiv` і `kyiv-city` — одна й та сама область (дані фіда просто лежать під
+ * `kyiv`), а сервер читає обидва коди (`resolveDbRegions` у воркері, `regionReadKeys` у Node API).
+ */
 export function normalizeRegionCpu(value: unknown): string {
   if (typeof value !== 'string') return DEFAULT_REGION;
   const clean = value.trim().toLowerCase();
-  return isRegionCpu(clean) ? clean : DEFAULT_REGION;
+  if (!isRegionCpu(clean)) return DEFAULT_REGION;
+  return LEGACY_REGION_ALIASES[clean] ?? clean;
 }
 
 /** Читає збережену область із локального сховища або повертає дефолтну. */
-export function getStoredRegion(storage?: Pick<Storage, 'getItem'>): string {
+export function getStoredRegion(
+  storage?: Pick<Storage, 'getItem'> & Partial<Pick<Storage, 'setItem'>>,
+): string {
   try {
     const raw = storage ? storage.getItem(REGION_STORAGE_KEY) : (typeof localStorage !== 'undefined' ? localStorage.getItem(REGION_STORAGE_KEY) : null);
-    return raw && isRegionCpu(raw) ? raw.trim().toLowerCase() : DEFAULT_REGION;
+    const clean = raw && isRegionCpu(raw) ? normalizeRegionCpu(raw) : DEFAULT_REGION;
+    // Мигрированный код ЗАПИСУВАЕМ: иначе старый ключ возвращался бы из хранилища при каждом старте.
+    // `setItem` не обязателен (в тестах передают заглушку только для чтения) — тогда просто читаем.
+    if (raw && clean !== raw.trim().toLowerCase()) {
+      const write = storage?.setItem?.bind(storage);
+      if (write) write(REGION_STORAGE_KEY, clean);
+      else if (!storage && typeof localStorage !== 'undefined') localStorage.setItem(REGION_STORAGE_KEY, clean);
+    }
+    return clean;
   } catch {
     return DEFAULT_REGION;
   }
@@ -99,10 +135,19 @@ export type RegionDataBadge = 'slots' | 'allClear' | 'noData';
  * Слоти мають пріоритет над `allClear`: якщо в БД є години відключень, показуємо саме їх (у такому
  * разі `allClear` з бекенду = false, але й порядок гілок робить це явним).
  */
-export function regionDataBadge(region: Pick<RegionSummary, 'slots' | 'allClear'>): RegionDataBadge {
-  if ((region.slots ?? 0) > 0) return 'slots';
+export function regionDataBadge(region: Pick<RegionSummary, 'slots' | 'todaySlots' | 'allClear'>): RegionDataBadge {
+  // Считаем слоты на сегодня и завтра, а не всю историю: иначе «6 сл.» от 1 июля убеждали человека,
+  // что график на сегодня загружен. Старый кеш без `todaySlots` — падаем назад на `slots`.
+  const relevant = region.todaySlots ?? region.slots ?? 0;
+  if (relevant > 0) return 'slots';
   return region.allClear === true ? 'allClear' : 'noData';
 }
+
+/** Сколько слотов показывать в бейдже области (только актуальные сутки). */
+export function regionSlotsForBadge(region: Pick<RegionSummary, 'slots' | 'todaySlots'>): number {
+  return region.todaySlots ?? region.slots ?? 0;
+}
+
 
 /** Рядок списку вибору області: сама область, група областей або мережа всередині групи. */
 export interface RegionOption {

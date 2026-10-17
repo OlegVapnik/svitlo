@@ -30,7 +30,8 @@ function kyivToday(): string {
  *
  * `region` може бути канонічною назвою області (див. shared/regions-catalog.ts). Якщо фід віддає її
  * кількома мережами (м. Дніпро: ЦЕК і ДнЕМ), область звужується до тієї мережі, де на цю чергу й дату
- * є дані; коли дані є в обох — чесна 400 `AMBIGUOUS_REGION`, а не злитий графік двох мереж.
+ * є дані; коли дані є в обох — береться перша мережа каталогу. 400 `AMBIGUOUS_REGION` більше немає:
+ * вона ламала екран «область цілком» («даних графіка немає» при живому графіку).
  */
 async function buildQueueSchedule(queue: string, date: string, region: string, log: FastifyInstance['log']) {
   if (!queue.trim()) throw new AppError(400, 'VALIDATION_ERROR', 'Параметр queue обовʼязковий');

@@ -7,8 +7,10 @@
  * вона отримувала порожній графік про область із опублікованим ГПВ.
  *
  * Друга половина тесту — про чесність: ЦЕК і ДнЕМ мають однакову нумерацію черг (1/1…6/2), але це
- * різні мережі, тому область із кількома мережами НЕ зводиться в один графік: якщо дані є в обох,
- * відповідь — 400 `AMBIGUOUS_REGION` з переліком ключів, а не злитий розклад двох мереж.
+ * різні мережі, тому область із кількома мережами НЕ зводиться в один графік. Область цілком
+ * читається як ПЕРША мережа каталогу (`dnipro-cek`): раніше тут була 400 `AMBIGUOUS_REGION`, і екран
+ * «область цілком» падав у «даних графіка немає» при живому графіку. Конкретну мережу людина обирає
+ * в каталозі, а `/schedules` уточнює вибір за фактичними даними на чергу й дату.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
@@ -214,16 +216,21 @@ describeWithDb('канонічні області та псевдоніми кл
     expect(data.covered).toBe(true);
   });
 
-  it('/schedules: коли черга є в обох мережах — 400 з переліком, а не злитий розклад', async () => {
+  it('/schedules: коли черга є в обох мережах — перша мережа каталогу, без 400', async () => {
     const res = await app.inject({
       method: 'GET',
       url: `/api/v1/schedules?region=dnipropetrovska-oblast&queue=1/1&date=${DATE}`,
     });
-    expect(res.statusCode).toBe(400);
-    const body = res.json() as { error?: { code?: string; message?: string } };
-    expect(body.error?.code).toBe('AMBIGUOUS_REGION');
-    expect(body.error?.message).toContain('dnipro-cek');
-    expect(body.error?.message).toContain('dnipro-dnem');
+    expect(res.statusCode).toBe(200);
+    const data = (res.json() as { data: { intervals: Array<{ startsAt: string }>; covered: boolean } }).data;
+    // Графік РЕАЛЬНИЙ і саме з першої мережі каталогу (`dnipro-cek`, 08:00–09:00), а не злитий з
+    // ДнЕМ (у нього та сама черга 1/1 стоїть о 14:00) — тому й порівнюємо з відповіддю ЦЕК.
+    expect(data.intervals).toHaveLength(1);
+    const cek = await app.inject({
+      method: 'GET',
+      url: `/api/v1/schedules?region=dnipro-cek&queue=1/1&date=${DATE}`,
+    });
+    expect(data.intervals).toEqual((cek.json() as { data: { intervals: unknown[] } }).data.intervals);
   });
 
   it('/schedules: якщо даних немає в жодній мережі — чесне порожньо, без помилки', async () => {
@@ -250,14 +257,17 @@ describeWithDb('канонічні області та псевдоніми кл
     expect(noDataBody.allClear).toBe(false);
   });
 
-  it('/reliability і /schedules/upcoming вимагають конкретної мережі (ті самі правила)', async () => {
+  it('/reliability і /schedules/upcoming читають область цілком як першу мережу (без 400)', async () => {
+    // Раніше тут була 400 `AMBIGUOUS_REGION`, і екран області цілком падав у «даних графіка немає».
+    // Тепер обидва маршрути читають ту саму мережу, що й `/schedules` без уточнення черги.
     const reliability = await app.inject({ method: 'GET', url: '/api/v1/reliability?region=dnipropetrovska-oblast' });
-    expect(reliability.statusCode).toBe(400);
-    expect((reliability.json() as { error?: { code?: string } }).error?.code).toBe('AMBIGUOUS_REGION');
+    expect(reliability.statusCode).toBe(200);
 
     const upcoming = await app.inject({ method: 'GET', url: '/api/v1/schedules/upcoming?region=dnipropetrovska-oblast' });
-    expect(upcoming.statusCode).toBe(400);
-    expect((upcoming.json() as { error?: { code?: string } }).error?.code).toBe('AMBIGUOUS_REGION');
+    expect(upcoming.statusCode).toBe(200);
+    const upcomingBody = upcoming.json() as { data: Array<{ queue: string }> };
+    const cekUpcoming = await app.inject({ method: 'GET', url: '/api/v1/schedules/upcoming?region=dnipro-cek' });
+    expect(upcomingBody.data).toEqual((cekUpcoming.json() as { data: unknown[] }).data);
 
     // Із конкретним ключем усе працює як раніше.
     const concrete = await app.inject({ method: 'GET', url: '/api/v1/reliability?region=dnipro-cek' });

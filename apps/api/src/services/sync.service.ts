@@ -5,7 +5,7 @@ import type {
   SyncRegionSchedules,
   SyncSettlement,
 } from '@svitlo/shared';
-import { computeSyncEtag } from '@svitlo/shared';
+import { computeSyncEtag, canonicalRegionCpu } from '@svitlo/shared';
 import { queryNews } from './news/news-query.service.js';
 import { listQueues } from './queues.service.js';
 import { listRegions } from './regions.service.js';
@@ -48,7 +48,7 @@ export const SYNC_NEWS_LIMIT = 20;
  */
 export async function buildSyncBundle(
   region: string,
-  options: { now?: Date; days?: number } = {},
+  options: { now?: Date; days?: number; requestedRegion?: string } = {},
 ): Promise<SyncBundle> {
   const now = options.now ?? new Date();
   const days = Math.max(1, Math.min(options.days ?? SYNC_SCHEDULE_DAYS, 7));
@@ -73,9 +73,20 @@ export async function buildSyncBundle(
     listRegionSettlements(region).catch((): { items: SyncSettlement[]; total: number } => ({ items: [], total: 0 })),
   ]);
 
-  const schedulesByRegion: Record<string, SyncRegionSchedules> = {
-    [region]: { days: days7, buckets },
-  };
+  // Графік кладемо під УСІ коди області, які міг надіслати клієнт: канонічний (`kyiv-city`,
+  // `kyivska-oblast` — те, що лежить у каталозі та в посиланні) і ключ фіда (`kyiv`,
+  // `kiivska-oblast` — те, що залишилось у localStorage і закладках). Клієнт читає
+  // `schedulesByRegion[region]` рівно тим кодом, який сам надіслав, тож один ключ означав би
+  // «даних графіка немає» при живому графіку.
+  const schedulesByRegion: Record<string, SyncRegionSchedules> = {};
+  const scheduleKeys = new Set<string>([
+    region,
+    String(options.requestedRegion ?? '').trim().toLowerCase(),
+    canonicalRegionCpu(options.requestedRegion ?? region),
+  ]);
+  for (const key of scheduleKeys) {
+    if (key) schedulesByRegion[key] = { days: days7, buckets };
+  }
 
   const body: Omit<SyncBundle, 'syncedAt' | 'etag'> = {
     region,

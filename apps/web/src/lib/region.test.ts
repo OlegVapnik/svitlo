@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { REGION_CATALOG, canonicalRegionCpu } from '@svitlo/shared';
 import {
   DEFAULT_REGION,
   DEFAULT_REGION_NAME_UA,
@@ -55,6 +56,41 @@ describe('multi-region helper', () => {
     // Запис невалідного значення фолбечить на DEFAULT_REGION
     setStoredRegion('невідома область', mockStorage);
     expect(getStoredRegion(mockStorage)).toBe('chernihivska-oblast');
+  });
+
+  test('старі коди областей мігрують до канонічних (сторож розходження з @svitlo/shared)', () => {
+    // ЧОМУ: каталог раніше віддавав ключі фіда (`kyiv`, `kiivska-oblast`), і ці коди лишились у людей
+    // у `localStorage`, закладках і посиланнях. Після переходу на канонічні `cpu` пошук рядка каталога
+    // за старим кодом не знаходив нічого: на головній зникали кнопки груп («Черга:» порожня) і
+    // показувалось «Даних графіка немає» при живому графіку. Таблиця в `region.ts` — копія правил
+    // сервера, і цей тест не дає їм розійтись.
+    expect(normalizeRegionCpu('kyiv')).toBe('kyiv-city');
+    expect(normalizeRegionCpu('kiivska-oblast')).toBe('kyivska-oblast');
+    expect(normalizeRegionCpu('dnipropetrovnska-oblast')).toBe('dnipropetrovska-oblast');
+    for (const legacy of ['kyiv', 'kiivska-oblast', 'dnipropetrovnska-oblast']) {
+      expect(normalizeRegionCpu(legacy)).toBe(canonicalRegionCpu(legacy));
+    }
+    // Ключ фіда області з ОДНІЄЮ мережею завжди веде до її канонічного `cpu`. Мережі
+    // багатомережної області (`dnipro-cek`, `dnipro-dnem`) — це окремий вибір людини, а не алиас:
+    // підміняти їх областю означало б втратити вибір мережі.
+    for (const entry of REGION_CATALOG) {
+      expect(normalizeRegionCpu(entry.cpu)).toBe(entry.cpu);
+      if (entry.feedKeys.length !== 1) continue;
+      const feedKey = entry.feedKeys[0]!;
+      expect(normalizeRegionCpu(feedKey)).toBe(entry.cpu);
+    }
+  });
+
+  test('getStoredRegion перезаписує старий код у сховищі, а не повертає його щоразу', () => {
+    // ЧОМУ: без перезапису міграція була б вічною — старий ключ лежав би в сховищі й повертався при
+    // кожному старті, а сторінки з посиланням `?region=kyiv` лишались би з чужою версією коду.
+    const store = new Map<string, string>([[REGION_STORAGE_KEY, 'kyiv']]);
+    const mockStorage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+    };
+    expect(getStoredRegion(mockStorage)).toBe('kyiv-city');
+    expect(store.get(REGION_STORAGE_KEY)).toBe('kyiv-city');
   });
 
   test('formatRegionOption формує зрозумілий підпис', () => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Layers } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
+import { queueOptionsForGrid } from '../../lib/queue.js';
 
 interface QueueSelectorProps {
   queues: string[];
@@ -20,18 +21,15 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  if (queues.length === 0) {
-    return (
-      <div className={cn('inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground', className)}>
-        <Layers className="h-3.5 w-3.5" aria-hidden />
-        {t('queues.noQueuesForRegion')}
-      </div>
-    );
-  }
+  // Пустой список от API (холодный кеш, старый офлайн-пакет, ошибка сети) НЕ должен оставлять экран
+  // без кнопок групп: сетку «1/1…6/2» показываем всегда, а сервер подставляет свой список, когда он
+  // есть. Раньше здесь возвращалась надпись «черг немає», и человек не мог выбрать свою группу.
+  const options = queueOptionsForGrid(queues);
+  const showsFallback = options.length > (queues?.length ?? 0);
 
   // Якщо черг небагато (до 12, як у більшості областей), показуємо швидкі чипи,
   // а для 60 черг (як у Києві) — компактний селект зі збереженням швидкості та без захаращення екрана
-  const isLargeList = queues.length > 12;
+  const isLargeList = options.length > 12;
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -43,13 +41,13 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
       {isLargeList ? (
         <div className="relative inline-flex items-center">
           <select
-            value={selectedQueue ?? queues[0]}
+            value={selectedQueue ?? options[0]}
             onChange={(e) => onSelect(e.target.value)}
             disabled={disabled}
             aria-label={t('queues.selectQueue')}
             className="min-h-11 appearance-none rounded-xl border border-hairline bg-surface-container-high py-1.5 pl-3 pr-8 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-container-highest focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {queues.map((q) => (
+            {options.map((q) => (
               <option key={q} value={q}>
                 {t('home.heroQueue', { queue: q })}
               </option>
@@ -69,7 +67,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
           // от него интерфейс выглядел игрушечным, а границы ячеек «плыли» при каждом тапе.
           className="grid w-[19.5rem] max-w-full grid-cols-6 gap-1.5"
         >
-          {queues.map((q) => {
+          {options.map((q) => {
             const isSelected = selectedQueue === q;
             return (
               <button
@@ -94,6 +92,12 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
           })}
         </div>
       )}
+
+      {showsFallback ? (
+        // Стандартная сетка вместо списка с сервера — это не «данные региона», а шаблон ГПВ, поэтому
+        // подписываем его честно: человек видит, что групп нет в ответе, но выбрать свою может.
+        <p className="text-[11px] leading-tight text-muted-foreground">{t('queues.gridFallbackHint')}</p>
+      ) : null}
     </div>
   );
 };
