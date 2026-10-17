@@ -75,7 +75,16 @@ REQUIRED = {
     ],
     "outages": ["data", "meta"],
     "outages/stats": ["data.byHour", "data.byDay", "data.byArea", "data.heatmap", "data.totalActive", "data.totalScheduled"],
-    "incidents": ["data"],
+    # Контракт Incident. Раньше здесь стояло только ["data"], и этого хватало: список
+    # пустой у обоих, сверка проходила, а воркер при этом отдавал `startsAt` вместо
+    # `startedAt` — и страница падала с «Invalid time value» на живом сайте.
+    # Теперь проверяем поля ПЕРВОГО инцидента: список пустой — повод не пропускать,
+    # а повод проверить и сам маршрут.
+    "incidents": [
+        "data[0].id", "data[0].title", "data[0].description",
+        "data[0].startedAt", "data[0].etaAt",
+        "data[0].severity", "data[0].status", "data[0].areaName",
+    ],
     "reliability": ["data"],
     "news": ["data", "meta.count", "meta.stale"],
     "regions": ["data"],

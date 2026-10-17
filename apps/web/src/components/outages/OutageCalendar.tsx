@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Outage } from '@svitlo/shared';
+import { isValidIso } from '../../lib/date.js';
 
 interface OutageCalendarProps {
   outages: Outage[];
@@ -40,6 +41,10 @@ export const OutageCalendar: React.FC<OutageCalendarProps> = ({
   const outageCountByDate = React.useMemo(() => {
     const map = new Map<string, number>();
     outages.forEach((o) => {
+      // Отключение с нечитаемой датой нельзя разместить на календаре: getTime() вернёт NaN,
+      // курсор перестанет двигаться, и цикл по суткам развалится. Пропускаем такую запись —
+      // это случится, если в ответе API хоть одно поле даты придёт мусорным.
+      if (!isValidIso(o.startsAt) || !isValidIso(o.endsAt)) return;
       const start = new Date(o.startsAt);
       const end = new Date(o.endsAt);
       const cursor = new Date(start);

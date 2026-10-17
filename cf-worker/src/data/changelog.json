@@ -1,9 +1,9 @@
 {
- "generatedAt": "2026-10-17T04:36:39.496Z",
+ "generatedAt": "2026-10-17T04:38:44.821Z",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "entries": [
   {
-   "hash": "6e3b18f",
+   "hash": "b49a586",
    "date": "2026-10-17",
    "kind": "new",
    "label": "Нове",
