@@ -1,5 +1,5 @@
 import type { QueueScheduleData } from '@svitlo/shared';
-import type { DaySchedule } from './power-windows.js';
+import type { DaySchedule } from './day-schedule.js';
 
 /**
  * Приводит ответ графика к одному виду.

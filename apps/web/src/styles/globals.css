@@ -385,6 +385,12 @@
     background-color: var(--md-surface-dim);
     color: var(--md-on-surface);
     -webkit-tap-highlight-color: transparent;
+    /* Android WebView и Chrome умеют «раздувать» текст (font boosting) и применять системный
+       масштаб шрифта. Для документа это нормально, для панели управления — нет: подписи
+       перестают помещаться, а сетка остаётся прежней. Фиксируем масштаб текста 1:1; зум
+       страницы (pinch) в браузере при этом остаётся доступным. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   .dark html,
@@ -400,6 +406,9 @@
     padding-right: env(safe-area-inset-right);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Двойной тап по кнопке больше не масштабирует страницу: в приложении это читалось как
+       случайный зум, после которого интерфейс «уезжал». Pinch-zoom (доступность) не затронут. */
+    touch-action: manipulation;
   }
 
   /* Все цифры — табличные: без этого «2:00» и «12:00» прыгают по ширине каждую секунду,

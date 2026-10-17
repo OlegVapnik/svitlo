@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { ArrowLeftRight, Check, X } from 'lucide-react';
+import { ArrowLeftRight, Check, ChevronDown, X } from 'lucide-react';
 import { useQueueSchedule, useQueues } from '../../api/queries.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useRegion } from '../../hooks/useRegion.js';
@@ -17,7 +17,6 @@ import { toDaySchedule } from '../../lib/schedule-payload.js';
 import { formatMinutesUk } from '../../lib/scheduleWindow.js';
 import { hapticTick } from '../../lib/haptics.js';
 import { Button } from '../ui/Button.js';
-import { Select } from '../ui/Select.js';
 import { cn } from '../../lib/cn.js';
 
 /**
@@ -32,7 +31,10 @@ import { cn } from '../../lib/cn.js';
  */
 interface CompareCandidate {
   key: string;
-  label: string;
+  /** Название закладки («Дім», «Робота»); у групп своей области его нет. */
+  title?: string;
+  /** Название области — вторая строка в списке выбора. */
+  regionName: string;
   regionCpu: string;
   queue: string;
 }
@@ -67,6 +69,21 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
   const { data: queuesResponse } = useQueues(region);
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Выпадающий список закрывается тапом мимо него: на телефоне это ожидаемое поведение
+  // любого меню, а оставленный открытым список перекрывал смуги сравнения.
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [pickerOpen]);
 
   const candidates = useMemo<CompareCandidate[]>(() => {
     const regionName = (cpu: string) => regions.find((item) => item.cpu === cpu)?.nameUa ?? cpu;
@@ -74,7 +91,8 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
       .filter((bookmark) => !(bookmark.regionCpu === region && bookmark.queue === queue))
       .map((bookmark) => ({
         key: `bm:${bookmark.id}`,
-        label: `${bookmark.label} · ${bookmark.queue}`,
+        title: bookmark.label,
+        regionName: regionName(bookmark.regionCpu),
         regionCpu: bookmark.regionCpu,
         queue: bookmark.queue,
       }));
@@ -83,14 +101,21 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
       .filter((code) => code !== queue)
       .map((code) => ({
         key: `q:${code}`,
-        label: `${regionName(region)} · ${t('home.heroQueue', { queue: code })}`,
+        regionName: regionName(region),
         regionCpu: region,
         queue: code,
       }));
     return [...fromBookmarks, ...fromQueues];
-  }, [bookmarks, region, queue, regions, queuesResponse, t]);
+  }, [bookmarks, region, queue, regions, queuesResponse]);
 
   const target = candidates.find((candidate) => candidate.key === selection) ?? candidates[0] ?? null;
+
+  /** Первая строка пункта списка: название закладки либо «Черга 2/2» для групп области. */
+  const candidateTitle = (candidate: CompareCandidate): string =>
+    candidate.title ?? t('home.heroQueue', { queue: candidate.queue });
+  /** Вторая строка: область, а для закладки ещё и её группа (закладка живёт в другой области). */
+  const candidateSubtitle = (candidate: CompareCandidate): string =>
+    candidate.title ? `${candidate.regionName} · ${candidate.queue}` : candidate.regionName;
 
   const aQuery = useQueueSchedule(queue, date, region);
   const bQuery = useQueueSchedule(open ? target?.queue : undefined, date, target?.regionCpu ?? region);
@@ -106,7 +131,9 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
   const summary = useMemo(() => (cells ? overlapSummary(cells) : null), [cells]);
 
   const ownLabel = bookmarks.find((bookmark) => bookmark.regionCpu === region && bookmark.queue === queue)?.label;
-  const aLabel = ownLabel ?? t('home.heroQueue', { queue });
+  // Без закладки подписываем строку самим кодом группы: `home.heroQueue` уже содержит
+  // «Черга», и в паре с кодом получалось «Основна · Черга 2/2 · 2/2».
+  const aLabel = ownLabel ?? queue;
 
   if (!queue) return null;
 
@@ -127,6 +154,7 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
           className="gap-1.5"
           onClick={() => {
             hapticTick('select');
+            if (open) setPickerOpen(false);
             setOpen((value) => !value);
           }}
         >
@@ -146,25 +174,80 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
             </p>
           ) : (
             <>
-              <div className="flex flex-wrap items-center gap-2">
-                <label htmlFor="compare-queue" className="text-[11px] font-semibold text-on-surface-variant">
+              <div className="space-y-1">
+                <span id="compare-queue-label" className="block text-[11px] font-semibold text-on-surface-variant">
                   {t('compare.pickQueue')}
-                </label>
-                <Select
-                  id="compare-queue"
-                  value={target?.key ?? ''}
-                  onChange={(event: React.ChangeEvent<HTMLSelectElement>) => {
-                    hapticTick('select');
-                    setSelection(event.target.value);
-                  }}
-                  className="h-10 min-w-40 flex-1 rounded-xl border border-input bg-transparent px-2 text-xs font-semibold text-on-surface"
-                >
-                  {candidates.map((candidate) => (
-                    <option key={candidate.key} value={candidate.key}>
-                      {candidate.label}
-                    </option>
-                  ))}
-                </Select>
+                </span>
+                {target && (
+                  <div ref={pickerRef} className="relative">
+                    {/* Свой список вместо нативного <select>: системный диалог рисовал
+                        «Чернігівська область · Черга 1/1» огромным шрифтом поверх
+                        приложения и не помещался в экран. Здесь — короткий код группы
+                        и область второй строкой, как в остальном интерфейсе. */}
+                    <button
+                      type="button"
+                      aria-haspopup="listbox"
+                      aria-expanded={pickerOpen}
+                      aria-labelledby="compare-queue-label"
+                      onClick={() => {
+                        hapticTick('tick');
+                        setPickerOpen((value) => !value);
+                      }}
+                      className="flex min-h-11 w-full items-center gap-2 rounded-xl border border-hairline bg-surface-container-high px-3 text-left text-xs font-semibold text-on-surface transition-colors hover:bg-surface-container-highest focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="shrink-0 rounded-full bg-surface-container-highest px-2 py-0.5 text-[11px] font-bold tabular">
+                        {target.queue}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-on-surface-variant">
+                        {candidateSubtitle(target)}
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                          pickerOpen && 'rotate-180',
+                        )}
+                        aria-hidden
+                      />
+                    </button>
+
+                    {pickerOpen && (
+                      <ul
+                        role="listbox"
+                        aria-labelledby="compare-queue-label"
+                        className="absolute inset-x-0 top-full z-20 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-lg"
+                      >
+                        {candidates.map((candidate) => {
+                          const isSelected = candidate.key === target.key;
+                          return (
+                            <li key={candidate.key} role="option" aria-selected={isSelected}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  hapticTick('select');
+                                  setSelection(candidate.key);
+                                  setPickerOpen(false);
+                                }}
+                                className={cn(
+                                  'flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors',
+                                  isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted',
+                                )}
+                              >
+                                <span className="w-11 shrink-0 text-xs font-bold tabular">{candidate.queue}</span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-xs font-semibold">{candidateTitle(candidate)}</span>
+                                  <span className="block truncate text-[11px] text-muted-foreground">
+                                    {candidateSubtitle(candidate)}
+                                  </span>
+                                </span>
+                                {isSelected && <Check className="h-4 w-4 shrink-0" aria-hidden />}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -173,7 +256,7 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
                   cells={aStates ? aStates.map((state) => GROUP_TONE[state]) : unknownCells(48)}
                 />
                 <CompareRow
-                  label={`${t('compare.rowB')} · ${target?.label ?? ''}`}
+                  label={`${t('compare.rowB')} · ${target ? (target.title ?? target.queue) : ''}`}
                   cells={bStates ? bStates.map((state) => GROUP_TONE[state]) : unknownCells(48)}
                 />
                 <CompareRow

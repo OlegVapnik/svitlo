@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { GroupOutageSummary } from '@svitlo/shared';
 import {
   OUTAGE_LEAD_MINUTES,
@@ -8,7 +8,6 @@ import {
   filterUnnotified,
   intervalsForQueues,
   markNotified,
-  scheduleNotificationAt,
 } from './outage-notifications.js';
 
 const NOW = Date.parse('2026-10-16T12:00:00.000Z');
@@ -185,48 +184,5 @@ describe('дедупликация показанных предупрежден
     expect(alertKey('starting', '2/2', '2026-10-16T12:30:00.000Z')).toBe(
       'starting:2/2:2026-10-16T12:30:00.000Z',
     );
-  });
-});
-
-describe('scheduleNotificationAt: напоминание на начало окна со светом', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  test('срабатывает ровно в заданный момент, ни минутой раньше', () => {
-    vi.useFakeTimers();
-    const notify = vi.fn();
-    const handle = scheduleNotificationAt(
-      10_000,
-      { title: 'Вікно', body: 'Прання', tag: 'window' },
-      { now: 0, notify },
-    );
-
-    expect(handle?.at).toBe(10_000);
-    vi.advanceTimersByTime(9_999);
-    expect(notify).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify).toHaveBeenCalledWith({ title: 'Вікно', body: 'Прання', tag: 'window' });
-  });
-
-  test('cancel не даёт таймеру выстрелить', () => {
-    vi.useFakeTimers();
-    const notify = vi.fn();
-    const handle = scheduleNotificationAt(5_000, { title: 't', body: 'b', tag: 'x' }, { now: 0, notify });
-
-    handle?.cancel();
-    vi.advanceTimersByTime(10_000);
-
-    expect(notify).not.toHaveBeenCalled();
-  });
-
-  test('прошедший момент не откладывается на сутки, а показывается сразу', () => {
-    vi.useFakeTimers();
-    const notify = vi.fn();
-    scheduleNotificationAt(1_000, { title: 't', body: 'b', tag: 'x' }, { now: 5_000, notify });
-
-    vi.advanceTimersByTime(0);
-    expect(notify).toHaveBeenCalledTimes(1);
   });
 });

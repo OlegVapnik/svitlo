@@ -121,16 +121,21 @@ const IncidentCard: React.FC<{ incident: Incident }> = ({ incident }) => {
   const isActive = incident.status === 'active';
   const isScheduled = incident.status === 'scheduled';
   const status = STATUS_META[incident.status];
-  const severityKey = SEVERITY_KEY[incident.severity];
+  // Серьёзность приходит из разных источников (ОСР, Telegram, RSS), и не все её отдают.
+  // Раньше здесь стояло `incident.severity.toUpperCase()` — одна запись без поля роняла
+  // весь маршрут в «Щось пішло не так». Пустое значение — это «не указано», а не повод
+  // прятать событие: карточка рисуется без бейджа.
+  const severityKey = incident.severity ? SEVERITY_KEY[incident.severity] : undefined;
+  const severityLabel = severityKey ? t(severityKey) : (incident.severity ?? '').toUpperCase();
 
   return (
     <Card className={isActive ? 'border-destructive/40 bg-destructive/5' : isScheduled ? 'border-warning/40 bg-warning/5' : undefined}>
       <CardContent className="space-y-2.5 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={SEVERITY_VARIANT[incident.severity] ?? 'muted'}>
-              {severityKey ? t(severityKey) : incident.severity.toUpperCase()}
-            </Badge>
+            {severityLabel && (
+              <Badge variant={SEVERITY_VARIANT[incident.severity] ?? 'muted'}>{severityLabel}</Badge>
+            )}
             {status && <Badge variant={status.variant}>{t(status.key)}</Badge>}
             <Badge variant="outline" className="gap-1">
               <Radio className="h-3 w-3" aria-hidden />

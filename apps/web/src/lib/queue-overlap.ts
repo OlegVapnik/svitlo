@@ -1,5 +1,5 @@
 import { OFF_STATE_CODE, minutesOfDay } from './scheduleWindow.js';
-import { UNCERTAIN_STATE_CODE, type DaySchedule } from './power-windows.js';
+import { UNCERTAIN_STATE_CODE, type DaySchedule } from './day-schedule.js';
 
 /**
  * «Перетин груп»: дві 24-годинні шкали й третя — коли світло є в обох місцях, хоч в одному,

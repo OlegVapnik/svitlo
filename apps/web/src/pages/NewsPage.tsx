@@ -161,7 +161,9 @@ export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false })
       </div>
 
       <Tabs value={kind} onValueChange={(value) => setKind(value as KindFilter)}>
-        <TabsList aria-label={t('news.title')}>
+        {/* Шесть фильтров не влезали в строку на телефоне и уезжали за экран.
+            flex-wrap переносит их на вторую строку вместо горизонтального обрезания. */}
+        <TabsList aria-label={t('news.title')} className="flex-wrap">
           {FILTERS.map((value) => (
             <TabsTrigger key={value} value={value}>
               {value === 'all' ? t('news.filterAll') : t(KIND_LABEL_KEY[value])}
@@ -182,7 +184,7 @@ export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false })
         {/* Та же болезнь, что была на главной: `data?.meta.stale` падал без объекта meta. */}
         {data?.meta?.stale && <Badge variant="warning">{t('news.staleChip')}</Badge>}
         {failedSources.length > 0 && (
-          <Badge variant="destructive">
+          <Badge variant="destructive" className="max-w-full whitespace-normal break-words text-left">
             {t('news.sourceFailed')}: {failedSources.map((source) => sourceLabel(source.sourceKey)).join(', ')}
           </Badge>
         )}
@@ -219,15 +221,15 @@ export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false })
             <CardContent className="space-y-2 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant={KIND_VARIANT[item.kind]}>{t(KIND_LABEL_KEY[item.kind])}</Badge>
-                <span className="text-xs text-muted-foreground">{sourceLabel(item.sourceKey)}</span>
+                <span className="break-words text-xs text-muted-foreground">{sourceLabel(item.sourceKey)}</span>
                 {item.isUkraineWide && <Badge variant="muted">{t('news.kindUkraine')}</Badge>}
                 <span className="ml-auto text-xs text-muted-foreground">
                   {formatDateTime(item.publishedAt ?? item.firstSeenAt)}
                 </span>
               </div>
-              <h2 className="text-sm font-semibold leading-snug text-foreground sm:text-base">{item.title}</h2>
+              <h2 className="break-words text-sm font-semibold leading-snug text-foreground sm:text-base">{item.title}</h2>
               {(item.summary || item.body) && (
-                <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                <p className="line-clamp-3 break-words text-xs leading-relaxed text-muted-foreground sm:text-sm">
                   {item.summary || item.body}
                 </p>
               )}

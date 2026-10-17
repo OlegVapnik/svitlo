@@ -1,17 +1,23 @@
 package ua.com.svitlo.app;
 
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Base64;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.lang.ref.WeakReference;
 
 /**
@@ -75,6 +81,7 @@ public class MainActivity extends BridgeActivity {
         if (!bridgeRegistered) {
             webView.addJavascriptInterface(new InsetsBridge(this), "SvitloInsets");
             webView.addJavascriptInterface(new HapticsBridge(this), "SvitloHaptics");
+            webView.addJavascriptInterface(new ShareBridge(this), "SvitloShare");
             bridgeRegistered = true;
         }
 
@@ -82,6 +89,11 @@ public class MainActivity extends BridgeActivity {
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
+        // Системный «размер шрифта» Android WebView применяет как textZoom: текст растёт,
+        // а отступы, иконки и высоты кнопок остаются прежними — вёрстка разъезжается, подписи
+        // обрезаются многоточием, карточка вылезает за экран. Приложение рисуется по сетке
+        // 1:1 (как и задумано для панели управления), поэтому масштаб текста фиксируем.
+        settings.setTextZoom(100);
     }
 
     /**
@@ -129,6 +141,52 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
+     * Отдаёт PNG системному меню «Поділитися». Возвращает false, если файл не записался или
+     * Intent не удался — тогда веб-часть честно уходит на запасной путь (navigator.share / скачивание).
+     *
+     * ЗАЧЕМ МОСТ. В Android WebView нет Web Share API: `navigator.share` отсутствует, а `<a download>`
+     * с blob-URL молча ничего не делает (у WebView нет загрузчика). Поэтому картинка, которая
+     * «скачалась» на телефоне, на самом деле никуда не попадала. Тот же приём, что и с вибрацией:
+     * маленький JS-мост в MainActivity, без сторонних плагинов.
+     */
+    private boolean shareImage(String base64, String fileName, String title) {
+        if (base64 == null || base64.isEmpty()) return false;
+        try {
+            byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+            File dir = new File(getCacheDir(), "share");
+            if (!dir.exists() && !dir.mkdirs()) return false;
+            File file = new File(dir, safeFileName(fileName));
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                out.write(bytes);
+            }
+
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", file);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("image/png");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            if (title != null && !title.isEmpty()) {
+                send.putExtra(Intent.EXTRA_SUBJECT, title);
+            }
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, title);
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            runOnUiThread(() -> startActivity(chooser));
+            return true;
+        } catch (Exception error) {
+            // Битый base64, нет FileProvider, не хватило места — это не повод ронять приложение.
+            return false;
+        }
+    }
+
+    /** Имя файла из JS: оставляем только безопасные символы, иначе путь может выйти за cache. */
+    private static String safeFileName(String fileName) {
+        String fallback = "svitlo-schedule.png";
+        if (fileName == null || fileName.isEmpty()) return fallback;
+        String cleaned = fileName.replaceAll("[^a-zA-Z0-9._-]", "-");
+        return cleaned.isEmpty() ? fallback : cleaned;
+    }
+
+    /**
      * Мост «нативные инсеты → веб»: методы вызываются из JS как window.SvitloInsets.top().
      *
      * Класс public static, а не внутренний: WebView вызывает методы через рефлексию, и у
@@ -153,6 +211,31 @@ public class MainActivity extends BridgeActivity {
         public int bottom() {
             MainActivity current = activity.get();
             return current == null ? 0 : insetCssPx(current, false);
+        }
+    }
+
+    /**
+     * Мост «веб → системне меню Поділитися»: window.SvitloShare.shareImage(base64, fileName, title).
+     *
+     * base64, а не Blob: Blob нельзя передать через JavascriptInterface, а конвертация в
+     * dataURL уже есть в вебе. Картинка 1080×1350 весит сотни килобайт — один строковый
+     * вызов моста дешевле, чем плагин ради одного Intent.
+     *
+     * Класс public static по той же причине, что и InsetsBridge: WebView вызывает методы
+     * через рефлексию. Activity держим по слабой ссылке — мост живёт дольше одного экрана.
+     */
+    public static class ShareBridge {
+
+        private final WeakReference<MainActivity> activity;
+
+        ShareBridge(MainActivity activity) {
+            this.activity = new WeakReference<>(activity);
+        }
+
+        @JavascriptInterface
+        public boolean shareImage(String base64, String fileName, String title) {
+            MainActivity current = activity.get();
+            return current != null && current.shareImage(base64, fileName, title);
         }
     }
 

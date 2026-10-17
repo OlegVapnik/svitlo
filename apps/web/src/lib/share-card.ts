@@ -1,6 +1,6 @@
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { OFF_STATE_CODE, kyivOffset, minutesOfDay, minutesToHm } from './scheduleWindow.js';
-import { UNCERTAIN_STATE_CODE } from './power-windows.js';
+import { UNCERTAIN_STATE_CODE } from './day-schedule.js';
 import { kyivDateKey } from './outage-dates.js';
 
 /**
@@ -418,6 +418,56 @@ function downloadBlob(blob: Blob, fileName: string): boolean {
   }
 }
 
+/** Мост Android-обёртки (MainActivity → SvitloShare): системное меню «Поділитися» с файлом. */
+interface NativeShareBridge {
+  shareImage?: (base64: string, fileName: string, title: string) => boolean;
+}
+
+declare global {
+  interface Window {
+    /** Мост из MainActivity: PNG у системное меню. В браузере отсутствует. */
+    SvitloShare?: NativeShareBridge;
+  }
+}
+
+function readBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (typeof FileReader !== 'function') {
+      reject(new Error('filereader unavailable'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const comma = result.indexOf(',');
+      if (comma < 0) reject(new Error('base64 unavailable'));
+      else resolve(result.slice(comma + 1));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Нативная ветка шаринга.
+ *
+ * ЗАЧЕМ. В Android WebView нет `navigator.share`, а `<a download>` с blob-URL ничего не делает:
+ * у WebView нет загрузчика. Кнопка при этом показывала «Картинку збережено», хотя файл никуда
+ * не попадал. MainActivity принимает PNG в base64 и открывает стандартный ACTION_SEND chooser —
+ * Telegram, Viber и почта получают обычный файл image/png.
+ */
+async function shareViaNative(blob: Blob, fileName: string, title: string): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const bridge = window.SvitloShare;
+  if (!bridge || typeof bridge.shareImage !== 'function') return false;
+  try {
+    const base64 = await readBase64(blob);
+    return bridge.shareImage(base64, fileName, title) === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Делится карточкой: сначала системное меню с файлом (Telegram/Viber/пошта), а если платформа
  * файлы не умеет — скачивает PNG. «Скачано» — это не ошибка: на компьютере это и есть цель.
@@ -431,6 +481,8 @@ export async function shareScheduleCard(input: ShareCardInput): Promise<ShareCar
   }
 
   const fileName = shareCardFileName(input);
+
+  if (await shareViaNative(blob, fileName, input.labels.title)) return 'shared';
 
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     try {

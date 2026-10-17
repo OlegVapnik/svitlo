@@ -8,7 +8,7 @@ import {
   slotsToMinutes,
   type SlotState,
 } from './queue-overlap.js';
-import type { DaySchedule } from './power-windows.js';
+import type { DaySchedule } from './day-schedule.js';
 
 const off = (from: string, to: string): ScheduleIntervalUtc => ({
   startsAt: from,

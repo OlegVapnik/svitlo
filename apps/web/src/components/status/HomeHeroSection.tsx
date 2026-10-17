@@ -21,7 +21,6 @@ import {
 import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
 import { ShareScheduleButton } from '../schedule/ShareScheduleButton.js';
-import { PowerWindowPlanner } from '../schedule/PowerWindowPlanner.js';
 import { QueueCompareBar } from '../schedule/QueueCompareBar.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { Button } from '../ui/Button.js';
@@ -459,13 +458,10 @@ export const HomeHeroSection: React.FC = () => {
               </div>
             )}
 
-            {/* Планувальник вікон: відповідає не «коли відключать», а «коли я встигну». */}
-            <PowerWindowPlanner
-              queue={selectedQueue ?? undefined}
-              region={currentRegion}
-              now={now}
-              className="mt-2"
-            />
+            {/* Планувальник вікон прибрано: він радив, коли вмикати прилад, за
+                ОРІЄНТОВНИМ графіком, а оператор може змінити його без попередження.
+                Порада «встигнете» коштувала б людині прання, яке зупинилось посеред
+                циклу. Залишаємо факт: таймлайн, картку й перетин груп. */}
           </div>
 
           {/* Графік узято з офлайн-снимка, а не зі свіжої відповіді оператора. Кажемо про це

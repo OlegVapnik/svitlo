@@ -3818,13 +3818,20 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       `SELECT external_id, area_name, starts_at, ends_at, reason FROM outage_events
        WHERE kind = 'emergency' AND ends_at >= ? ORDER BY starts_at DESC LIMIT 100`,
     ).bind(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).all<Record<string, string>>();
+    // Имена полей — по контракту Incident из @svitlo/shared. Здесь было `startsAt` вместо
+    // `startedAt`, и страница инцидентов падала с «Invalid time value»: она читала
+    // incident.startedAt, получала undefined, а new Date(undefined) в date-fns бросает.
+    // Не хватало также description и severity — они обязательны в типе.
     const data = (rows.results ?? []).map((row) => ({
       id: row['external_id']!,
       title: row['reason'] ?? 'Аварійна перерва',
-      areaName: row['area_name']!,
-      startsAt: row['starts_at']!,
-      etaAt: row['ends_at']!,
+      description: row['reason'] ?? '',
+      startedAt: row['starts_at']!,
+      etaAt: row['ends_at'] ?? null,
+      severity: 'warning',
       status: 'open',
+      kind: 'outage',
+      areaName: row['area_name'] ?? null,
     }));
     return json({ data });
   }

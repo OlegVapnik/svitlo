@@ -121,10 +121,13 @@ export const WavyProgressBar: React.FC<WavyProgressBarProps> = ({
       </div>
 
       {(elapsedLabel || percentLabel || remainingLabel) && (
-        <div className="mt-2.5 flex items-center justify-between gap-2 text-xs font-semibold text-on-surface-variant">
-          <span className="truncate">{elapsedLabel}</span>
-          {percentLabel && <span className="shrink-0 tabular text-on-surface">{percentLabel}</span>}
-          <span className="truncate text-right">{remainingLabel}</span>
+        // Подписи переносятся, а не обрезаются: «Пройшло 5 год 38 хв» с многоточием
+        // выглядело как обрыв данных, а на телефоне с крупным системным шрифтом
+        // обрезались сразу две из трёх подписей.
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] font-semibold leading-snug text-on-surface-variant sm:text-xs">
+          {elapsedLabel && <span className="whitespace-nowrap">{elapsedLabel}</span>}
+          {percentLabel && <span className="tabular text-on-surface">{percentLabel}</span>}
+          {remainingLabel && <span className="ml-auto whitespace-nowrap text-right">{remainingLabel}</span>}
         </div>
       )}
     </div>
