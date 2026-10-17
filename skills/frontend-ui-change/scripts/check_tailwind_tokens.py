@@ -91,9 +91,80 @@ if state_problems:
     print(f"FAIL: палитра состояний сети неполная: {state_problems}")
     sys.exit(1)
 
+# ── Канонические классы вместо arbitrary values ───────────────────────────────
+# Если значение выражается шкалой Tailwind v4, arbitrary-синтаксис только мешает:
+# `min-h-[76px]` — это `min-h-19`, `rounded-[2px]` — `rounded-xs`, а `w-[2px]` — `w-0.5`.
+# Сканируем только исходники web: в CSS токены и calc() живут отдельно.
+WEB_SRC = os.path.join(sys.argv[1] if len(sys.argv) > 1 else ".", "apps/web/src")
+SPACING_UTILITIES = {
+    "w", "h", "min-w", "min-h", "max-w", "max-h", "size",
+    "p", "px", "py", "pt", "pb", "pl", "pr",
+    "m", "mx", "my", "mt", "mb", "ml", "mr",
+    "gap", "gap-x", "gap-y", "space-x", "space-y",
+    "inset", "inset-x", "inset-y", "top", "right", "bottom", "left",
+}
+RADIUS_STEPS = {2: "xs", 4: "sm", 6: "md", 8: "lg", 12: "xl", 16: "2xl", 24: "3xl", 32: "4xl"}
+
+
+def source_files(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in {"node_modules", "dist", ".git"}]
+        for name in filenames:
+            if name.endswith((".ts", ".tsx")):
+                yield os.path.join(dirpath, name)
+
+
+def spacing_step(unit, raw):
+    """Переводит px/rem в шаг шкалы Tailwind (0.25rem), если он целый или четвертной."""
+    value = float(raw)
+    steps = value / 4 if unit == "px" else value * 4
+    if steps <= 0:
+        return None
+    if abs(steps * 4 - round(steps * 4)) > 1e-9:
+        return None
+    return f"{steps:g}"
+
+
+arbitrary_value = re.compile(r"(?<![\w-])([a-z][a-z0-9-]*)-\[(\d+(?:\.\d+)?)(px|rem)\]")
+repeat_columns = re.compile(r"grid-cols-\[repeat\((\d+),minmax\(0,\s*1fr\)\)\]")
+scale_value = re.compile(r"(?<![\w-])scale-\[(\d+(?:\.\d+)?)\]")
+
+canonical_issues = []
+for filename in source_files(WEB_SRC):
+    with open(filename, "r", encoding="utf-8") as f:
+        for lineno, line in enumerate(f, start=1):
+            for utility, raw, unit in arbitrary_value.findall(line):
+                replacement = None
+                if utility in SPACING_UTILITIES:
+                    steps = spacing_step(unit, raw)
+                    if steps:
+                        replacement = f"{utility}-{steps}"
+                elif utility.startswith("rounded") and unit == "px":
+                    px = float(raw)
+                    if px.is_integer() and int(px) in RADIUS_STEPS:
+                        replacement = f"{utility}-{RADIUS_STEPS[int(px)]}"
+                if replacement:
+                    canonical_issues.append(
+                        (filename, lineno, f"{utility}-[{raw}{unit}]", replacement)
+                    )
+            for count in repeat_columns.findall(line):
+                canonical_issues.append(
+                    (filename, lineno, "grid-cols-[repeat(…,minmax(0,1fr))]", f"grid-cols-{count}")
+                )
+            for raw in scale_value.findall(line):
+                pct = float(raw) * 100
+                if abs(pct - round(pct)) < 1e-9:
+                    canonical_issues.append((filename, lineno, f"scale-[{raw}]", f"scale-{int(round(pct))}"))
+
+if canonical_issues:
+    print("FAIL: arbitrary-значения, у которых есть канонический класс Tailwind v4:")
+    for filename, lineno, found, replacement in canonical_issues[:20]:
+        print(f"  {filename}:{lineno}: {found} → {replacement}")
+    sys.exit(1)
+
 print(
     f"OK: {len(BASE_TOKENS)} базовых, {len(SURFACE_TOKENS)} ролей поверхностей и "
     f"{len(STATUS_TOKENS)} токенов состояния/грани объявлены; палитра для {len(POWER_STATES)} "
-    f"состояний сети на месте (светлая и тёмная темы)"
+    f"состояний сети на месте (светлая и тёмная темы); канонических arbitrary-значений нет"
 )
 sys.exit(0)

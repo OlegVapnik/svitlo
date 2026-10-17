@@ -40,7 +40,7 @@ export const OutageMap: React.FC<OutageMapProps> = ({ outages }) => {
 
   return (
     <div className="w-full bg-card p-3 rounded-xl border border-border shadow-xs overflow-hidden">
-      <div className="h-[400px] w-full rounded-lg overflow-hidden">
+      <div className="h-100 w-full rounded-lg overflow-hidden">
         <MapContainer
           center={center}
           zoom={zoom}

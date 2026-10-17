@@ -24,6 +24,12 @@ export function formatDateTime(iso: string): string {
   return formatInTimeZone(new Date(iso), KYIV_TZ, "d MMM yyyy, HH:mm", { locale: uk });
 }
 
+/** Только дата в киевском поясе («17 жовт. 2026») — для шапки «Що нового». */
+export function formatDate(iso: string): string {
+  if (!isValidIso(iso)) return INVALID_DATE_PLACEHOLDER;
+  return formatInTimeZone(new Date(iso), KYIV_TZ, 'd MMM yyyy', { locale: uk });
+}
+
 export function formatTimeRange(start: string, end: string): string {
   if (!isValidIso(start) || !isValidIso(end)) return INVALID_DATE_PLACEHOLDER;
   const t1 = formatInTimeZone(new Date(start), KYIV_TZ, 'HH:mm');

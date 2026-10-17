@@ -8,6 +8,7 @@
    - В проекте React 19, Vite 8, Tailwind v4 (`@tailwindcss/vite`). Файлов `tailwind.config.ts` и `postcss.config.js` **нет**.
    - Все семантические токены (`bg-card`, `text-muted-foreground`, `border-border`, `bg-popover`, `text-success`, `text-warning`, `text-destructive`) объявлены в `apps/web/src/styles/globals.css` через `@theme` и `@theme inline` с парами значений в `:root` (тёплая светлая тема `#f3efe6`) и `.dark` (`#101411`).
    - **Никаких inline-цветов** (`style={{ backgroundColor: ... }}`) для фонов/текста. Единственное исключение — цвет интервала графика от оператора (`interval.stateColor` в `QueueScheduleBar`).
+   - **Канонические классы вместо arbitrary values.** Если значение выражается шкалой Tailwind v4, пиши утилиту: `min-h-[76px]` → `min-h-19`, `min-w-[27rem]` → `min-w-108`, `rounded-[2px]` → `rounded-xs`, `grid-cols-[repeat(48,minmax(0,1fr))]` → `grid-cols-48`, `active:scale-[0.99]` → `active:scale-99`, `w-[2px]` → `w-0.5`. Arbitrary-синтаксис оставляй только для `calc()`, `clamp()`, safe-area, сложных grid-шаблонов и теней с `currentColor`; проверяет `check_tailwind_tokens.py`.
 2. **Закладки своих групп и локаций («Мої закладки»):**
    - Пользователь может сохранять в закладки **несколько групп/очередей и адресов** из разных областей Украины (например: «🏠 Дім — Київ, черга 3.1», «🏡 Батьки — с. Деснянське, черга 2/2», «💼 Робота — Львів, черга 1.2»).
    - Никакого хардкода одной очереди `'2/2'`! Список доступных областей берётся из `GET /api/v1/regions`, список очередей области — из `GET /api/v1/queues?region=<cpu>`.

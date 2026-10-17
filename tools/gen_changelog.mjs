@@ -11,16 +11,19 @@
  * поэтому JSON попадает в бандл на сборке).
  *
  * Что попадает в выдачу:
- *  - только пользовательские типы (feat/fix/security). Служебные chore/docs/misc в приложении
- *    человеку ничего не объясняют и только засоряют список;
- *  - заголовок — первая строка тела коммита (там живое украинское описание), а не тема
- *    коммита: темы короткие и часто машинные («fix: CORS»);
- *  - если тело пустое, используется тема.
+ *  - только готовый текст для человека: trailer `Release-Note:` в теле коммита или запись
+ *    в tools/changelog-notes.json. Сырые тела коммитов не используются — в них обоснования
+ *    для разработчика, имена таблиц и лимиты инфраструктуры;
+ *  - служебные изменения (chore/docs/test) в приложении ничего не объясняют и не попадают
+ *    в список, даже если у них есть тело;
+ *  - для истории до введения trailer'а тексты лежат в tools/changelog-notes.json. Это
+ *    курируемый список: один коммит может дать несколько пунктов, а внутренние правки —
+ *    не дать ни одного.
  *
  * Запуск: node tools/gen_changelog.mjs [--limit 30]
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +37,10 @@ const webFallbackPath = path.join(repoRoot, 'apps/web/src/data/changelog.json');
 // Копия для воркера: он раздаёт чейнджлог тем же маршрутом, что и Node-бэкенд, а читать файлы
 // из рантайма Cloudflare Workers не умеет — JSON вшивается в бандл wrangler на сборке.
 const workerPath = path.join(repoRoot, 'cf-worker/src/data/changelog.json');
+// Курируемые тексты для истории до появления trailer'а `Release-Note:`. Ключ — короткий хеш
+// коммита, значение — один объект { kind, text } или массив таких объектов. Коммиты, которых
+// здесь нет и у которых нет trailer'а, в чейнджлог не попадают: это внутренние правки.
+const notesPath = path.join(repoRoot, 'tools/changelog-notes.json');
 
 const limitArgIndex = process.argv.indexOf('--limit');
 const limit = limitArgIndex > -1 ? Number(process.argv[limitArgIndex + 1]) : 30;
@@ -47,6 +54,54 @@ const USER_FACING = {
   fix: { kind: 'fix', label: 'Виправлено' },
   security: { kind: 'fix', label: 'Безпека' },
 };
+
+const KIND_LABELS = { new: 'Нове', fix: 'Виправлено' };
+
+function loadCuratedNotes() {
+  try {
+    const parsed = JSON.parse(readFileSync(notesPath, 'utf8'));
+    return parsed && typeof parsed.entries === 'object' && parsed.entries ? parsed.entries : {};
+  } catch (error) {
+    // ENOENT — штатная ситуация для нового репозитория: тексты можно писать только
+    // trailer'ами. Любая другая ошибка — повод сказать о ней, но не ронять сборку.
+    if (error.code !== 'ENOENT') {
+      console.warn(`Не удалось прочитать ${path.relative(repoRoot, notesPath)}: ${error.message}`);
+    }
+    return {};
+  }
+}
+
+const curatedNotes = loadCuratedNotes();
+
+/**
+ * Приводит пользовательский текст к одной аккуратной строке: убирает markdown-разметку,
+ * переносы и обрезает слишком длинные абзацы по границе предложения или слова.
+ */
+function cleanNote(value) {
+  const text = String(value)
+    .replace(/`([^`]+)`/gu, '$1')
+    .replace(/\*\*([^*]+)\*\*/gu, '$1')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (text.length <= 260) return text;
+  const cut = text.slice(0, 260);
+  const sentenceEnd = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  if (sentenceEnd >= 120) return cut.slice(0, sentenceEnd + 1);
+  const wordEnd = cut.lastIndexOf(' ');
+  return `${cut.slice(0, wordEnd > 0 ? wordEnd : 260).replace(/[;,.:-]$/u, '')}…`;
+}
+
+function noteToEntry(note, hash, date) {
+  if (!note || typeof note.text !== 'string' || !note.text.trim()) return null;
+  const kind = note.kind === 'fix' ? 'fix' : 'new';
+  return {
+    hash: hash.slice(0, 7),
+    date,
+    kind,
+    label: KIND_LABELS[kind],
+    text: cleanNote(note.text),
+  };
+}
 
 /** Разделители записей в `git log` — нужно, чтобы тело коммита не потеряло переносы строк. */
 const RECORD_SEPARATOR = '';
@@ -70,25 +125,34 @@ for (const record of raw.split(RECORD_SEPARATOR)) {
   const [hash, date, subject, ...bodyLines] = trimmed.split(FIELD_SEPARATOR);
   if (!hash || !subject) continue;
 
+  // Курируемые тексты идут первыми: один коммит может дать несколько пользовательских
+  // пунктов (например, новая матрица и исправление таймера в одной правке).
+  const curated = curatedNotes[hash];
+  if (curated) {
+    for (const note of Array.isArray(curated) ? curated : [curated]) {
+      const entry = noteToEntry(note, hash, date);
+      if (entry) entries.push(entry);
+    }
+    if (entries.length >= limit) break;
+    continue;
+  }
+
+  // Для новых коммитов единственный источник текста — trailer. Сырое тело не используем:
+  // оно написано для разработчика и содержит технический мусор.
+  const releaseNote = bodyLines.join('\n').match(/^Release-Note:\s*(.+)$/imu)?.[1];
+  if (!releaseNote) continue;
+
   // Тема вида `fix(web): …` или `feat: …` → тип из первого слова.
   const type = subject.split(/[:(]/u)[0].trim().toLowerCase();
   const meta = USER_FACING[type];
   if (!meta) continue;
-
-  // Тело коммита — живое описание. Берём первую содержательную строку: дальше идут детали
-  // реализации, которые человеку в приложении не нужны.
-  const body = bodyLines.join('\n').trim();
-  const firstBodyLine = body.split('\n').map((line) => line.trim()).find(Boolean) ?? '';
-  // Фолбэк на тему коммита убираем машинный префикс: «fix(web): …» читается хуже, чем «…».
-  const subjectText = subject.replace(/^[a-z]+(\([^)]*\))?:\s*/iu, '');
-  const text = firstBodyLine || subjectText;
 
   entries.push({
     hash: hash.slice(0, 7),
     date,
     kind: meta.kind,
     label: meta.label,
-    text,
+    text: cleanNote(releaseNote),
   });
 
   if (entries.length >= limit) break;

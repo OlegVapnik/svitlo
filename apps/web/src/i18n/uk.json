@@ -452,6 +452,8 @@
   },
   "changelog": {
     "entries": "змін",
+    "groupNew": "Нові можливості",
+    "groupFix": "Виправлення",
     "sourceServer": "оновлено з сервера {{when}}",
     "sourceServerNoTime": "оновлено з сервера",
     "sourceCache": "з кешу телефону: сервер недоступний",

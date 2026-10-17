@@ -55,7 +55,7 @@ export function StatCard({ label, value, icon: Icon, tone = 'neutral', hint, to,
   const className = cn(
     // Плитка-метрика: собраный радиус 16px, тонкая грань и верхний блик вместо тени.
     'flex items-center gap-3 rounded-2xl border border-border bg-card p-4 transition-colors duration-200',
-    to && 'hover:border-primary/40 hover:bg-surface-container-high active:scale-[0.99]',
+    to && 'hover:border-primary/40 hover:bg-surface-container-high active:scale-99',
   );
 
   if (to) {

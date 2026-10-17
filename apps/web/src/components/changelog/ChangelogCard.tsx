@@ -5,8 +5,7 @@ import bundledChangelog from '../../data/changelog.json';
 import { APP_VERSION } from '../../version.js';
 import { useChangelog } from '../../api/queries.js';
 import { isOfflineServed } from '../../api/offline-cache.js';
-import { formatDateTime } from '../../lib/date.js';
-import { cn } from '../../lib/cn.js';
+import { formatDate, formatDateTime, isValidIso } from '../../lib/date.js';
 
 type ChangelogEntry = {
   hash: string;
@@ -15,6 +14,15 @@ type ChangelogEntry = {
   label: string;
   text: string;
 };
+
+/**
+ * Порядок смысловых разделов. Хеши и даты коммитов здесь не показываются: версия и дата
+ * релиза стоят один раз в шапке, а пункты читаются как список изменений для человека.
+ */
+const GROUP_ORDER = [
+  { kind: 'new', Icon: Sparkles, labelKey: 'changelog.groupNew' },
+  { kind: 'fix', Icon: Wrench, labelKey: 'changelog.groupFix' },
+] as const;
 
 /**
  * Встроенная копия чейджлога — только офлайн-фолбэк.
@@ -28,12 +36,9 @@ const BUNDLED_ENTRIES = bundledChangelog.entries as ChangelogEntry[];
 /**
  * Блок «Що нового» на головній.
  *
- * Джерело — згенерований tools/gen_changelog.mjs JSON з історії git: у PWA та Android-бандлі
- * історії коммитів немає, а human-readable список потрібен. Службні коміти (chore/docs) у
- * генератор не потрапляють, тож у списку лише те, що реально помітив користувач.
- *
- * Показуємо 5 останніх, решта — за кнопкою: повний список у бандлі займає місце, а читається
- * погано.
+ * Джерело — згенерований tools/gen_changelog.mjs JSON. Він містить лише курирований текст для
+ * людини: сирі тіла комітів у UI не потрапляють. Версія і дата стоять один раз у шапці, а сам
+ * список розбитий на «Нові можливості» та «Виправлення» — без хешів і дат у кожному пункті.
  */
 export const ChangelogCard: React.FC = () => {
   const { t } = useTranslation();
@@ -61,6 +66,14 @@ export const ChangelogCard: React.FC = () => {
     : t('changelog.sourceBundled');
   const SourceIcon = fromServer ? (offline ? Database : CloudCheck) : CloudOff;
 
+  // Дата релиза — только в шапке. Берём самый свежий пункт: генератор отдаёт список от новых
+  // к старым, поэтому entries[0] — последнее обновление.
+  const latestDate = entries[0]?.date;
+  const groups = GROUP_ORDER.map((group) => ({
+    ...group,
+    entries: entries.filter((entry) => entry.kind === group.kind),
+  })).filter((group) => group.entries.length > 0);
+
   return (
     /* Аккордеон по умолчанию свёрнут: «Що нового» живёт внизу главной и не спорит с графиком
        за первый экран. Открывается по нажатию — обычный <details>, без JS-состояния. */
@@ -71,6 +84,11 @@ export const ChangelogCard: React.FC = () => {
           <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
             v{APP_VERSION}
           </span>
+          {latestDate && isValidIso(latestDate) && (
+            <time dateTime={latestDate} className="shrink-0 text-[10px] font-medium text-muted-foreground">
+              {formatDate(latestDate)}
+            </time>
+          )}
           <span className="truncate">{t('home.whatsNew')}</span>
         </span>
         <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground">
@@ -84,32 +102,23 @@ export const ChangelogCard: React.FC = () => {
         <span className="min-w-0">{sourceLabel}</span>
       </p>
 
-      <ul className="mt-2 space-y-2">
-        {entries.slice(0, 5).map((entry) => (
-          <li key={entry.hash} className="flex gap-2.5">
-            <span
-              className={cn(
-                'mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg',
-                entry.kind === 'new' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {entry.kind === 'new' ? (
-                <Sparkles className="h-3.5 w-3.5" aria-hidden />
-              ) : (
-                <Wrench className="h-3.5 w-3.5" aria-hidden />
-              )}
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm text-foreground">{entry.text}</p>
-              <p className="mt-0.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                <span className="font-mono normal-case tracking-normal">{entry.hash}</span>
-                <span aria-hidden>·</span>
-                <time dateTime={entry.date}>{entry.date}</time>
-              </p>
-            </div>
-          </li>
+      <div className="mt-3 space-y-3">
+        {groups.map(({ kind, Icon, labelKey, entries: groupEntries }) => (
+          <section key={kind} aria-label={t(labelKey)}>
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {t(labelKey)}
+            </h3>
+            <ul className="mt-1.5 space-y-1.5 border-l border-hairline pl-3">
+              {groupEntries.map((entry, index) => (
+                <li key={`${entry.hash}-${index}`} className="text-pretty text-sm leading-snug text-foreground">
+                  {entry.text}
+                </li>
+              ))}
+            </ul>
+          </section>
         ))}
-      </ul>
+      </div>
     </details>
   );
 };

@@ -115,7 +115,7 @@ export const Queues24hMatrix: React.FC<Queues24hMatrixProps> = ({
       </header>
 
       <div className="overflow-x-auto">
-        <div className="min-w-[29rem] px-3 pb-3 pt-8 sm:px-4">
+        <div className="min-w-116 px-3 pb-3 pt-8 sm:px-4">
           <div
             className="grid gap-x-2 text-[10px] font-semibold text-on-surface-variant"
             style={{ gridTemplateColumns: GRID_COLUMNS }}
@@ -255,7 +255,7 @@ export const Queues24hMatrix: React.FC<Queues24hMatrixProps> = ({
 
 const LegendDot: React.FC<{ className: string; label: string }> = ({ className, label }) => (
   <span className="inline-flex items-center gap-1.5">
-    <span className={cn('h-2 w-2 rounded-[2px]', className)} aria-hidden />
+    <span className={cn('h-2 w-2 rounded-xs', className)} aria-hidden />
     {label}
   </span>
 );

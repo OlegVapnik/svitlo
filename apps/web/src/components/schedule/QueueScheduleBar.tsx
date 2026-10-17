@@ -125,7 +125,7 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
             закрывала сегменты графика. Время переехало текстом в строку легенды под полосой. */}
         {nowMinutes != null && nowMinutes >= 0 && nowMinutes <= 1440 && (
           <span
-            className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 rounded-full bg-white/85"
+            className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-white/85"
             style={{ left: `${(nowMinutes / 1440) * 100}%` }}
             aria-hidden
           />
@@ -156,7 +156,7 @@ export const QueueScheduleBar: React.FC<Props> = ({ intervals, date, now = new D
             закрывала сегменты графика, хотя точку «сейчас» и так отмечает белая риска. */}
         {nowMinutes != null && nowMinutes >= 0 && nowMinutes <= 1440 && (
           <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
-            <span className="h-3.5 w-[2px] rounded-full bg-white/85" aria-hidden />
+            <span className="h-3.5 w-0.5 rounded-full bg-white/85" aria-hidden />
             <Clock className="h-3 w-3" strokeWidth={2.4} aria-hidden />
             {t('schedule.now')} {minutesToHm(nowMinutes)}
           </span>

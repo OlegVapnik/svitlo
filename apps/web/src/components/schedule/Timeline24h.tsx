@@ -161,7 +161,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         <div
           role="region"
           aria-label={t('timeline.barAriaLabel', { date })}
-          className="relative grid h-9 w-full grid-cols-[repeat(48,minmax(0,1fr))] items-stretch gap-[3px] rounded-xl border border-hairline bg-surface-container-low p-1"
+          className="relative grid h-9 w-full grid-cols-48 items-stretch gap-0.75 rounded-xl border border-hairline bg-surface-container-low p-1"
         >
           {slots.map((slot) => {
             // Тон сегмента: свет — спокойный изумруд, отключение — контрастный рубин со
@@ -179,7 +179,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               <div
                 key={slot.index}
                 className={cn(
-                  'relative h-full overflow-hidden rounded-[4px] border transition-opacity duration-200',
+                  'relative h-full overflow-hidden rounded-sm border transition-opacity duration-200',
                   capsuleTone,
                   slot.isPast && 'opacity-55',
                   slot.isCurrent && 'ring-1 ring-inset ring-white/40',
@@ -201,7 +201,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               тонкая белая риска — видно, где сейчас, и ничего не перекрыто. */}
           {timeMarker && (
             <span
-              className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 rounded-full bg-white/85"
+              className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-white/85"
               style={{ left: `${timeMarker.percent}%` }}
               aria-hidden
             />
@@ -212,7 +212,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         <div
           role="group"
           aria-label={t('timeline.hoursGroupLabel')}
-          className="absolute inset-0 grid grid-cols-[repeat(24,minmax(0,1fr))]"
+          className="absolute inset-0 grid grid-cols-24"
         >
           {Array.from({ length: 24 }, (_, h) => {
             const isSelected = selectedHour === h;
@@ -301,7 +301,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         {timeMarker && (
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
-              <span className="h-3.5 w-[2px] rounded-full bg-white/85" aria-hidden />
+              <span className="h-3.5 w-0.5 rounded-full bg-white/85" aria-hidden />
               <Clock className="h-3 w-3" strokeWidth={2.4} aria-hidden />
               {t('schedule.now')} {timeMarker.timeFormatted}
             </span>

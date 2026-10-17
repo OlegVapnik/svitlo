@@ -113,7 +113,7 @@ export const Sheet: React.FC<SheetProps> = ({ open, onClose, title, children }) 
       >
         <div
           onPointerDown={onPointerDown}
-          className="mx-auto mb-3 flex h-6 w-full max-w-[120px] cursor-grab touch-none justify-center"
+          className="mx-auto mb-3 flex h-6 w-full max-w-30 cursor-grab touch-none justify-center"
           aria-hidden
         >
           <span className="h-1.5 w-full rounded-full bg-muted-foreground/40" />

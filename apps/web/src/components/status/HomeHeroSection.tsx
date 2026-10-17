@@ -360,7 +360,7 @@ export const HomeHeroSection: React.FC = () => {
                     applyBookmark(bm);
                   }}
                   aria-current={isActive ? 'true' : undefined}
-                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-xs font-bold transition-transform duration-200 ease-m3-expressive-fast active:scale-[0.96]"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-xs font-bold transition-transform duration-200 ease-m3-expressive-fast active:scale-96"
                 >
                   {isActive ? (
                     <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />

@@ -130,8 +130,8 @@ export const GroupMatrix: React.FC<GroupMatrixProps> = ({
                 className={cn(
                   // Плитка группы: строгий радиус и грань. Морфинг формы при нажатии убран — от него
                   // сетка «дрожала», а состояние и так читается цветом, точкой и подписью.
-                  'flex min-h-[76px] flex-col items-center justify-center gap-1 rounded-xl border p-2',
-                  'transition-colors duration-150 active:scale-[0.99]',
+                  'flex min-h-19 flex-col items-center justify-center gap-1 rounded-xl border p-2',
+                  'transition-colors duration-150 active:scale-99',
                   active && 'ring-2 ring-primary/60',
                   off
                     ? 'border-destructive/30 bg-destructive/10'
