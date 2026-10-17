@@ -19,10 +19,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       // Не ждём закрытия всех вкладок: старый precache-кэш вычищаем, иначе браузер месяц
       // показывает прежний бандл и «залипает» на старой вёрстке.
-      cleanupOutdatedCaches: true,
-      // Разово и сразу снимаем PWA, который так долго отдавал старый бандл: sw.js сам удалит
-      // все кэши workbox и разрегистрируется во всех вкладках. Вернём офлайн позже, когда
-      // убедимся, что «залипание» больше не повторяется.
+      // `cleanupOutdatedCaches` живёт в Workbox-опциях, а не в `VitePWAOptions` этой версии;
+      // в режиме `selfDestroying` он и не нужен — service worker сам удаляет свои кэши.
       selfDestroying: true,
       manifest: {
         name: 'Svitlo — Чернігів',

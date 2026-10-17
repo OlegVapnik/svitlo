@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import {
   SLOTS_PER_DAY,
+  overlapIntervals,
   overlapStates,
   overlapSummary,
   slotStates,
@@ -75,5 +76,22 @@ describe('overlapStates: перетин двух групп', () => {
     const summary = overlapSummary(['both', 'both', 'either', 'none', 'unknown']);
     expect(summary).toEqual({ both: 2, either: 1, none: 1, unknown: 1 });
     expect(slotsToMinutes(summary.both)).toBe(60);
+  });
+
+  test('соседние слоты «обе без света» склеиваются в интервал', () => {
+    const cells = [
+      'both',
+      'none',
+      'none',
+      'none',
+      'either',
+      'none',
+      'none',
+      'unknown',
+    ] as const;
+    expect(overlapIntervals([...cells])).toEqual([
+      { from: 30, to: 120 },
+      { from: 150, to: 210 },
+    ]);
   });
 });

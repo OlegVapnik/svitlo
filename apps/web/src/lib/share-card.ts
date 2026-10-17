@@ -55,6 +55,9 @@ export interface ShareCardInput {
   date: string;
   intervals: ScheduleIntervalUtc[];
   allClear?: boolean;
+  /** Поточний стан на картці («Світло є» / «Світла немає»). Не передається для завтрашньої дати. */
+  statusLabel?: string;
+  statusTone?: 'on' | 'off' | 'unknown';
   labels: ShareCardLabels;
   generatedAt?: Date;
 }
@@ -217,6 +220,25 @@ function drawHeader(ctx: CanvasRenderingContext2D, input: ShareCardInput): void 
   ctx.fillStyle = outages.length > 0 ? COLORS.off : COLORS.on;
   ctx.textAlign = 'center';
   ctx.fillText(fitText(ctx, chipText, chipWidth - 40), right - chipWidth / 2, 167);
+
+  // Поточний стан окремим чипом: людина, яка отримала картинку, має побачити «світло є / немає»
+  // раніше, ніж почне розбирати години на шкалі. Для «завтра» статус не передається — там його
+  // ще не існує, і писати «світло є» наперед було б обманом.
+  if (input.statusLabel) {
+    const tone = input.statusTone ?? 'unknown';
+    const color = tone === 'off' ? COLORS.off : tone === 'on' ? COLORS.on : COLORS.muted;
+    setFont(ctx, 22, 700);
+    const width = Math.min(420, ctx.measureText(input.statusLabel).width + 44);
+    ctx.fillStyle = tone === 'off' ? 'rgba(244,63,94,0.16)' : tone === 'on' ? 'rgba(16,185,129,0.16)' : COLORS.panel;
+    roundRectPath(ctx, left, 190, width, 42, 21);
+    ctx.fill();
+    ctx.strokeStyle = tone === 'off' ? 'rgba(244,63,94,0.45)' : tone === 'on' ? 'rgba(16,185,129,0.45)' : COLORS.panelBorder;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.textAlign = 'left';
+    ctx.fillText(fitText(ctx, input.statusLabel, width - 36), left + 18, 218);
+  }
 
   // Область и очередь: два самых крупных элемента, их читают с уменьшенного превью.
   ctx.textAlign = 'left';

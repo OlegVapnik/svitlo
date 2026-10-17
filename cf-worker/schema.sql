@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS schedule_slots (
   PRIMARY KEY (region, queue, date, time_from)
 );
 
+-- Индексы под самые частые чтения: слоты области за дату и слоты всех областей за дату.
+-- Без них SQLite сканирует всю таблицу на каждый /regions, /status и /sync, а на бесплатном
+-- D1 каждая прочитанная строка расходует дневной лимит rows_read.
+CREATE INDEX IF NOT EXISTS idx_slots_region_date ON schedule_slots (region, date);
+CREATE INDEX IF NOT EXISTS idx_slots_date ON schedule_slots (date);
+
 -- Покрытие ГПВ: одна строка = «на эту дату оператор опубликовал график, и эта очередь в нём есть».
 --
 -- Зачем отдельная таблица, а не вывод из schedule_slots: в опубликованном ГПВ коды «светло по

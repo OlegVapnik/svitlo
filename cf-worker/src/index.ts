@@ -29,10 +29,15 @@ import {
 import changelog from './data/changelog.json';
 import {
   ALL_CLEAR_QUEUE,
+  extractCoverage,
+  extractSlots,
   isJsonObject,
   isYmd,
+  listRegionCpus,
+  listRegionNames,
   mergeCoverage,
   mergeSlots,
+  unwrapMirrorPayload,
   type CoverageEntry,
   type Slot,
 } from './mirror-parser.js';
@@ -75,9 +80,9 @@ interface Env {
 const OFF_STATE = { code: 3 as const, name: 'Відключення', color: '#E33535' };
 
 /**
- * Кэш в памяти изолята. TTL — минута: данные обновляет крон раз в 20 минут, поэтому минута не
- * отдаёт человеку устаревший график, зато снимает с D1 и с CPU всё, что повторяется в пределах
- * минуты.
+ * Кэш в памяти изолята. TTL — две минуты: данные обновляет крон раз в 20 минут, поэтому две
+ * минуты не отдают человеку устаревший график, зато снимают с D1 и с CPU всё, что повторяется
+ * в пределах двух минут (повторное открытие приложения, переключение вкладок, `refetchInterval`).
  *
  * Зачем это вообще нужно на бесплатном тарифе Cloudflare: лимит — 10 мс CPU на запрос, а `/sync`
  * собирает пакет из десятков запросов к D1 (статус, каталог областей, слоты, список групп,
@@ -88,7 +93,14 @@ const OFF_STATE = { code: 3 as const, name: 'Відключення', color: '#E
  * Хранилище — `Map`, поэтому перебор (`clear()`, вставка) дешёвый, а ключи уникальны; порядок
  * вставки позволяет вытеснять самую старую запись при переполнении.
  */
-const MEMORY_CACHE_TTL_MS = 60_000;
+const MEMORY_CACHE_TTL_MS = 120_000;
+
+/**
+ * Справочники области (группы, населённые пункты) меняются вместе с каталогом, а не каждую
+ * минуту. Держим их 10 минут, чтобы `/sync` не пересобирал тысячи строк на каждом старте
+ * приложения: именно этот агрегат сильнее всего расходовал `rows_read`.
+ */
+const AGGREGATE_CACHE_TTL_MS = 10 * 60_000;
 
 /** Сколько записей держим: ключ включает область и параметры, поэтому записей немного. */
 const MEMORY_CACHE_LIMIT = 120;
@@ -96,17 +108,35 @@ const MEMORY_CACHE_LIMIT = 120;
 const memoryCache = new Map<string, { expiresAt: number; payload: unknown }>();
 
 /**
- * Результат `producer` на `MEMORY_CACHE_TTL_MS` по строковому ключу.
+ * Кэш готовых HTTP-ответов: второй уровень поверх Cache API.
+ *
+ * Зачем отдельно от `memoryCache`: тот кэширует результаты внутренних функций, но запрос всё
+ * равно проходит через сборку конверта, сортировку и заголовки. Повторное открытие приложения
+ * обязано стоить 0 `rows_read`, поэтому готовое тело отдаётся до любого обращения к D1.
+ */
+interface MemoryHttpEntry {
+  expiresAt: number;
+  status: number;
+  headers: Array<[string, string]>;
+  body: string;
+}
+
+const httpMemoryCache = new Map<string, MemoryHttpEntry>();
+const HTTP_CACHE_TTL_MS = 120_000;
+const HTTP_CACHE_LIMIT = 160;
+
+/**
+ * Результат `producer` на `ttlMs` по строковому ключу.
  *
  * Отдаётся тот же объект, что и в первый раз: вызывающие только читают его (кладут в `json` или в
  * тело пакета), поэтому копировать не нужно.
  */
-async function cached<T>(key: string, producer: () => Promise<T>): Promise<T> {
+async function cached<T>(key: string, producer: () => Promise<T>, ttlMs: number = MEMORY_CACHE_TTL_MS): Promise<T> {
   const now = Date.now();
   const hit = memoryCache.get(key);
   if (hit && hit.expiresAt > now) return hit.payload as T;
   const payload = await producer();
-  remember(key, payload);
+  remember(key, payload, ttlMs);
   return payload;
 }
 
@@ -116,19 +146,76 @@ async function cached<T>(key: string, producer: () => Promise<T>): Promise<T> {
  * Нужен там, где тело ответа собирается не одной функцией (`/reliability`, `/sync`): кэшировать
  * приходится уже собранный объект, а не результат вызова-обёртки.
  */
-function remember(key: string, payload: unknown): void {
+function remember(key: string, payload: unknown, ttlMs: number = MEMORY_CACHE_TTL_MS): void {
   if (memoryCache.size >= MEMORY_CACHE_LIMIT) {
     // `Map` хранит порядок вставки: первый ключ — самая старая запись.
     const oldest = memoryCache.keys().next();
     if (!oldest.done) memoryCache.delete(oldest.value);
   }
-  memoryCache.set(key, { expiresAt: Date.now() + MEMORY_CACHE_TTL_MS, payload });
+  memoryCache.set(key, { expiresAt: Date.now() + ttlMs, payload });
 }
 
 /** Сбрасывает кэш изолята: вызывается после крона, который переписал данные. */
 function clearMemoryCache(): void {
   memoryCache.clear();
+  httpMemoryCache.clear();
 }
+
+/**
+ * Проверяет, что ошибка пришла от D1, а не от логики воркера.
+ *
+ * При исчерпанном дневном лимите D1 отвечает `D1_ERROR: exceeded D1's free tier daily row read
+ * limit`. В этом случае отдавать 500 нельзя: у нас есть живое зеркало, из которого ответ
+ * собирается в памяти. Те же симптомы дают `SQLITE_BUSY` и `no such table` после неудачной
+ * миграции — для человека результат один: «сервер не отвечает», хотя данные доступны.
+ */
+function isD1Unavailable(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return /D1_ERROR|row read limit|row write limit|exceeded|SQLITE_BUSY|database is locked|no such table/iu.test(
+    message,
+  );
+}
+
+/** URL-ключ HTTP-кэша: без диагностического `timing`, чтобы обычный запрос попадал в ту же запись. */
+function httpCacheKey(url: URL): string {
+  const copy = new URL(url.toString());
+  copy.searchParams.delete('timing');
+  return copy.toString();
+}
+
+function isCacheableApiRequest(request: Request, url: URL): boolean {
+  if (request.method !== 'GET') return false;
+  if (!url.pathname.startsWith('/api/v1/')) return false;
+  // `timing=1` — диагностический обход кэша: он обязан считать пакет заново.
+  return !url.searchParams.has('timing');
+}
+
+function responseFromHttpEntry(entry: MemoryHttpEntry): Response {
+  return new Response(entry.body, { status: entry.status, headers: entry.headers });
+}
+
+async function readHttpMemoryCache(key: string): Promise<Response | null> {
+  const hit = httpMemoryCache.get(key);
+  if (!hit || hit.expiresAt <= Date.now()) {
+    if (hit) httpMemoryCache.delete(key);
+    return null;
+  }
+  return responseFromHttpEntry(hit);
+}
+
+function rememberHttpResponse(key: string, response: Response, body: string): void {
+  if (httpMemoryCache.size >= HTTP_CACHE_LIMIT) {
+    const oldest = httpMemoryCache.keys().next();
+    if (!oldest.done) httpMemoryCache.delete(oldest.value);
+  }
+  httpMemoryCache.set(key, {
+    expiresAt: Date.now() + HTTP_CACHE_TTL_MS,
+    status: response.status,
+    headers: [...response.headers.entries()],
+    body,
+  });
+}
+
 
 /**
  * Секундомер подзапросов для диагностики бюджета CPU.
@@ -1085,6 +1172,11 @@ async function ensureSchema(env: Env): Promise<void> {
       region TEXT NOT NULL, queue TEXT NOT NULL, date TEXT NOT NULL,
       time_from TEXT NOT NULL, time_to TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'mirror',
       PRIMARY KEY (region, queue, date, time_from))`,
+    // Индексы под самые частые чтения: слоты области за дату и слоты всех областей за дату.
+    // Без них SQLite сканирует всю таблицу на каждый `/regions`, `/status` и `/sync`, а на
+    // бесплатном D1 каждая прочитанная строка — это `rows_read`.
+    `CREATE INDEX IF NOT EXISTS idx_slots_region_date ON schedule_slots (region, date)`,
+    `CREATE INDEX IF NOT EXISTS idx_slots_date ON schedule_slots (date)`,
     `CREATE TABLE IF NOT EXISTS snapshot_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)`,
     // Покрытие ГПВ: «на эту дату оператор опубликовал график и включил в него эту очередь».
     // Отдельно от слотов, потому что график без отключений (все коды 1 = «світло за графіком»)
@@ -1814,6 +1906,587 @@ function toIntervals(rows: SlotRow[], queue: string, date: string) {
 }
 
 /**
+ * Снимок зеркала для аварийного чтения без D1.
+ *
+ * `ok=false` — зеркало недоступно или ответ не разобрался. Это не повод отдавать 500: вызывающий
+ * решает, что честнее показать (503 с причиной), но данные из D1 в этом случае не читаются вовсе.
+ */
+interface MirrorSnapshot {
+  ok: boolean;
+  payload: Record<string, unknown> | null;
+  /** `cpu → name_ua` из payload: подписи областей без D1. */
+  names: Record<string, string>;
+  /** Все ключи фида, которые реально пришли. */
+  cpus: string[];
+  /** Метка времени источника (не время нашего запроса). */
+  timestamp: string | null;
+  /** Когда снимок получен этим изолятом (ms). */
+  fetchedAt: number;
+  error?: string;
+}
+
+const MIRROR_SNAPSHOT_TTL_MS = 5 * 60_000;
+let mirrorSnapshotCache: { expiresAt: number; snapshot: MirrorSnapshot } | null = null;
+let mirrorSnapshotInflight: Promise<MirrorSnapshot> | null = null;
+
+/**
+ * Забирает зеркало ГПВ без записи в D1 и кэширует результат на 5 минут.
+ *
+ * Зачем отдельный путь, если `syncMirrorSchedule` уже умеет fetch: тот импорт пишет diff в D1,
+ * а при исчерпанном `rows_read` падает ещё до разбора payload. Здесь нужен только HTTP-ответ
+ * зеркала и чистый `extractSlots`/`extractCoverage` — ноль обращений к базе.
+ */
+async function fetchMirror(env: Env): Promise<MirrorSnapshot> {
+  const now = Date.now();
+  if (mirrorSnapshotCache && mirrorSnapshotCache.expiresAt > now) return mirrorSnapshotCache.snapshot;
+  if (mirrorSnapshotInflight) return mirrorSnapshotInflight;
+
+  const request = (async (): Promise<MirrorSnapshot> => {
+    const fetchedAt = Date.now();
+    try {
+      const response = await fetch(env.MIRROR_SCHEDULE_URL, {
+        headers: { 'user-agent': 'svitlo-cf-worker', accept: 'application/json' },
+        // Пять минут — ровно срок жизни снимка в памяти изолята. Зеркало обновляется оператором
+        // заметно реже, а при лимите D1 это единственный источник данных.
+        cf: { cacheTtl: 300, cacheEverything: true },
+      } as RequestInit);
+      if (!response.ok) {
+        return {
+          ok: false,
+          payload: null,
+          names: {},
+          cpus: [],
+          timestamp: null,
+          fetchedAt,
+          error: `mirror HTTP ${response.status}`,
+        };
+      }
+
+      const raw: unknown = await response.json();
+      const payload = unwrapMirrorPayload(raw);
+      if (!payload) {
+        return {
+          ok: false,
+          payload: null,
+          names: {},
+          cpus: [],
+          timestamp: null,
+          fetchedAt,
+          error: 'mirror payload unwrap failed',
+        };
+      }
+      const timestamp =
+        isJsonObject(raw) && typeof raw['timestamp'] === 'string' ? raw['timestamp'] : null;
+      return {
+        ok: true,
+        payload,
+        names: listRegionNames(payload),
+        cpus: listRegionCpus(payload),
+        timestamp,
+        fetchedAt,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        payload: null,
+        names: {},
+        cpus: [],
+        timestamp: null,
+        fetchedAt,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  })();
+
+  mirrorSnapshotInflight = request;
+  try {
+    const snapshot = await request;
+    // Неудачный ответ тоже кэшируем на 5 минут: иначе каждый запрос при недоступном зеркале
+    // будет ждать сеть и жечь CPU, пока D1 тоже недоступен.
+    mirrorSnapshotCache = { expiresAt: Date.now() + MIRROR_SNAPSHOT_TTL_MS, snapshot };
+    return snapshot;
+  } finally {
+    mirrorSnapshotInflight = null;
+  }
+}
+
+/** Слоты зеркала по ключам области. Ключи, которых нет в фиде, просто ничего не дают. */
+function mirrorSlotsFor(snapshot: MirrorSnapshot, keys: string[]): Slot[] {
+  if (!snapshot.payload) return [];
+  const present = new Set(snapshot.cpus);
+  const slots: Slot[] = [];
+  for (const key of [...new Set(keys)].filter((key) => present.has(key))) {
+    slots.push(...extractSlots(snapshot.payload, key));
+  }
+  return mergeSlots(slots);
+}
+
+/** Покрытие ГПВ по ключам области: какие группы оператор опубликовал и где есть отключения. */
+function mirrorCoverageFor(snapshot: MirrorSnapshot, keys: string[]): CoverageEntry[] {
+  if (!snapshot.payload) return [];
+  const present = new Set(snapshot.cpus);
+  const coverage: CoverageEntry[] = [];
+  for (const key of [...new Set(keys)].filter((key) => present.has(key))) {
+    coverage.push(...extractCoverage(snapshot.payload, key));
+  }
+  return mergeCoverage(coverage);
+}
+
+
+/** Слоты зеркала в форме строк D1: `toIntervals` и расчёты статуса работают с этими полями. */
+function mirrorSlotRows(slots: Slot[]): SlotRow[] {
+  return slots.map((slot) => ({
+    region: slot.region,
+    queue: normalizeQueue(slot.queue),
+    date: slot.date,
+    time_from: slot.timeFrom,
+    time_to: slot.timeTo,
+    source: 'mirror',
+  }));
+}
+
+interface MirrorFact {
+  queues: Set<string>;
+  slots: number;
+  todaySlots: number;
+  lastDate: string | null;
+  /** Группы, опубликованные на сегодня. */
+  todayCovered: Set<string>;
+  /** Группы, у которых на сегодня в графике есть часы отключений. */
+  todayOff: Set<string>;
+}
+
+/**
+ * Факты по каждому ключу фида одним проходом: группы, объём слотов, последняя дата и покрытие.
+ * Используются тремя fallback-маршрутами, поэтому считаются один раз на снимок.
+ */
+function mirrorFacts(snapshot: MirrorSnapshot, today: string): Map<string, MirrorFact> {
+  const facts = new Map<string, MirrorFact>();
+  if (!snapshot.payload) return facts;
+  for (const cpu of snapshot.cpus) {
+    const slots = mirrorSlotsFor(snapshot, [cpu]);
+    const coverageToday = mirrorCoverageFor(snapshot, [cpu]).filter((entry) => entry.date === today);
+    const fact: MirrorFact = {
+      queues: new Set<string>(),
+      slots: slots.length,
+      todaySlots: slots.filter((slot) => slot.date === today).length,
+      lastDate: null,
+      todayCovered: new Set<string>(),
+      todayOff: new Set<string>(),
+    };
+    for (const slot of slots) {
+      fact.queues.add(normalizeQueue(slot.queue));
+      if (!fact.lastDate || slot.date > fact.lastDate) fact.lastDate = slot.date;
+    }
+    for (const entry of coverageToday) {
+      const queue = normalizeQueue(entry.queue);
+      if (queue !== ALL_CLEAR_QUEUE) fact.todayCovered.add(queue);
+      if (entry.hasOutages) fact.todayOff.add(queue);
+    }
+    facts.set(cpu, fact);
+  }
+  return facts;
+}
+
+/** Все ключи области, по которым можно что-то прочитать из зеркала. */
+function mirrorRegionKeys(requestedRegion: string): string[] {
+  return [...new Set(resolveDbRegions(requestedRegion))];
+}
+
+/**
+ * Каталог областей из зеркала: тот же контракт, что `/regions`, но без единого запроса к D1.
+ *
+ * Имена берутся из каталога, затем из `name_ua` фида. Пустые области остаются в списке с нулями:
+ * человек должен видеть свою область и честное «даних немає», а не отсутствующую строку.
+ */
+function mirrorRegionSummaries(snapshot: MirrorSnapshot, today: string): Array<Record<string, unknown>> {
+  const facts = mirrorFacts(snapshot, today);
+  const rows: Array<Record<string, unknown>> = [];
+  const consumed = new Set<string>();
+
+  for (const entry of REGION_CATALOG) {
+    const expected = entry.feedKeys.length > 0 ? entry.feedKeys : [entry.cpu];
+    for (const key of expected) consumed.add(key);
+    const available = expected.map((key) => facts.get(key)).filter((fact): fact is MirrorFact => Boolean(fact));
+    const queues = new Set<string>();
+    let slots = 0;
+    let todaySlots = 0;
+    let lastDate: string | null = null;
+    for (const fact of available) {
+      for (const queue of fact.queues) queues.add(queue);
+      slots += fact.slots;
+      todaySlots += fact.todaySlots;
+      if (fact.lastDate && (!lastDate || fact.lastDate > lastDate)) lastDate = fact.lastDate;
+    }
+    const covered =
+      entry.feedKeys.length > 0
+        ? entry.feedKeys.every((key) => (facts.get(key)?.todayCovered.size ?? 0) > 0)
+        : false;
+    const allClear = covered ? expected.every((key) => (facts.get(key)?.todayOff.size ?? 0) === 0) : undefined;
+
+    rows.push({
+      cpu: entry.cpu,
+      nameUa: canonicalRegionName(entry.cpu, snapshot.names),
+      nameEn: null,
+      queues: [...queues].sort(compareQueueCodes),
+      slots,
+      todaySlots,
+      lastDate,
+      feedKeys: [...entry.feedKeys],
+      isActive: true,
+      covered,
+      allClear,
+    });
+
+    if (entry.feedKeys.length > 1) {
+      for (const key of entry.feedKeys) {
+        const fact = facts.get(key);
+        const networkCovered = (fact?.todayCovered.size ?? 0) > 0;
+        rows.push({
+          cpu: key,
+          nameUa: REGION_NAMES[key] ?? snapshot.names[key] ?? key,
+          nameEn: null,
+          queues: [...(fact?.queues ?? [])].sort(compareQueueCodes),
+          slots: fact?.slots ?? 0,
+          todaySlots: fact?.todaySlots ?? 0,
+          lastDate: fact?.lastDate ?? null,
+          feedKeys: [key],
+          parentCpu: entry.cpu,
+          isActive: true,
+          covered: networkCovered,
+          allClear: networkCovered ? (fact?.todayOff.size ?? 0) === 0 : undefined,
+        });
+      }
+    }
+  }
+
+  // Ключи фида вне каталога: отдаём как есть, с человеческой подписью из зеркала.
+  for (const cpu of snapshot.cpus) {
+    if (consumed.has(cpu)) continue;
+    const fact = facts.get(cpu);
+    const covered = (fact?.todayCovered.size ?? 0) > 0;
+    rows.push({
+      cpu,
+      nameUa: REGION_NAMES[cpu] ?? snapshot.names[cpu] ?? cpu,
+      nameEn: null,
+      queues: [...(fact?.queues ?? [])].sort(compareQueueCodes),
+      slots: fact?.slots ?? 0,
+      todaySlots: fact?.todaySlots ?? 0,
+      lastDate: fact?.lastDate ?? null,
+      feedKeys: [cpu],
+      isActive: true,
+      covered,
+      allClear: covered ? (fact?.todayOff.size ?? 0) === 0 : undefined,
+    });
+  }
+
+  return rows.sort((a, b) => compareUk(String(a['nameUa']), String(b['nameUa'])));
+}
+
+/** Список групп области из зеркала в форме `QueueSummary`. */
+function mirrorQueueList(
+  snapshot: MirrorSnapshot,
+  keys: string[],
+  today: string,
+): Array<Record<string, unknown>> {
+  const facts = mirrorFacts(snapshot, today);
+  const expected = keys.filter((key) => facts.has(key));
+  if (expected.length === 0) return [];
+
+  // Считаем слоты по каждой группе отдельно: брать «все слоты сети» и приписывать их каждой
+  // группе нельзя — бейдж показывал бы одинаковое число у всех.
+  const sums = new Map<string, { queue: string; slots: number; todaySlots: number; lastDate: string | null }>();
+  for (const slot of mirrorSlotsFor(snapshot, expected)) {
+    const queue = normalizeQueue(slot.queue);
+    const current = sums.get(queue) ?? { queue, slots: 0, todaySlots: 0, lastDate: null };
+    current.slots += 1;
+    if (slot.date === today) current.todaySlots += 1;
+    if (!current.lastDate || slot.date > current.lastDate) current.lastDate = slot.date;
+    sums.set(queue, current);
+  }
+  // Группы из опубликованного дня без отключений: слотов нет, но график на сегодня есть.
+  for (const key of expected) {
+    const fact = facts.get(key)!;
+    for (const queue of fact.todayCovered) {
+      if (!sums.has(queue)) {
+        sums.set(queue, { queue, slots: 0, todaySlots: 0, lastDate: fact.lastDate });
+      }
+    }
+  }
+
+  return [...sums.values()]
+    .sort((a, b) => compareQueueCodes(a.queue, b.queue))
+    .map((row) => {
+      const covered = expected.every((key) => {
+        const fact = facts.get(key)!;
+        return fact.todayCovered.has(row.queue) && !fact.todayOff.has(row.queue);
+      });
+      return {
+        queue: row.queue,
+        // Контракт `QueueSummary.slots` — часы отключений на ближайшие даты, а не вся история.
+        slots: row.todaySlots,
+        lastDate: row.lastDate,
+        streets: 0,
+        settlements: [],
+        streetNames: [],
+        ...(covered ? { covered: true } : {}),
+      };
+    });
+}
+
+/** Покрытие одной даты из снимка зеркала. */
+function mirrorCoverageOn(
+  snapshot: MirrorSnapshot,
+  keys: string[],
+  date: string,
+): { queues: Set<string>; offQueues: Set<string>; sources: Set<string> } {
+  const coverage = { queues: new Set<string>(), offQueues: new Set<string>(), sources: new Set<string>() };
+  for (const entry of mirrorCoverageFor(snapshot, keys)) {
+    if (entry.date !== date) continue;
+    const queue = normalizeQueue(entry.queue);
+    coverage.queues.add(queue);
+    if (entry.hasOutages) coverage.offQueues.add(queue);
+    coverage.sources.add('mirror');
+  }
+  return coverage;
+}
+
+/** Интервалы группы за дату из снимка зеркала. */
+function mirrorIntervalsFor(
+  snapshot: MirrorSnapshot,
+  keys: string[],
+  queue: string,
+  date: string,
+): ReturnType<typeof toIntervals> {
+  const rows = mirrorSlotRows(mirrorSlotsFor(snapshot, keys)).filter(
+    (row) => row.date === date && normalizeQueue(row.queue) === normalizeQueue(queue),
+  );
+  return toIntervals(rows, queue, date);
+}
+
+/** Ответ `/schedules` без D1: интервалы, покрытие и честный пустой график, если данных нет. */
+function mirrorScheduleResponse(
+  snapshot: MirrorSnapshot,
+  keys: string[],
+  queue: string,
+  date: string,
+): Record<string, unknown> {
+  const intervals = mirrorIntervalsFor(snapshot, keys, queue, date);
+  const coverage = mirrorCoverageOn(snapshot, keys, date);
+  const queueCovered = coverage.queues.has(normalizeQueue(queue)) || coverage.queues.has(ALL_CLEAR_QUEUE);
+  const covered = queueCovered || intervals.length > 0;
+  const offByFeed = coverage.offQueues.has(normalizeQueue(queue));
+  return {
+    queue: normalizeQueue(queue),
+    date,
+    intervals,
+    source: covered ? 'mirror' : null,
+    covered,
+    allClear: covered && intervals.length === 0 && !offByFeed,
+    lastImportedAt: snapshot.timestamp ?? new Date(snapshot.fetchedAt).toISOString(),
+  };
+}
+
+
+
+/** Ответ `/schedules/upcoming` без D1: те же бакеты, что собирает D1-путь. */
+function mirrorUpcomingBuckets(
+  snapshot: MirrorSnapshot,
+  keys: string[],
+  today: string,
+  days: number,
+): Array<Record<string, unknown>> {
+  const wanted = Array.from({ length: days }, (_, index) => addDays(today, index));
+  const slots = mirrorSlotsFor(snapshot, keys);
+  const buckets: Array<Record<string, unknown>> = [];
+  const nowMs = Date.now();
+  for (const date of wanted) {
+    const byQueue = new Map<string, SlotRow[]>();
+    for (const row of mirrorSlotRows(slots.filter((slot) => slot.date === date))) {
+      const list = byQueue.get(row.queue);
+      if (list) list.push(row);
+      else byQueue.set(row.queue, [row]);
+    }
+    for (const [queue, rows] of byQueue) {
+      const intervals = toIntervals(rows, queue, date);
+      if (intervals.length === 0) continue;
+      buckets.push({
+        queue,
+        date,
+        source: 'mirror',
+        intervals,
+        isActiveNow: intervals.some(
+          (interval) => Date.parse(interval.startsAt) <= nowMs && nowMs < Date.parse(interval.endsAt),
+        ),
+        nextStartsAt:
+          intervals.find((interval) => Date.parse(interval.startsAt) > nowMs)?.startsAt ?? null,
+        settlements: [],
+        streetNames: [],
+      });
+    }
+  }
+  return buckets.sort((a, b) => {
+    const byDate = String(a['date']).localeCompare(String(b['date']));
+    return byDate !== 0 ? byDate : compareQueueCodes(String(a['queue']), String(b['queue']));
+  });
+}
+
+/** Тело `StatusResponse` без D1: все производные числа считаются по слотам зеркала. */
+function mirrorStatusPayload(
+  snapshot: MirrorSnapshot,
+  keys: string[],
+  today: string,
+): Record<string, unknown> {
+  const nowMs = Date.now();
+  const allSlots = mirrorSlotRows(mirrorSlotsFor(snapshot, keys));
+  const todaySlots = allSlots.filter((slot) => slot.date === today);
+  const yesterdaySlots = allSlots.filter((slot) => slot.date === addDays(today, -1));
+  const todayStats = daySlotStats(todaySlots, nowMs);
+  const yesterdayStats = daySlotStats(yesterdaySlots, nowMs);
+  const lastUpdatedAt = snapshot.timestamp ?? new Date(snapshot.fetchedAt).toISOString();
+  const buildWindow = (label: string, outageMinutes: number) => {
+    const minutes = Math.min(24 * 60, Math.max(0, outageMinutes));
+    return {
+      windowLabel: label,
+      windowMinutes: 24 * 60,
+      outageMinutes: minutes,
+      poweredMinutes: 24 * 60 - minutes,
+      reliabilityPct: Math.round(((24 * 60 - minutes) / (24 * 60)) * 1000) / 10,
+      outageCount: todayStats.activeGroups + todayStats.scheduledGroups,
+      hasData: todayStats.activeGroups + todayStats.scheduledGroups > 0,
+    };
+  };
+  return {
+    grid: {
+      level: todayStats.activeGroups > 0 ? 'warning' : 'stable',
+      message:
+        todayStats.activeGroups > 0
+          ? 'За графіком ГПВ частину груп зараз знеструмлено'
+          : '',
+    },
+    activeOutages: 0,
+    scheduledOutages: todayStats.scheduledGroups,
+    activeGroups: todayStats.activeGroups,
+    scheduledGroups: todayStats.scheduledGroups,
+    activeIncidents: 0,
+    scheduledIncidents: 0,
+    totalIncidents: 0,
+    lastUpdatedAt,
+    dataStale: false,
+    lastError: null,
+    pausedUntil: null,
+    nextAttemptAt: null,
+    consecutiveParseFailures: 0,
+    powerSummary: {
+      today: buildWindow('за добу', todayStats.outageMinutes),
+      last24h: buildWindow('за 24 години', yesterdayStats.outageMinutes),
+    },
+    totalQueues: new Set(todaySlots.map((row) => row.queue)).size,
+    generatedAt: new Date(nowMs).toISOString(),
+  };
+}
+
+
+/**
+ * Аварийный ответ из зеркала для маршрутов, которые упали на D1.
+ *
+ * Возвращает `null`, если маршрут не поддержан (тогда вызывающий отдаёт обычную ошибку).
+ * Ни один путь ниже не обращается к D1: только снимок в памяти и чистые функции разбора.
+ */
+async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise<Response | null> {
+  const supported = new Set([
+    '/regions',
+    '/queues',
+    '/schedules',
+    '/schedules/upcoming',
+    '/status',
+    '/sync',
+  ]);
+  if (!supported.has(path)) return null;
+
+  const snapshot = await fetchMirror(env);
+  if (!snapshot.ok || !snapshot.payload) {
+    return json(
+      {
+        error: {
+          code: 'MIRROR_UNAVAILABLE',
+          message: `D1 недоступний, а зеркало не відповіло: ${snapshot.error ?? 'unknown'}`,
+        },
+      },
+      503,
+      { 'cache-control': 'no-store' },
+    );
+  }
+
+  const requestedRegion = (url.searchParams.get('region') ?? '').trim();
+  const canonicalRegion = canonicalRegionCpu(requestedRegion);
+  const keys = mirrorRegionKeys(requestedRegion);
+  const readKeys = keys.length > 0 ? keys : [...snapshot.cpus];
+  const today = kyivToday();
+  const headers = { 'cache-control': 'public, max-age=120' };
+
+  if (path === '/regions') {
+    return json({ data: mirrorRegionSummaries(snapshot, today) }, 200, headers);
+  }
+
+  if (path === '/queues') {
+    const feedKeys = regionFeedKeysOf(canonicalRegion);
+    const queueKeys = feedKeys.length > 0 ? feedKeys : readKeys;
+    return json({ data: mirrorQueueList(snapshot, queueKeys, today) }, 200, headers);
+  }
+
+  if (path === '/schedules') {
+    const queue = normalizeQueue(url.searchParams.get('queue') ?? '');
+    const date = url.searchParams.get('date') ?? today;
+    if (!queue) return json({ error: { code: 'VALIDATION_ERROR', message: 'queue обовʼязковий' } }, 400);
+    return json({ data: mirrorScheduleResponse(snapshot, readKeys, queue, date) }, 200, headers);
+  }
+
+  if (path === '/schedules/upcoming') {
+    const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
+    return json({ data: mirrorUpcomingBuckets(snapshot, readKeys, today, days) }, 200, headers);
+  }
+
+  if (path === '/status') {
+    return json({ data: mirrorStatusPayload(snapshot, readKeys, today) }, 200, headers);
+  }
+
+  // `/sync`: один пакет из тех же снимков. Новости и справочник адресов в зеркале отсутствуют,
+  // поэтому отдаём честные пустые массивы — фронтенд покажет EmptyState, а график уже будет.
+  const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
+  const status = mirrorStatusPayload(snapshot, readKeys, today);
+  const regions = mirrorRegionSummaries(snapshot, today);
+  const buckets = mirrorUpcomingBuckets(snapshot, readKeys, today, days);
+  const feedKeys = regionFeedKeysOf(canonicalRegion);
+  const queues = mirrorQueueList(snapshot, feedKeys.length > 0 ? feedKeys : readKeys, today);
+  const schedulesByRegion: Record<string, { days: string[]; buckets: Array<Record<string, unknown>> }> = {};
+  if (requestedRegion) {
+    const wantedDays = Array.from({ length: days }, (_, index) => addDays(today, index));
+    for (const key of new Set<string>([requestedRegion, canonicalRegion, ...readKeys])) {
+      if (key) schedulesByRegion[key] = { days: wantedDays, buckets };
+    }
+  }
+  const body: Record<string, unknown> = {
+    region: (readKeys[0] ?? requestedRegion) || null,
+    status,
+    regions,
+    queues,
+    schedulesByRegion,
+    settlements: [],
+    settlementsTotal: 0,
+    news: [],
+    contacts: [],
+  };
+  const etag = computeSyncEtag(etagSource(body));
+  return json(
+    { data: { syncedAt: new Date().toISOString(), etag, ...body } },
+    200,
+    { ...headers, etag },
+  );
+}
+
+
+/**
  * Каталог областей: `cpu`, имя, группы, последняя дата, покрытие на сегодня.
  *
  * Дублируется с кэшем изолята (`regionSummaries`): функция читает ВСЕ слоты и ВСЁ покрытие
@@ -2329,6 +3002,16 @@ const STREETS_ROW_LIMIT = 4000;
 const SYNC_SETTLEMENTS_LIMIT = 2000;
 
 /**
+ * Потолок строк, которые вообще читаются из справочников адресов для агрегата.
+ *
+ * `offlineSettlements` раньше делал `GROUP BY` по всей `address_queues` и всей
+ * `directory_settlements` без LIMIT: на большой области это тысячи прочитанных строк на каждый
+ * `/sync`, то есть прямой расход `rows_read`. Агрегат кэшируется на 10 минут, а этот лимит
+ * не даёт одному запросу выесть дневной бюджет.
+ */
+const SETTLEMENTS_SCAN_LIMIT = 5000;
+
+/**
  * Очереди области в форме `QueueSummary` — для `/queues` и офлайн-пакета `/sync`.
  *
  * Вынесено из обработчика `/queues` по той же причине, что и новости: тот же список нужен
@@ -2426,7 +3109,8 @@ async function queueSummariesUncached(env: Env, regions: string[]): Promise<Arra
  */
 async function queueSummaries(env: Env, regions: string[]): Promise<Array<Record<string, unknown>>> {
   const keys = [...new Set(regions.filter((region) => region))].sort();
-  return cached(`queues:${keys.join(',')}`, () => queueSummariesUncached(env, regions));
+  // 10 минут: список групп и привязки улиц меняются вместе с каталогом, а не каждую минуту.
+  return cached(`queues:${keys.join(',')}`, () => queueSummariesUncached(env, regions), AGGREGATE_CACHE_TTL_MS);
 }
 
 /**
@@ -2449,10 +3133,12 @@ async function offlineSettlementsUncached(
               GROUP_CONCAT(DISTINCT queue) AS queues
        FROM address_queues
        WHERE ${filter.clause} AND settlement_name <> ''
-       GROUP BY settlement_normalized, settlement_name`,
+       GROUP BY settlement_normalized, settlement_name
+       LIMIT ${SETTLEMENTS_SCAN_LIMIT}`,
     ).bind(...filter.bindings).all<{ name: string; normalized: string; queues: string | null }>(),
     env.DB.prepare(
-      `SELECT name, normalized FROM directory_settlements WHERE ${filter.clause}`,
+      `SELECT name, normalized FROM directory_settlements WHERE ${filter.clause}
+       LIMIT ${SETTLEMENTS_SCAN_LIMIT}`,
     ).bind(...filter.bindings).all<{ name: string; normalized: string }>(),
   ]);
 
@@ -2493,7 +3179,11 @@ async function offlineSettlements(
   regions: string[],
 ): Promise<{ items: Array<Record<string, unknown>>; total: number }> {
   const keys = [...new Set(regions.filter((region) => region))].sort();
-  return cached(`settlements:${keys.join(',')}`, () => offlineSettlementsUncached(env, regions));
+  return cached(
+    `settlements:${keys.join(',')}`,
+    () => offlineSettlementsUncached(env, regions),
+    AGGREGATE_CACHE_TTL_MS,
+  );
 }
 
 /**
@@ -3013,13 +3703,15 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const streetRegions = regionIn(readRegions.length > 0 ? readRegions : ['']);
     const known = await env.DB.prepare(
       `SELECT name, normalized FROM directory_streets
-       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND normalized LIKE ?`,
+       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND normalized LIKE ?
+       LIMIT ${STREETS_ROW_LIMIT}`,
     ).bind(...streetRegions.bindings, settlementNormalized, `%${needle}%`)
       .all<{ name: string; normalized: string }>();
 
     const bound = await env.DB.prepare(
       `SELECT DISTINCT street_name AS name, street_normalized AS normalized FROM address_queues
-       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized <> '' AND street_normalized LIKE ?`,
+       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized <> '' AND street_normalized LIKE ?
+       LIMIT ${STREETS_ROW_LIMIT}`,
     ).bind(...streetRegions.bindings, settlementNormalized, `%${needle}%`)
       .all<{ name: string; normalized: string }>();
 
@@ -3050,7 +3742,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Если на всё село известна одна очередь — отдаём её, чтобы мастер сразу показал ответ.
     const whole = await env.DB.prepare(
       `SELECT DISTINCT queue FROM address_queues
-       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized = ''`,
+       WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized = ''
+       LIMIT 100`,
     ).bind(...streetRegions.bindings, settlementNormalized).all<{ queue: string }>();
     const queues = [...new Set((whole.results ?? []).map((row) => normalizeQueue(row.queue)))];
 
@@ -3548,7 +4241,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       : await buildStatusPayload(env, readRegions, today);
     timer.mark('all', started);
     timer.done('/status');
-    return json({ data: status });
+    return json({ data: status }, 200, { 'cache-control': 'public, max-age=120' });
   }
 
   if (path === '/sync') {
@@ -3569,7 +4262,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       ? await syncBundle(env, { requestedRegion, canonicalRegion, dbRegions, readRegions, today, days, timer })
       : await cached(syncCacheKey, () => syncBundle(env, { requestedRegion, canonicalRegion, dbRegions, readRegions, today, days }));
     timer.done('/sync');
-    const headers = { 'cache-control': 'no-store', etag: bundle.etag };
+    const headers = { 'cache-control': 'public, max-age=120', etag: bundle.etag };
     if (etagMatches(request.headers.get('if-none-match'), bundle.etag)) return notModified(headers);
     // Конверт `{ data }` — как у Node-бекенда и как у остальных маршрутов: офлайн-шар клиента
     // не должен иметь отдельного случая для одного эндпоинта.
@@ -3578,8 +4271,15 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   return json({ error: { code: 'NOT_FOUND', message: `Немає маршруту ${path}` } }, 404);
 }
 
+/** Возвращает копию ответа с пометкой источника кэша — по ней удобно проверять curl'ом. */
+function markCachedResponse(response: Response, kind: 'memory' | 'edge'): Response {
+  const headers = new Headers(response.headers);
+  headers.set('x-svitlo-cache', kind);
+  return new Response(response.body, { status: response.status, headers });
+}
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     // CORS preflight: браузер спрашивает это до любого запроса с другого домена.
@@ -3599,8 +4299,68 @@ export default {
       });
     }
 
+    const path = url.pathname.replace(/^\/api\/v1/u, '').replace(/\/+$/u, '') || '/';
+    const cacheable = isCacheableApiRequest(request, url);
+    const cacheKey = httpCacheKey(url);
+
+    // Уровень 1: память изолята. Повторное открытие приложения не должно коснуться D1 вообще.
+    if (cacheable) {
+      const memoryHit = await readHttpMemoryCache(cacheKey);
+      if (memoryHit) return markCachedResponse(memoryHit, 'memory');
+
+      // Уровень 2: Cache API. Он живёт в конкретном дата-центре, но переживает перезапуск
+      // изолята и обслуживает других людей рядом без единого `rows_read`.
+      try {
+        if (typeof caches !== 'undefined' && caches.default) {
+          const edgeHit = await caches.default.match(new Request(cacheKey, { method: 'GET' }));
+          if (edgeHit) {
+            const body = await edgeHit.clone().text();
+            rememberHttpResponse(cacheKey, edgeHit, body);
+            return markCachedResponse(edgeHit, 'edge');
+          }
+        }
+      } catch {
+        // Cache API недоступен (локальный miniflare, ограничение аккаунта) — это не ошибка:
+        // просто идём в D1/зеркало.
+      }
+    }
+
     try {
-      return await handleApi(request, env, url);
+      let response: Response;
+      try {
+        response = await handleApi(request, env, url);
+      } catch (error) {
+        // D1 исчерпал дневной лимит — не отдаём 500, а собираем ответ из живого зеркала.
+        if (isD1Unavailable(error)) {
+          const fallback = await mirrorFallbackResponse(path, url, env);
+          if (fallback) {
+            console.warn(`handleApi ${url.pathname}: D1 недоступен, ответ собран из зеркала`);
+            response = fallback;
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      if (!cacheable || response.status !== 200) return response;
+
+      // Готовое тело кладём в оба уровня. `cache-control` добавляем, если маршрут его не задал:
+      // Cloudflare Cache API иначе может отказаться сохранять ответ.
+      const headers = new Headers(response.headers);
+      if (!headers.has('cache-control')) headers.set('cache-control', 'public, max-age=120');
+      const body = await response.clone().text();
+      const cacheResponse = new Response(body, { status: response.status, headers });
+      rememberHttpResponse(cacheKey, cacheResponse, body);
+
+      if (typeof caches !== 'undefined' && caches.default) {
+        const edgeWrite = caches.default
+          .put(new Request(cacheKey, { method: 'GET' }), cacheResponse.clone())
+          .catch(() => undefined);
+        if (ctx) ctx.waitUntil(edgeWrite);
+      }
+      return cacheResponse;
     } catch (error) {
       // Отвечаем 500 с внятным телом, но без стектрейса наружу: он бесполезен пользователю
       // и может засветить внутренние детали воркера. Стек при этом ОБЯЗАН остаться в логах
@@ -3614,3 +4374,4 @@ export default {
 
   scheduled,
 };
+

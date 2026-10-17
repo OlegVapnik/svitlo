@@ -6,6 +6,7 @@ import { useQueueSchedule, useQueues } from '../../api/queries.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
 import { useRegion } from '../../hooks/useRegion.js';
 import {
+  overlapIntervals,
   overlapStates,
   overlapSummary,
   slotStates,
@@ -14,7 +15,7 @@ import {
   type SlotState,
 } from '../../lib/queue-overlap.js';
 import { toDaySchedule } from '../../lib/schedule-payload.js';
-import { formatMinutesUk } from '../../lib/scheduleWindow.js';
+import { formatMinutesUk, minutesToHm } from '../../lib/scheduleWindow.js';
 import { hapticTick } from '../../lib/haptics.js';
 import { Button } from '../ui/Button.js';
 import { cn } from '../../lib/cn.js';
@@ -129,6 +130,7 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
     [aStates, bStates],
   );
   const summary = useMemo(() => (cells ? overlapSummary(cells) : null), [cells]);
+  const noneWindows = useMemo(() => (cells ? overlapIntervals(cells) : []), [cells]);
 
   const ownLabel = bookmarks.find((bookmark) => bookmark.regionCpu === region && bookmark.queue === queue)?.label;
   // Без закладки подписываем строку самим кодом группы: `home.heroQueue` уже содержит
@@ -288,6 +290,18 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
                   {t('compare.sumNone', { time: formatMinutesUk(slotsToMinutes(summary?.none ?? 0)) })}
                 </span>
               </p>
+
+              {/* Конкретні години спільного блекауту: цифри «Z год» замало, людині потрібно
+                  знати, коли саме обидві точки без світла. */}
+              {noneWindows.length > 0 && (
+                <p className="text-xs leading-relaxed text-destructive">
+                  {t('compare.noneIntervals', {
+                    list: noneWindows
+                      .map((window) => `${minutesToHm(window.from)}–${minutesToHm(window.to)}`)
+                      .join(', '),
+                  })}
+                </p>
+              )}
 
               {(!bDay || (summary?.unknown ?? 0) > 0) && (
                 <p className="text-[11px] leading-tight text-warning">{t('compare.noData', { date })}</p>

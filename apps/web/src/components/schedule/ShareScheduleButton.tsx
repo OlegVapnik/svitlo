@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Check, Loader2, Share2, TriangleAlert } from 'lucide-react';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { shareScheduleCard, type ShareCardLabels } from '../../lib/share-card.js';
+import { OFF_STATE_CODE } from '../../lib/scheduleWindow.js';
+import { kyivDateKey } from '../../lib/outage-dates.js';
 import { hapticTick } from '../../lib/haptics.js';
 import { Button } from '../ui/Button.js';
 import { cn } from '../../lib/cn.js';
@@ -59,7 +61,41 @@ export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
     if (state === 'busy') return;
     setState('busy');
     hapticTick('confirm');
-    const result = await shareScheduleCard({ queue, regionName, date, intervals, labels });
+
+    const now = new Date();
+    const isToday = date === kyivDateKey(now);
+    const currentOff = isToday
+      ? intervals.find(
+          (interval) =>
+            interval.stateCode === OFF_STATE_CODE &&
+            Date.parse(interval.startsAt) <= now.getTime() &&
+            now.getTime() < Date.parse(interval.endsAt),
+        )
+      : undefined;
+    const statusLabel = !isToday
+      ? undefined
+      : currentOff
+        ? t('home.heroOff')
+        : intervals.length > 0
+          ? t('home.heroOn')
+          : t('home.heroNoData');
+    const statusTone = !isToday
+      ? undefined
+      : currentOff
+        ? 'off'
+        : intervals.length > 0
+          ? 'on'
+          : 'unknown';
+
+    const result = await shareScheduleCard({
+      queue,
+      regionName,
+      date,
+      intervals,
+      labels,
+      statusLabel,
+      statusTone,
+    });
     if (result === 'cancelled') {
       setState('idle');
       return;

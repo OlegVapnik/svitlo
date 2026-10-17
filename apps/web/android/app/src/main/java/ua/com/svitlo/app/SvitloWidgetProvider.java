@@ -29,7 +29,9 @@ import org.json.JSONObject;
  */
 public class SvitloWidgetProvider extends AppWidgetProvider {
 
-    static final String PREFS = "svitlo_widget";
+    static final String PREFS = "svitlo_widget_prefs";
+    /** Прежнее имя хранилища: после обновления снимок нужно перенести, иначе будильники пропадут. */
+    static final String LEGACY_PREFS = "svitlo_widget";
     static final String KEY_STATE = "state";
 
     /** Веб-часть кладёт сюда последний снимок расписания. */
@@ -41,9 +43,25 @@ public class SvitloWidgetProvider extends AppWidgetProvider {
             .apply();
     }
 
-    private static String readState(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_STATE, null);
+    /**
+     * Читает снимок, который записал WebView.
+     *
+     * После обновления приложения старый ключ `svitlo_widget` ещё лежит на телефоне. Если его не
+     * прочитать, после перезагрузки будильники не восстановятся до первого открытия главной —
+     * человек останется без предупреждения именно в тот момент, когда оно нужнее всего.
+     */
+    static String readState(Context context) {
+        SharedPreferences current = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String json = current.getString(KEY_STATE, null);
+        if (json != null) return json;
+
+        SharedPreferences legacy = context.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE);
+        String migrated = legacy.getString(KEY_STATE, null);
+        if (migrated != null) {
+            storeState(context, migrated);
+            legacy.edit().remove(KEY_STATE).apply();
+        }
+        return migrated;
     }
 
     /** Обновить все виджеты. Вызывается после syncState и после загрузки приложения. */

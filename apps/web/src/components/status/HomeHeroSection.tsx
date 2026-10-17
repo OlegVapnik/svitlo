@@ -22,6 +22,7 @@ import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
 import { ShareScheduleButton } from '../schedule/ShareScheduleButton.js';
 import { QueueCompareBar } from '../schedule/QueueCompareBar.js';
+import { PowerWindowPlanner } from './PowerWindowPlanner.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
@@ -43,7 +44,8 @@ import {
   OFF_STATE_CODE,
   scheduleWindow,
 } from '../../lib/scheduleWindow.js';
-import type { QueueScheduleData } from '@svitlo/shared';
+import type { QueueScheduleData, ScheduleIntervalUtc } from '@svitlo/shared';
+import type { DaySchedule } from '../../lib/day-schedule.js';
 import { cn } from '../../lib/cn.js';
 
 /** Час у форматі HH:MM за Києвом для підписів. */
@@ -159,6 +161,36 @@ export const HomeHeroSection: React.FC = () => {
   }, [hasIntervals, intervals, selectedDate, now]);
 
   const isOff = Boolean(windowSummary?.isOff);
+
+  /**
+   * Дві доби для планувальника: сьогодні й завтра.
+   *
+   * Основне джерело — `/schedules/upcoming` (там уже обидві дати однією відповіддю). Для вибраної
+   * дати уточнюємо з `/schedules`: саме цей графік намальовано в таймлайні, і планувальник не
+   * повинен радити вікно, якого на екрані немає.
+   */
+  const plannerDays = useMemo<DaySchedule[]>(() => {
+    const todayKey = kyivDateOffsetKey(0);
+    const tomorrowKey = kyivDateOffsetKey(1);
+    const collect = (date: string): DaySchedule => {
+      const entries = (upcomingGroupOutages?.data ?? []).filter(
+        (item) => item.queue === selectedQueue && item.date === date,
+      );
+      let dayIntervals: ScheduleIntervalUtc[] = entries.flatMap((item) => item.intervals);
+      let covered = entries.length > 0;
+      if (date === selectedDate) {
+        dayIntervals = intervals;
+        covered =
+          covered ||
+          schedule?.covered === true ||
+          schedule?.allClear === true ||
+          dayIntervals.length > 0;
+      }
+      return { date, intervals: dayIntervals, covered };
+    };
+    return [collect(todayKey), collect(tomorrowKey)];
+  }, [upcomingGroupOutages, selectedQueue, selectedDate, intervals, schedule]);
+
 
   // Цвет строки состояния телефона и заголовок вкладки следуют за статусом сети.
   // Минуты в заголовок идут отдельным ключом, а не собираются из предложения Hero:
@@ -580,10 +612,10 @@ export const HomeHeroSection: React.FC = () => {
               </div>
             )}
 
-            {/* Планувальник вікон прибрано: він радив, коли вмикати прилад, за
-                ОРІЄНТОВНИМ графіком, а оператор може змінити його без попередження.
-                Порада «встигнете» коштувала б людині прання, яке зупинилось посеред
-                циклу. Залишаємо факт: таймлайн, картку й перетин груп. */}
+            {/* Планувальник побутових вікон: показує конкретне вікно з графіка, а не обіцяє
+                «встигнете» без меж. Під кнопкою «Поділитися», одразу під таймлайном. */}
+            {selectedQueue && <PowerWindowPlanner days={plannerDays} now={now} className="mt-3" />}
+
           </div>
 
           {/* Графік узято з офлайн-снимка, а не зі свіжої відповіді оператора. Кажемо про це

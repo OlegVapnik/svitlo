@@ -44,6 +44,20 @@
             android:name=".OutageAlarmReceiver"
             android:exported="false" />
 
+        <!-- После перезагрузки телефона AlarmManager пуст. Receiver читает последний снимок из
+             SharedPreferences и заново ставит будильники + обновляет виджет. Системные broadcast'ы
+             доставляются и при exported=false. -->
+        <receiver
+            android:name=".BootCompletedReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -63,4 +77,7 @@
     <!-- Точные будильники за 15 минут до отключения. Если человек не дал разрешение,
          OutageAlarmReceiver откатывается на setAndAllowWhileIdle. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- После reboot нужно снова запланировать будильники; без этого разрешения система не
+         доставит BOOT_COMPLETED. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

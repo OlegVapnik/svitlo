@@ -89,3 +89,30 @@ export function overlapSummary(states: readonly OverlapState[]): OverlapSummary 
 export function slotsToMinutes(slots: number): number {
   return slots * SLOT_MINUTES;
 }
+
+/** Неперервний відрізок спільного блэкауту в хвилинах від початку київської доби. */
+export interface OverlapWindow {
+  from: number;
+  to: number;
+}
+
+/**
+ * Склеює сусідні слоти `none` в інтервали: «12:00–14:00, 18:30–19:00».
+ *
+ * Підсумкової цифри «Z год» мало: людині потрібно знати, коли саме обидві точки без світла,
+ * щоб спланувати дорогу між ними. Рахуємо з тієї ж класифікації, що й смуги, тому підпис не
+ * може розійтися з намальованим.
+ */
+export function overlapIntervals(states: readonly OverlapState[]): OverlapWindow[] {
+  const windows: OverlapWindow[] = [];
+  let start: number | null = null;
+  for (let index = 0; index <= states.length; index += 1) {
+    const isNone = index < states.length && states[index] === 'none';
+    if (isNone && start === null) start = index * SLOT_MINUTES;
+    if (!isNone && start !== null) {
+      windows.push({ from: start, to: index * SLOT_MINUTES });
+      start = null;
+    }
+  }
+  return windows;
+}

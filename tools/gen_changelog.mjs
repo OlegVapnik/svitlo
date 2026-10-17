@@ -139,21 +139,30 @@ for (const record of raw.split(RECORD_SEPARATOR)) {
 
   // Для новых коммитов единственный источник текста — trailer. Сырое тело не используем:
   // оно написано для разработчика и содержит технический мусор.
-  const releaseNote = bodyLines.join('\n').match(/^Release-Note:\s*(.+)$/imu)?.[1];
-  if (!releaseNote) continue;
+  //
+  // Один коммит может изменить несколько вещей для человека (например, стабильность облака,
+  // планировщик и восстановление будильников). Поэтому читаем ВСЕ строки `Release-Note`, а не
+  // только первую: иначе три пользовательские правки схлопнулись бы в один невнятный пункт.
+  const releaseNotes = [...bodyLines.join('\n').matchAll(/^Release-Note:\s*(.+)$/gimu)]
+    .map((match) => (match[1] ?? '').trim())
+    .filter(Boolean);
+  if (releaseNotes.length === 0) continue;
 
   // Тема вида `fix(web): …` или `feat: …` → тип из первого слова.
   const type = subject.split(/[:(]/u)[0].trim().toLowerCase();
   const meta = USER_FACING[type];
   if (!meta) continue;
 
-  entries.push({
-    hash: hash.slice(0, 7),
-    date,
-    kind: meta.kind,
-    label: meta.label,
-    text: cleanNote(releaseNote),
-  });
+  for (const releaseNote of releaseNotes) {
+    entries.push({
+      hash: hash.slice(0, 7),
+      date,
+      kind: meta.kind,
+      label: meta.label,
+      text: cleanNote(releaseNote),
+    });
+    if (entries.length >= limit) break;
+  }
 
   if (entries.length >= limit) break;
 }
