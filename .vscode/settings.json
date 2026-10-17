@@ -1,5 +1,4 @@
 {
-  "CodeGPT.apiKey": "CodeGPT Plus Beta",
   "tailwindCSS.includeLanguages": { "typescriptreact": "javascript", "typescript": "javascript" },
   "tailwindCSS.experimental.classRegex": [["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]],
   "css.lint.unknownAtRules": "ignore",
@@ -29,14 +28,20 @@
     "**/dist": true,
     "**/coverage": true,
     "**/operator-samples": true,
-    "**/.kilo/worktrees": true
+    "**/.kilo/worktrees": true,
+    "**/.cache": true,
+    "**/__pycache__": true,
+    "**/*.tsbuildinfo": true
   },
   "files.watcherExclude": {
     "**/node_modules/**": true,
     "**/dist/**": true,
     "**/coverage/**": true,
     "**/operator-samples/**": true,
-    "**/.kilo/worktrees/**": true
+    "**/.kilo/worktrees/**": true,
+    "**/.cache/**": true,
+    "**/__pycache__/**": true,
+    "**/apps/web/android/**/build/**": true
   },
   "java.configuration.updateBuildConfiguration": "interactive"
 }

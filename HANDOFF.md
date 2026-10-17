@@ -260,6 +260,11 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 - `docs/regions-multiregion.md`, `docs/AI-ONBOARDING.md` — как воркер пишет данные и почему
   `rows_written` считается даже за пустой `DELETE`. Миграций БД нет: схема та же
   (`schedule_slots`, `schedule_coverage`, `snapshot_meta`).
+- `.vscode/extensions.json` — убраны QML/Qt и Live Server (попали из другого проекта; в репозитории
+  нет ни QML, ни статического HTML — dev-сервер поднимает Vite), добавлен Firefox-дебаггер, на
+  который ссылается `launch.json`. `.vscode/settings.json` — убран `CodeGPT.apiKey`, в
+  `search.exclude`/`watcherExclude` добавлены `.cache`, `__pycache__`, `*.tsbuildinfo` и каталоги
+  Android-сборки.
 
 ### Verified (Чем проверено — команды и коды возврата)
 - `tsc --noEmit` в `cf-worker`, `tsc -p apps/api/tsconfig.json`, `tsc -p apps/api/tsconfig.tests.json`,
@@ -283,9 +288,14 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers
 1. Деплой: `./deploy-cf.sh`, затем сверить в дашборде D1 `rows_written` за сутки (ожидание —
    единицы тысяч вместо десятков тысяч) и `wrangler tail` на строку `scheduled: зеркало …`.
-2. Перед деплоем решить судьбу архива `svitlo-clean/` (в коммит не включён): удалить или держать
-   как справку. Код из него уже перенесён, поддерживать две копии нельзя.
-3. `ensureSchedule` пишет итог обхода только при `mirrorSync.ok || telegram.slots > 0` — если фид
+2. ~~Судьба архива `svitlo-clean/`~~ — **удалён** после сверки: `cf-worker/schema.sql` и
+   `packages/shared/src/index.ts` совпадали байт-в-байт, `regions-catalog.ts` в репозитории новее и
+   подробнее, модули перенесены с исправлениями (7 дней истории, проверка пустой таблицы,
+   source-aware diff). Вторая копия парсера — это гарантированное расхождение правок.
+3. `tools/discover-chernihiv-cities.mjs` — разведка справочника РЕМ/дільниць Чернігівобленерго
+   (посредник вне Workers: у сайта неполная цепочка TLS-сертификата, воркер такой ответ отбросит).
+   Результат по умолчанию идёт в `.cache/chernihiv-cities.json`, а не в корень репозитория.
+4. `ensureSchedule` пишет итог обхода только при `mirrorSync.ok || telegram.slots > 0` — если фид
    недоступен и Telegram молчит, отметка `schedule` не обновляется (поведение прежнее, но теперь
    это видно в логах как единственный признак «борт был»).
 

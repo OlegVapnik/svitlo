@@ -1,25 +1,25 @@
 {
+    // Только то, что реально нужно этому монорепо: TypeScript/React/Tailwind, Drizzle+PostgreSQL
+    // через SQLTools, Docker Compose, YAML (workflows/compose), .env, Firefox-дебаг (launch.json),
+    // vitest (apps/api и apps/web), python-скрипты в tools/ и skills/.
+    // QML/Qt и Live Server попали сюда из другого проекта: в репозитории нет ни QML, ни
+    // статического HTML (dev-сервер поднимает Vite), поэтому их из рекомендаций убрали.
     "recommendations": [
         "kilocode.kilo-code",
+        "saoudrizwan.claude-dev",
         "esbenp.prettier-vscode",
+        "usernamehw.errorlens",
+        "eamodio.gitlens",
         "bradlc.vscode-tailwindcss",
         "formulahendry.auto-rename-tag",
-        "ecmel.vscode-html-css",
-        "usernamehw.errorlens",
-        "oderwat.indent-rainbow",
-        "ritwickdey.liveserver",
-        "vitest.explorer",
+        "mikestead.dotenv",
+        "redhat.vscode-yaml",
         "mtxr.sqltools",
         "mtxr.sqltools-driver-pg",
         "ms-azuretools.vscode-containers",
-        "eamodio.gitlens",
-        "mhutchie.git-graph",
-        "redhat.vscode-yaml",
-        "mikestead.dotenv",
-        "dotjoshjohnson.xml",
-        "bbenoist.qml",
-        "delgan.qml-format",
-        "theqtcompany.qt-core",
-        "theqtcompany.qt-qml"
+        "firefox-devtools.vscode-firefox-debug",
+        "vitest.explorer",
+        "ms-python.python",
+        "dotjoshjohnson.xml"
     ]
 }
