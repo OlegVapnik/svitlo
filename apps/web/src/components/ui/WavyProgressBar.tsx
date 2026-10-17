@@ -84,7 +84,7 @@ export const WavyProgressBar: React.FC<WavyProgressBarProps> = ({
 
         {/* Пройденная часть — волна цвета состояния: обрезка по контейнеру задаёт её конец. */}
         <div
-          className="absolute inset-y-0 left-0 overflow-hidden text-status transition-[width] duration-700 ease-[var(--ease-m3-standard)]"
+          className="absolute inset-y-0 left-0 overflow-hidden text-status transition-[width] duration-700 ease-m3-standard"
           style={{ width: `${clamped}%` }}
           aria-hidden
         >
@@ -114,7 +114,7 @@ export const WavyProgressBar: React.FC<WavyProgressBarProps> = ({
 
         {/* Риска-ползунок на стыке: белая, с ореолом цвета состояния. */}
         <span
-          className="absolute top-1/2 z-10 h-5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white text-status shadow-[0_0_10px_currentColor] transition-[left] duration-700 ease-[var(--ease-m3-standard)]"
+          className="absolute top-1/2 z-10 h-5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white text-status shadow-[0_0_10px_currentColor] transition-[left] duration-700 ease-m3-standard"
           style={{ left: `${clamped}%` }}
           aria-hidden
         />

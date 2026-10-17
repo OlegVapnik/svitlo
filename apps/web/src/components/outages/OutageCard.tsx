@@ -86,7 +86,7 @@ export const OutageCard: React.FC<OutageCardProps> = ({ outage }) => {
             type="button"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
-            className="flex min-h-[44px] w-full items-center justify-between gap-2 text-xs font-semibold text-primary hover:underline"
+            className="flex min-h-11 w-full items-center justify-between gap-2 text-xs font-semibold text-primary hover:underline"
           >
             <span>{t('outages.addresses')}</span>
             {expanded ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}

@@ -121,7 +121,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
           'group flex items-center justify-between gap-3 rounded-2xl border border-border bg-card text-left transition-all duration-200 hover:border-primary/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring shadow-card',
           variant === 'prominent'
             ? 'w-full p-3.5 sm:p-4'
-            : 'min-h-[44px] px-3.5 py-2 text-xs',
+            : 'min-h-11 px-3.5 py-2 text-xs',
         )}
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -190,7 +190,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
             // У шапці (compact) панель выравнивается по правому краю: кнопка там у правого
             // края экрана, и панель на `left-0 right-0` уезжала бы за границу окна на телефоне.
             variant === 'prominent'
-              ? 'absolute left-0 right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-full min-w-[300px]'
+              ? 'absolute left-0 right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-full min-w-75'
               : 'absolute right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-80 max-w-[90vw]',
           )}
         >
@@ -256,7 +256,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                     <li
                       key={region.cpu}
                       role="presentation"
-                      className="flex min-h-[32px] items-center justify-between gap-2 px-3 pb-1 pt-2"
+                      className="flex min-h-8 items-center justify-between gap-2 px-3 pb-1 pt-2"
                     >
                       <span className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {region.nameUa}
@@ -279,7 +279,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                     onClick={() => handleSelect(region)}
                     onMouseEnter={() => setActiveIndex(selectableIndex)}
                     className={cn(
-                      'flex min-h-[44px] cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors',
+                      'flex min-h-11 cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors',
                       isItemActive && 'bg-muted',
                       isSelected && 'bg-primary/10 font-semibold text-primary',
                       // Мережа всередині області — з відступом і лінією, щоб було видно підпорядкування.

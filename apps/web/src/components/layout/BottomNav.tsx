@@ -47,7 +47,7 @@ export const BottomNav = () => {
                 <span
                   className={cn(
                     // Пилюля раскрывается пружинкой: 48px → 64px. Ширина — часть обратной связи.
-                    'flex h-8 items-center justify-center transition-[width,background-color,color] duration-300 ease-[var(--ease-m3-expressive-fast)]',
+                    'flex h-8 items-center justify-center transition-[width,background-color,color] duration-300 ease-m3-expressive-fast',
                     active
                       ? 'w-16 rounded-full bg-primary-container text-on-primary-container'
                       : 'w-12 rounded-full text-on-surface-variant',
@@ -55,7 +55,7 @@ export const BottomNav = () => {
                 >
                   <Icon
                     className={cn(
-                      'h-5 w-5 transition-transform duration-300 ease-[var(--ease-m3-expressive-fast)]',
+                      'h-5 w-5 transition-transform duration-300 ease-m3-expressive-fast',
                       active && 'scale-110',
                     )}
                     strokeWidth={active ? 2.5 : 2.2}

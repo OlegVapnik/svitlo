@@ -27,7 +27,7 @@ function RailLink({ item }: { item: SidebarEntry }) {
     >
       <span
         className={cn(
-          'flex h-8 w-16 items-center justify-center rounded-full transition-colors duration-300 ease-[var(--ease-m3-expressive-fast)]',
+          'flex h-8 w-16 items-center justify-center rounded-full transition-colors duration-300 ease-m3-expressive-fast',
           active ? 'bg-primary-container text-on-primary-container' : 'bg-transparent',
         )}
       >

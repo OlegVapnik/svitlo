@@ -68,7 +68,7 @@ export const RegionSelect: React.FC<RegionSelectProps> = ({
         onChange={handleChange}
         aria-label={t('regions.label')}
         className={cn(
-          'min-h-[44px] appearance-none rounded-xl border border-border bg-card py-2 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-primary/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          'min-h-11 appearance-none rounded-xl border border-border bg-card py-2 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-primary/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
           showIcon ? 'pl-8 pr-7' : 'px-3 pr-7',
         )}
       >

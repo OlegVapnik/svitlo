@@ -214,7 +214,7 @@ export const HomeHeroSection: React.FC = () => {
         <div
           role="group"
           aria-label={t('home.bookmarks')}
-          className="-mx-1 flex snap-x snap-mandatory items-center gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="-mx-1 flex snap-x snap-mandatory items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
         >
           {bookmarks.map((bm) => {
             const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
@@ -224,7 +224,7 @@ export const HomeHeroSection: React.FC = () => {
                 key={bm.id}
                 className={cn(
                   // M3 Filter Chip: форма-капсула, тон поверхности вместо рамки у активного чипа.
-                  'inline-flex snap-start items-center gap-0.5 rounded-full py-1 pl-1 pr-1.5 transition-colors duration-200 ease-[var(--ease-m3-expressive-fast)]',
+                  'inline-flex snap-start items-center gap-0.5 rounded-full py-1 pl-1 pr-1.5 transition-colors duration-200 ease-m3-expressive-fast',
                   isActive
                     ? 'bg-primary-container text-on-primary-container shadow-xs'
                     : 'border border-outline-variant/70 bg-surface-container text-on-surface',
@@ -237,7 +237,7 @@ export const HomeHeroSection: React.FC = () => {
                     applyBookmark(bm);
                   }}
                   aria-current={isActive ? 'true' : undefined}
-                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-xs font-bold transition-transform duration-200 ease-[var(--ease-m3-expressive-fast)] active:scale-[0.96]"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-2 text-xs font-bold transition-transform duration-200 ease-m3-expressive-fast active:scale-[0.96]"
                 >
                   {isActive ? (
                     <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />

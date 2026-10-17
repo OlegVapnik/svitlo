@@ -143,7 +143,7 @@ export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false })
           size="sm"
           aria-pressed={ukraineWide}
           onClick={() => setUkraineWide((value) => !value)}
-          className="min-h-[44px]"
+          className="min-h-11"
         >
           <Globe2 className="h-4 w-4" aria-hidden />
           {t('news.ukraineWide')}
@@ -153,7 +153,7 @@ export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false })
           size="sm"
           aria-pressed={onlyPower}
           onClick={() => setOnlyPower((value) => !value)}
-          className="min-h-[44px]"
+          className="min-h-11"
         >
           <Zap className="h-4 w-4" aria-hidden />
           {t('news.onlyPower')}

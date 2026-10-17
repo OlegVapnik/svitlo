@@ -65,7 +65,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
           // Строгая сетка 6×2 с ячейками одной ширины и высоты: выбор читается цветом, а не
           // деформацией формы. Морфинг «пузырей» (сквирклы, сжатие при нажатии) убран совсем —
           // от него интерфейс выглядел игрушечным, а границы ячеек «плыли» при каждом тапе.
-          className="grid w-[19.5rem] max-w-full grid-cols-6 gap-1.5"
+          className="grid w-78 max-w-full grid-cols-6 gap-1.5"
         >
           {options.map((q) => {
             const isSelected = selectedQueue === q;
