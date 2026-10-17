@@ -5,11 +5,11 @@
 
 ---
 
-## 1. Текущий снимок состояния (на 2026-10-16 / продолжаем сессию)
+## 1. Текущий снимок состояния (на 2026-10-17 / продолжаем сессию)
 
 | Показатель | Состояние |
 |---|---|
-| **Последний проверенный коммит** | `7fea8ea` (**v2.9.0**: покрытие дней графика, «опубликовано без отключень» вместо «Немає даних», надёжность на знаменателе известных дней, `byRegionSummary`; зеркало — `5f791ea`/`580cc24`, v2.8.0) |
+| **Последний проверенный коммит** | `efca9f4` (**v2.10.0**: канонический каталог областей и псевдонимы ключей фида — `kyivska-oblast`→`kiivska-oblast`, `kyiv-city`→`kyiv`, м. Дніпро как группа ЦЕК/ДнЕМ; до него — `cb5af31`/`7fea8ea`, v2.9.0) |
 | **Дизайн-система** | **Obsidian Dark (Zinc)**: фон `#09090B`, карточка `#131318` (грань 1px + верхний блик), текст `#FAFAFA`/`#A1A1AA`; светлая тема — `#F8FAFC`/белый. Акцент выбора — фиксированный изумруд `#10B981` (не зависит от статуса), состояние (`data-power-state`) красит только пилл `StatusPill`, таймер, линию прогресса `WavyProgressBar` и свечение 10%. Радиусы 12/16/24px, морфинг формы и декоративные фигуры удалены. Безопасные зоны телефона — утилиты `.pt-safe`/`.pb-safe` (максимум из `env()` и нативных инсетов `window.SvitloInsets` от `MainActivity`); табы листаются свайпом (`lib/swipe-tabs.ts`), смена раздела проявляется мягко (`.tab-enter` + `lib/tab-transition.ts`), зум в APK выключен. Тема — ровно две (світла/темна), режима «Авто» нет. **Эмодзи в UI нет** — только `lucide-react` и собственные SVG |
 | **Масштаб продукта** | **Вся Украина**: мультирегиональный каталог областей (`GET /api/v1/regions`), автоимпорт ГПВ с всеукраинского зеркала (`source='mirror'`) + Telegram (`source='telegram'`) + агрегатор новостей + **5 провайдеров** (mirror, YASNO, DTEK, e-svitlo, chernihivoblenergo) в `apis/api/src/providers/*.ts` |
 | **Язык интерфейса** | Единый украинский (`uk.json`); `ru.json`, `en.json` и переключатель языков удалены |
@@ -29,6 +29,11 @@
 2. **Группы ГПВ по сёлам и улицам (`settlements` + `street_queues`):**
    - Привязать `street_queues` к `region` и `settlement_id` (сейчас таблица глобальная без области, поэтому `listQueues` отдаёт счётчик улиц только для дефолтной области).
    - Поддержать группу на уровне всего села (`settlements.default_queue`), чтобы можно было смотреть группу как по улице, так и по селу целиком.
+3. **[P1] Паритет Cloudflare-воркера по каноническим областям (`cf-worker/src/index.ts`):**
+   - Воркер — второй бэкенд той же сборки фронта (`deploy-cf.sh` собирает PWA с `VITE_API_BASE_URL` на воркер и льёт в Pages), но его `/regions` отдаёт ключи фида и не знает `feedKeys`/`parentCpu`: в облаке новая группировка не работает, а строка `dnipropetrovska-oblast` выбирается как пустая область (у ЦЕК/ДнЕМ данные есть, у неё — нет).
+   - Что нужно: карта псевдонимов + `feedKeys` (копией из `packages/shared/src/regions-catalog.ts` — воркер намеренно без импортов монорепо, как и `compareQueueCodes`/sync-ETag), канонизация `?region=` в одном месте `handleApi`, `400 AMBIGUOUS_REGION` для многомережных областей в `/schedules`, `/status`, `/reliability`, `/sync`, объединение кодов групп в `/queues` (`queueSummaries` должен принимать список ключей) и группа с подобластями в `regionSummaries` (`SELECT region AS cpu, queue …`, ~строка 1902).
+   - Проверять локально (`wrangler dev` + `--test-scheduled`), деплой — только с явного согласия человека.
+
 
 ### Блок Б (P1): Доводка ядра `outage_events` и парсинга
 1. **Завершить Шаг 5 и Шаг 6 миграции `outage_events`:**
@@ -84,6 +89,38 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ```
 
 ---
+
+## Сессия 2026-10-17: канонический каталог областей и псевдонимы ключей фида (v2.10.0)
+
+- **Ветка / HEAD:** `redesign/wow-ui` — `efca9f4` (чейнджлог и этот снимок — следующим `docs(tools)`)
+- **Бэкап БД:** не снимался (схема и миграции не менялись)
+
+### Done (Что сделано)
+- **Канонические области против ключей фида.** Человек ищет «Київська область», «Київ», «Дніпропетровська область», а данные лежат под ключами зеркала: `kiivska-oblast`, `kyiv` и двумя ключами м. Дніпро (`dnipro-cek` — ЦЕК, `dnipro-dnem` — ДнЕМ). Каталог отдавал ключи оператора, поэтому «Київська» не находилась, а опечатка `dnipropetrovnska-oblast` (без «е», как пишут люди) давала пустой график вместо области с графиком.
+- **`packages/shared/src/regions-catalog.ts`** — 24 области + Киев с `feedKeys`, псевдонимы (`dnipropetrovnska-oblast` → `dnipropetrovska-oblast`) и хелперы `isRegionCatalogCpu` / `canonicalRegionCpu` / `regionFeedKeys` / `regionReadKeys`. Область с одним ключом подставляется прозрачно; область, которой фид не отдаёт (Одеса, Суми…), остаётся в каталоге с порожним `feedKeys` и нулями — человек находит свою область и видит «даних немає».
+- **Многомережные области НЕ сливаются.** ЦЕК и ДнЕМ имеют одинаковую нумерацию черг, но это разные сети: объединение интервалов показало бы часы, которых у человека нет. `/regions` отдаёт такую область группой (`feedKeys` > 1) с подобластями (`parentCpu`); `/schedules` сам сужается к сети, где на эту очередь и дату есть данные, а если данные есть в обеих — честная `400 AMBIGUOUS_REGION` с перечнем ключей; `/queues` (метаданные, не часы) оставляет канонический `cpu` и объединяет коды групп, а «світло за графіком» ставит только если так опубликовала КАЖДАЯ сеть; `/reliability`, `/schedules/upcoming`, `/sync` требуют конкретную сеть.
+- **UI:** `regionOptions()` строит список с заголовком группы (заголовок не выбирается, сети — с отступом), `filterRegions` оставляет родителя при совпадении по сети, `RegionSelect` использует нативный `optgroup`. Ключ `regions.selectNetwork` в `uk.json`.
+- **[Найдено и исправлено по пути] API-контейнер падал на старте.** `@svitlo/shared` кладётся в образ как TS-источник, а Node при type stripping НЕ резолвит `./x.js` → `x.ts`: `ERR_MODULE_NOT_FOUND /app/packages/shared/src/regions-catalog.js`. Первый относительный импорт внутри `shared` (до этого файл был один) вскрыл это. Теперь импорт с расширением `.ts` + `rewriteRelativeImportExtensions` в `tsconfig.base.json` (и в `packages/shared/tsconfig.json`). Проверено на `node:22-alpine`: `import('@svitlo/shared')` → 25 записей каталога.
+
+### Changed (Ключевые файлы)
+- `packages/shared/src/regions-catalog.ts` (новый), `packages/shared/src/index.ts` (реэкспорт с `.ts`; `RegionSummary.feedKeys`/`parentCpu`), `tsconfig.base.json`, `packages/shared/tsconfig.json`
+- `apps/api/src/services/regions.service.ts` (`readRegionParam` с псевдонимами и режимом `grouped: 'keep'`, `regionDataKeys`, `resolveScheduleRegionScope`, сборка каталога с группами), `routes/schedules.ts` (цикл по ключам + 400), `routes/queues.ts`, `services/queues.service.ts` (`listQueues(region, keys)`, пересечение `publishedClearQueues`, `groupNamesByQueue`/`mergeNameMaps`)
+- Веб: `lib/region.ts` (`RegionOption`, `regionOptions`, `filterRegions`, `parentCpu`/`feedKeys`), `components/region/RegionPicker.tsx`, `components/ui/RegionSelect.tsx`, `i18n/uk.json`; `apps/web/src/version.ts` (2.9.0 → 2.10.0)
+- Тесты: новый `apps/api/tests/integration/regions-canonical.test.ts` (8 сценариев через HTTP с fetch-стабом), переписаны `tests/services/regions-param.test.ts`, `tests/integration/regions-api.test.ts`, `tests/integration/sync-bundle.test.ts`, дополнен `apps/web/src/lib/region.test.ts`
+- Документация: `docs/regions-multiregion.md` — раздел про канонические названия, группировку и `AMBIGUOUS_REGION`
+
+### Verified (Чем проверено — команды и коды возврата)
+- `tsc --noEmit`: api / web / cf-worker / packages-shared — 0 ошибок; `vite build` — exit 0 (сборщик резолвит реэкспорт `.ts`)
+- `vitest run` в `apps/api` с `TEST_DATABASE_URL=…/svitlo_test` — **41 файл / 307 тестов зелёные** (все 13 интеграционных файлов отработали); `apps/web` — 13 файлов / 106 тестов
+- `scan_secrets.py` — 0 находок; `check_tailwind_tokens.py` — OK
+- Образ API пересобран (`docker compose up -d --build api`) и healthy; живые проверки: `/regions` — 27 строк (группа `dnipropetrovska-oblast` + `dnipro-cek`/`dnipro-dnem`, `kyivska-oblast` → `feedKeys: [kiivska-oblast]`, `kyiv-city` → `[kyiv]`); `/queues?region=kyivska-oblast` и `?region=dnipropetrovnska-oblast` — 200 с чергами; `/schedules?region=kyivska-oblast&queue=4/1` — 200 (`source: mirror`); `/schedules?region=dnipropetrovska-oblast&queue=1/1` — 200 (кандидат один), `allClear: true` (обе сети опубликовали день без отключений); `/reliability` и `/schedules/upcoming` с `dnipropetrovska-oblast` — 400 `AMBIGUOUS_REGION`; `/settlements?region=kyivska-oblast&q=Київ` — 200 с `region: kiivska-oblast`; `?region=xyz--bad` — 400 `VALIDATION_ERROR`
+- **Ловушка прогона тестов (стоила 31 ложного падения):** `vitest`, запущенный из КОРНЯ репозитория, не читает `apps/api/vitest.config.ts` (`fileParallelism: false`) и подхватывает тесты web заодно — интеграционные файлы идут параллельно по одной БД `svitlo_test` и валятся «duplicate key»/«truncate соседа». Правильно: `cd apps/api && TEST_DATABASE_URL=… vitest run` (или `pnpm --filter @svitlo/api test:integration`). Добавлено в `skills/test-strategy/SKILL.md`.
+
+### Next / Blockers (Что осталось следующей смене)
+1. **Паритет Cloudflare-воркера** (`cf-worker/src/index.ts`) — в бэклоге (Блок А, п. 3): `/regions` там всё ещё отдаёт ключи фида без `feedKeys`/`parentCpu`, поэтому в облачной сборке группировки нет, а `dnipropetrovska-oblast` выбирается как пустая область. Деплой (`./deploy-cf.sh`) — только с явного согласия человека.
+2. Закоммитить `docs(tools)`: чейнджлог (3 копии — `apps/api`, `apps/web`, `cf-worker/src/data`) и этот снимок сессии.
+
+
 
 ## Сессия 2026-10-17: покрытие дня ГПВ и «опубликовано без отключень» (v2.9.0)
 

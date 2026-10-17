@@ -31,6 +31,8 @@ docker compose exec -T db psql -U svitlo -d postgres -tc "SELECT 1 FROM pg_datab
 TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm --filter @svitlo/api test:integration
 ```
 
+**Рабочая директория обязательна.** `vitest`, запущенный из корня репозитория, НЕ читает `apps/api/vitest.config.ts` (а в нём `fileParallelism: false`) и заодно подхватывает тесты web: интеграционные файлы идут параллельно по одной БД `svitlo_test`, TRUNCATE-ят таблицы друг у друга и валятся «duplicate key value violates unique constraint» / пустыми каталогами вместо реального результата. Запускай из `apps/api` (`pnpm --filter @svitlo/api test…`) — тогда `fileParallelism: false` действует и файлы идут по очереди.
+
 ## Типичные ошибки
 - Запуск `test:integration` с `TEST_DATABASE_URL`, указывающим на рабочую БД `svitlo`.
 - Включение параллельного запуска файлов в Vitest (`duplicate key` / `foreign key violation` в `svitlo_test`).
