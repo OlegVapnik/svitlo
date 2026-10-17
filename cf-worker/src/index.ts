@@ -1183,6 +1183,16 @@ interface ReliabilitySlot {
  */
 interface ReliabilityIndex {
   byQueue: Map<string, { region: string; queue: string; slots: ReliabilitySlot[] }>;
+  /**
+   * Дни, на которые оператор ОПУБЛИКОВАЛ график: `область|дата` → какие очереди в нём есть и в каких
+   * из них были отключения.
+   *
+   * Зачем рядом со слотами: в `schedule_slots` лежат только «тёмные» часы. День, опубликованный без
+   * отключений (Киев, Днепр, Ивано-Франковск 17.10.2026), не даёт ни одной строки слотов, и отчёт
+   * честно, но бесполезно писал «даних немає» — человек видел график на экране и «немає даних» в
+   * статистике. Покрытие отделяет «мы не знаем» от «знаем: отключений не было».
+   */
+  coverage: Map<string, { region: string; date: string; covered: Set<string>; off: Set<string> }>;
 }
 
 /** Итоги окна отчёта в той форме, которую читает фронтенд. */
@@ -1197,14 +1207,23 @@ interface ReliabilityTotals {
 
 /** Читает слоты за период (все области сразу) и готовит их к расчёту окон. */
 async function loadReliabilityIndex(env: Env, fromDate: string, toDate: string): Promise<ReliabilityIndex> {
-  const result = await env.DB.prepare(
-    `SELECT region, queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
-  )
-    .bind(fromDate, toDate)
-    .all<{ region: string; queue: string; date: string; time_from: string; time_to: string }>();
+  const [slotRows, coverageRows] = await Promise.all([
+    env.DB.prepare(
+      `SELECT region, queue, date, time_from, time_to FROM schedule_slots WHERE date >= ? AND date <= ?`,
+    )
+      .bind(fromDate, toDate)
+      .all<{ region: string; queue: string; date: string; time_from: string; time_to: string }>(),
+    // Покрытие читаем тем же запросом к окну: без него день «опубликован, отключений нет» не
+    // отличался от «оператор ничего не публиковал» (см. комментарий у `ReliabilityIndex.coverage`).
+    env.DB.prepare(
+      `SELECT region, queue, date, has_outages FROM schedule_coverage WHERE date >= ? AND date <= ?`,
+    )
+      .bind(fromDate, toDate)
+      .all<{ region: string; queue: string; date: string; has_outages: number }>(),
+  ]);
 
   const byQueue = new Map<string, { region: string; queue: string; slots: ReliabilitySlot[] }>();
-  for (const row of result.results ?? []) {
+  for (const row of slotRows.results ?? []) {
     const startMs = kyivWallClockMs(row.date, row.time_from, false);
     const endMs = kyivWallClockMs(row.date, row.time_to, true);
     // Битый слот (пустое время, конец раньше начала) не считаем: правдоподобной цифры из него не
@@ -1218,7 +1237,17 @@ async function loadReliabilityIndex(env: Env, fromDate: string, toDate: string):
   }
   // Порядок строк в ответе D1 не гарантирован, а объединение интервалов требует сортировки.
   for (const entry of byQueue.values()) entry.slots.sort((a, b) => a.startMs - b.startMs);
-  return { byQueue };
+
+  const coverage: ReliabilityIndex['coverage'] = new Map();
+  for (const row of coverageRows.results ?? []) {
+    const key = `${row.region}|${row.date}`;
+    const entry = coverage.get(key) ?? { region: row.region, date: row.date, covered: new Set<string>(), off: new Set<string>() };
+    const queue = normalizeQueue(row.queue);
+    entry.covered.add(queue);
+    if (row.has_outages) entry.off.add(queue);
+    coverage.set(key, entry);
+  }
+  return { byQueue, coverage };
 }
 
 /**
@@ -1296,14 +1325,32 @@ function reliabilityTotals(
       if (slot.endMs >= fromMs && slot.startMs <= toMs) daysWithData.add(slot.date);
     }
   }
-  if (queues === 0) {
+  // Дни, которые оператор опубликовал БЕЗ отключений. Слотов у них нет по определению (мы храним
+  // только «тёмные» часы), поэтому раньше они не попадали ни в знаменатель, ни в hasData — и
+  // «світло за графіком» превращалось в «даних немає». Покрытие доказывает, что день известен.
+  for (const coverage of index.coverage.values()) {
+    if (!regions.has(coverage.region)) continue;
+    // Для отчёта по группе день считается известным, если группа есть в опубликованном графике
+    // либо оператор опубликовал день целиком (служебный `*`).
+    if (queueFilter !== null && !coverage.covered.has(queueFilter) && !coverage.covered.has(ALL_CLEAR_QUEUE)) {
+      continue;
+    }
+    if (coverage.date < fromDate || coverage.date > toDate) continue;
+    const dayStart = kyivWallClockMs(coverage.date, '00:00', false);
+    const dayEnd = dayStart + 86_400_000;
+    // Строгое пересечение: вчерашний день заканчивается ровно там, где начинается сегодняшний, и
+    // нестрогое сравнение приписало бы «сегодня» покрытие вчерашнего дня.
+    if (dayEnd <= fromMs || dayStart >= toMs) continue;
+    daysWithData.add(coverage.date);
+  }
+  if (queues === 0 && daysWithData.size === 0) {
     return { windowMinutes, outageMinutes: 0, poweredMinutes: 0, reliabilityPct: 0, hasData: false, outageCount: 0 };
   }
   const effectiveWindow =
     windowMinutes <= 24 * 60
       ? Math.max(1, windowMinutes)
       : Math.max(24 * 60, Math.min(windowMinutes, daysWithData.size * 24 * 60));
-  const average = Math.round(sumMinutes / queues);
+  const average = queues === 0 ? 0 : Math.round(sumMinutes / queues);
   // Окно не может быть «переполнено»: если расчёт дал больше, данные противоречивы и показывать их
   // — значит соврать. Тогда честно отдаём полное отключение без нуля.
   const counted = Math.min(effectiveWindow, average);
@@ -1346,6 +1393,15 @@ function reliabilityByRegion(
     target.count += slots.length;
     for (const slot of slots) target.days.add(slot.date);
     byRegion.set(entry.region, target);
+  }
+
+  // Дни, опубликованные без отключений (Киев, Днепр, Ивано-Франковск): слотов нет, но день
+  // известен. Без этого прохода такие области выпадали из сравнения «як у мене і як поруч».
+  for (const coverage of index.coverage.values()) {
+    if (coverage.date < fromDate || coverage.date > toDate) continue;
+    const target = byRegion.get(coverage.region) ?? { minutes: 0, queues: 0, days: new Set<string>(), count: 0 };
+    target.days.add(coverage.date);
+    byRegion.set(coverage.region, target);
   }
 
   const summary: Array<Record<string, unknown>> = [];
@@ -1486,6 +1542,19 @@ function reliabilityByQueue(
     byQueue.set(entry.queue, target);
   }
 
+  // Группы из опубликованного дня без отключений: слотов у них нет, но день известен — иначе
+  // вкладка «Групи» у Киева и Днепра была бы пустой при живом графике.
+  for (const coverage of index.coverage.values()) {
+    if (!regions.has(coverage.region)) continue;
+    if (coverage.date < fromDate || coverage.date > toDate) continue;
+    for (const queue of coverage.covered) {
+      if (queue === ALL_CLEAR_QUEUE || !isQueueCode(queue)) continue;
+      const target = byQueue.get(queue) ?? { slots: [], days: new Set<string>() };
+      target.days.add(coverage.date);
+      byQueue.set(queue, target);
+    }
+  }
+
   return [...byQueue.entries()]
     .map(([queue, data]) => {
       data.slots.sort((a, b) => a.startMs - b.startMs);
@@ -1500,7 +1569,8 @@ function reliabilityByQueue(
         poweredMinutes: Math.max(0, effectiveWindow - counted),
         reliabilityPct:
           effectiveWindow > 0 ? Math.round(((effectiveWindow - counted) / effectiveWindow) * 1000) / 10 : 0,
-        hasData: outageMinutes > 0,
+        // День с опубликованным графиком — это данные, даже если отключений в нём не было.
+        hasData: data.days.size > 0,
       };
     })
     .sort((a, b) => a.reliabilityPct - b.reliabilityPct || b.outageMinutes - a.outageMinutes);
