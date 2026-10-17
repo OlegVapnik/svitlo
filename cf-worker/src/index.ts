@@ -2094,6 +2094,48 @@ function mirrorRegionKeys(requestedRegion: string): string[] {
 }
 
 /**
+ * Ключи чтения для маршрутов с одним графиком (`/schedules`, `/status`, `/sync`).
+ *
+ * У Днепра две сети (ЦЕК и ДнЕМ) с одинаковой нумерацией черг, но разными графиками. Смешать их
+ * в один список — значит показать человеку чужие часы. Выбираем одну сеть по факту: где на нужную
+ * дату есть эта очередь, затем где есть хоть какие-то слоты, затем где есть покрытие.
+ */
+function mirrorReadKeys(snapshot: MirrorSnapshot, requestedRegion: string, date: string, queue?: string): string[] {
+  const dbRegions = mirrorRegionKeys(requestedRegion);
+  const canonical = canonicalRegionCpu(requestedRegion);
+  // Сеть названа явно — читаем только её, даже если у области есть вторая.
+  if (requestedRegion && requestedRegion !== canonical && FEED_KEYS.has(requestedRegion)) {
+    return [requestedRegion];
+  }
+  const feedKeys = dbRegions.filter((key) => snapshot.cpus.includes(key));
+  if (feedKeys.length <= 1) return feedKeys.length > 0 ? feedKeys : dbRegions;
+
+  const slots = feedKeys.map((key) => ({ key, slots: mirrorSlotsFor(snapshot, [key]) }));
+  const coverage = feedKeys.map((key) => ({
+    key,
+    entries: mirrorCoverageFor(snapshot, [key]).filter((entry) => entry.date === date),
+  }));
+
+  if (queue) {
+    const wanted = normalizeQueue(queue);
+    const withQueue = slots.find((item) =>
+      item.slots.some((slot) => slot.date === date && normalizeQueue(slot.queue) === wanted),
+    );
+    if (withQueue) return [withQueue.key];
+    const coveredQueue = coverage.find((item) =>
+      item.entries.some((entry) => normalizeQueue(entry.queue) === wanted || entry.queue === ALL_CLEAR_QUEUE),
+    );
+    if (coveredQueue) return [coveredQueue.key];
+  }
+
+  const withSlotsToday = slots.find((item) => item.slots.some((slot) => slot.date === date));
+  if (withSlotsToday) return [withSlotsToday.key];
+  const withCoverageToday = coverage.find((item) => item.entries.length > 0);
+  if (withCoverageToday) return [withCoverageToday.key];
+  return [feedKeys[0]!];
+}
+
+/**
  * Каталог областей из зеркала: тот же контракт, что `/regions`, но без единого запроса к D1.
  *
  * Имена берутся из каталога, затем из `name_ua` фида. Пустые области остаются в списке с нулями:
@@ -2439,35 +2481,39 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
     const queue = normalizeQueue(url.searchParams.get('queue') ?? '');
     const date = url.searchParams.get('date') ?? today;
     if (!queue) return json({ error: { code: 'VALIDATION_ERROR', message: 'queue обовʼязковий' } }, 400);
-    return json({ data: mirrorScheduleResponse(snapshot, readKeys, queue, date) }, 200, headers);
+    const scheduleKeys = mirrorReadKeys(snapshot, requestedRegion, date, queue);
+    return json({ data: mirrorScheduleResponse(snapshot, scheduleKeys, queue, date) }, 200, headers);
   }
 
   if (path === '/schedules/upcoming') {
     const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
-    return json({ data: mirrorUpcomingBuckets(snapshot, readKeys, today, days) }, 200, headers);
+    const upcomingKeys = mirrorReadKeys(snapshot, requestedRegion, today);
+    return json({ data: mirrorUpcomingBuckets(snapshot, upcomingKeys, today, days) }, 200, headers);
   }
 
   if (path === '/status') {
-    return json({ data: mirrorStatusPayload(snapshot, readKeys, today) }, 200, headers);
+    const statusKeys = mirrorReadKeys(snapshot, requestedRegion, today);
+    return json({ data: mirrorStatusPayload(snapshot, statusKeys, today) }, 200, headers);
   }
 
   // `/sync`: один пакет из тех же снимков. Новости и справочник адресов в зеркале отсутствуют,
   // поэтому отдаём честные пустые массивы — фронтенд покажет EmptyState, а график уже будет.
   const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
-  const status = mirrorStatusPayload(snapshot, readKeys, today);
+  const syncKeys = mirrorReadKeys(snapshot, requestedRegion, today);
+  const status = mirrorStatusPayload(snapshot, syncKeys, today);
   const regions = mirrorRegionSummaries(snapshot, today);
-  const buckets = mirrorUpcomingBuckets(snapshot, readKeys, today, days);
+  const buckets = mirrorUpcomingBuckets(snapshot, syncKeys, today, days);
   const feedKeys = regionFeedKeysOf(canonicalRegion);
   const queues = mirrorQueueList(snapshot, feedKeys.length > 0 ? feedKeys : readKeys, today);
   const schedulesByRegion: Record<string, { days: string[]; buckets: Array<Record<string, unknown>> }> = {};
   if (requestedRegion) {
     const wantedDays = Array.from({ length: days }, (_, index) => addDays(today, index));
-    for (const key of new Set<string>([requestedRegion, canonicalRegion, ...readKeys])) {
+    for (const key of new Set<string>([requestedRegion, canonicalRegion, ...syncKeys])) {
       if (key) schedulesByRegion[key] = { days: wantedDays, buckets };
     }
   }
   const body: Record<string, unknown> = {
-    region: (readKeys[0] ?? requestedRegion) || null,
+    region: (syncKeys[0] ?? requestedRegion) || null,
     status,
     regions,
     queues,
