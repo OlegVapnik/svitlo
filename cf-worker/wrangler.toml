@@ -25,6 +25,12 @@ crons = ["*/20 * * * *"]
 [vars]
 MIRROR_SCHEDULE_URL = "https://dtek-api.svitlo-proxy.workers.dev/"
 
+# Аварийный тормоз на случай, когда дневной лимит D1 (`rows_written`) почти исчерпан: список
+# ключей фида или канонических `cpu` через запятую. Пусто (по умолчанию) — импортируются все
+# области, которые фид реально отдаёт. Строка закомментирована намеренно: пустое значение
+# в [vars] выглядело бы как «настроено», хотя смысл у него тот же, что у отсутствия переменной.
+# MIRROR_SCHEDULE_IMPORT_REGIONS = "kyivska-oblast,chernihivska-oblast"
+
 # Публичные Telegram-веб-страницы операторов (не API: токен бота не нужен, парсится /s/<канал>).
 NEWS_CHANNELS = "chernigivoblenergo,ukrenergo,dtek_ua"
 

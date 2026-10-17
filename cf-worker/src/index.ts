@@ -27,10 +27,39 @@ import {
 // Чейнджлог генерирует tools/gen_changelog.mjs из истории git — воркер получает ту же копию,
 // что и Node-бэкенд, поэтому список «Що нового» одинаков на обоих серверах.
 import changelog from './data/changelog.json';
+import {
+  ALL_CLEAR_QUEUE,
+  isJsonObject,
+  isYmd,
+  mergeCoverage,
+  mergeSlots,
+  type CoverageEntry,
+  type Slot,
+} from './mirror-parser.js';
+import {
+  kyivOffsetMinutesAt,
+  kyivToday,
+  kyivWallClockMs,
+  localSlotToUtc,
+} from './kyiv-time.js';
+import { saveCoverageDiff, saveSlotsDiff } from './d1-write.js';
+import { pruneHistoryOncePerDay, syncMirrorSchedule } from './mirror-sync.js';
+import {
+  FEED_KEYS,
+  REGION_CATALOG,
+  REGION_NAMES,
+  canonicalRegionCpu,
+  regionFeedKeys,
+} from './regions.js';
 
 interface Env {
   DB: D1Database;
   MIRROR_SCHEDULE_URL: string;
+  /**
+   * Через запятую — временно ограничить импорт зеркала областями (ключи фида или канонические
+   * `cpu`). Пусто — импортируются все области, которые фид реально отдаёт.
+   */
+  MIRROR_SCHEDULE_IMPORT_REGIONS?: string;
   NEWS_CHANNELS: string;
   /** Необязательный RSS-источник. Если не задан — RSS просто не опрашивается. */
   NEWS_RSS_URL?: string;
@@ -44,299 +73,6 @@ interface Env {
 
 /** Состояние отключения в терминах приложения (совпадает с `OperatorStateCode` в @svitlo/shared). */
 const OFF_STATE = { code: 3 as const, name: 'Відключення', color: '#E33535' };
-
-/** Зеркало отдаёт код 2 = «свет выключен»; остальные коды — свет есть. */
-const MIRROR_OFF_CODE = 2;
-
-/**
- * Момент перевода часов: последнее воскресенье месяца (0 — январь) в 01:00 UTC.
- *
- * Украина переходит на летнее время в последнее воскресенье марта в 03:00 по местному (01:00 UTC),
- * а возвращается к зимнему — в последнее воскресенье октября в 04:00 по местному (01:00 UTC).
- * Правило действует с 1996 года и не менялось, поэтому его можно считать арифметикой.
- */
-function lastSundayOneUtc(year: number, monthIndex: number): number {
-  const lastDayOfMonth = new Date(Date.UTC(year, monthIndex + 1, 0));
-  const day = lastDayOfMonth.getUTCDate() - lastDayOfMonth.getUTCDay();
-  return Date.UTC(year, monthIndex, day, 1, 0, 0);
-}
-
-/**
- * Сдвиг киевского времени относительно UTC в минутах для момента `ms`: +120 зимой, +180 летом.
- *
- * Раньше здесь стоял `Intl.DateTimeFormat` с `timeZoneName: 'longOffset'`, а в `localSlotToUtc` —
- * ещё один форматтер с итеративным уточнением через `formatToParts`. Оба создавались ЗАНОВО на
- * каждый слот: область с сотнями получасовок давала десятки миллисекунд CPU, а лимит воркера на
- * бесплатном тарифе — 10 мс, и `/status`, `/sync`, `/reliability` отвечали 503 `error 1102`
- * («Worker exceeded CPU time limit»). Арифметика вместо ICU даёт тот же результат (совпадение
- * проверено сверкой с прежним расчётом на всех получасовках 2024–2027 годов) и стоит доли
- * микросекунды.
- */
-/**
- * Границы летнего времени по годам (последнее воскресенье марта и октября) и последний
- * использованный год: слоты одного ответа лежат в одном-двух годах, а `lastSundayOneUtc` — это
- * `new Date` на каждую границу.
- */
-const KYIV_DST_BOUNDS = new Map<number, [number, number]>();
-
-/** Год, для которого уже посчитаны границы, вместе с его началом и концом в UTC. */
-let kyivYearCache = { year: 0, start: 0, end: 0 };
-
-function kyivOffsetMinutesAt(ms: number): number {
-  // Границы летнего времени ищем один раз на год и запоминаем: `lastSundayOneUtc` строит `Date`,
-  // а `localSlotToUtc` спрашивает сдвиг до трёх раз на каждую границу слота — на месяце слотов
-  // это тысячи лишних `Date` в горячем пути `/reliability` и `/status`.
-  let year = kyivYearCache.year;
-  if (year === 0 || ms < kyivYearCache.start || ms >= kyivYearCache.end) {
-    year = new Date(ms).getUTCFullYear();
-    const bounds = KYIV_DST_BOUNDS.get(year) ?? [lastSundayOneUtc(year, 2), lastSundayOneUtc(year, 9)];
-    KYIV_DST_BOUNDS.set(year, bounds);
-    kyivYearCache = { year, start: Date.UTC(year, 0, 1), end: Date.UTC(year + 1, 0, 1) };
-  }
-  const bounds = KYIV_DST_BOUNDS.get(year)!;
-  return ms >= bounds[0] && ms < bounds[1] ? 180 : 120;
-}
-
-/**
- * Локальное время графика (дата + «HH:MM» по Киеву) → ISO-UTC.
- *
- * Сдвиг часового пояса нужен потому, что интервалы отдаются фронтенду как UTC и сравниваются
- * с текущим временем: без него интервал «20:00–22:00 по Киеву» съезжал бы на час в зависимости
- * от того, летом это или зимой.
- *
- * Конец суток (`timeTo === '00:00'`) означает интервал до полуночи следующего дня, а не
- * пустой интервал — так же трактует это Node-бэкенд.
- */
-function localSlotToUtc(date: string, time: string, end: boolean): string {
-  if (end && time === '00:00') {
-    const next = new Date(`${date}T00:00:00Z`);
-    next.setUTCDate(next.getUTCDate() + 1);
-    const nextDate = next.toISOString().slice(0, 10);
-    const nextMidnight = Date.parse(`${nextDate}T00:00:00Z`);
-    return new Date(nextMidnight - kyivOffsetMinutesAt(nextMidnight) * 60_000).toISOString();
-  }
-  const [year, month, day] = date.split('-').map(Number) as [number, number, number];
-  const [hour, minute] = time.split(':').map(Number) as [number, number];
-  const target = Date.UTC(year, month - 1, day, hour, minute);
-  // Сдвиг ищем сходимостью, но без ICU: на каждом проходе сравниваем «желаемое» локальное время с
-  // тем, которое даёт текущая догадка, и сдвигаем её на разницу. Это ровно тот же алгоритм, что был
-  // здесь на `Intl`/`formatToParts`, только представление локального времени считается арифметикой
-  // (3 прохода по числу). В час перевода стрелок локальное время неоднозначно; сохраняем прежний
-  // выбор — тот, к которому приводила итерация с `Intl`, чтобы уже отданные интервалы не поехали.
-  let guess = target;
-  for (let i = 0; i < 3; i += 1) {
-    const wallClock = guess + kyivOffsetMinutesAt(guess) * 60_000;
-    const delta = target - wallClock;
-    if (!delta) break;
-    guess += delta;
-  }
-  return new Date(guess).toISOString();
-}
-
-/**
- * Київське «дата + час» в UTC-миллисекунды — тот же расчёт, что у `localSlotToUtc`.
- *
- * Отдельная функция нужна из-за цены строк: `localSlotToUtc` строит ISO-строку, а вызывающий её тут
- * же разбирает `Date.parse`. В отчёте надёжности это по два преобразования на каждую границу каждого
- * слота (месяц × группы × 2), то есть миллисекунды CPU на пустом месте. `end && time === '00:00'` —
- * полночь СЛЕДУЮЩЕГО дня: так зеркало записывает «до конца суток».
- */
-function kyivWallClockMs(date: string, time: string, end: boolean): number {
-  const wallMs =
-    Date.UTC(
-      Number(date.slice(0, 4)),
-      Number(date.slice(5, 7)) - 1,
-      Number(date.slice(8, 10)),
-      Number(time.slice(0, 2)),
-      Number(time.slice(3, 5)),
-    ) + (end && time === '00:00' ? 86_400_000 : 0);
-  // Сходимость та же, что в `localSlotToUtc`: сравниваем желаемое локальное время с тем, которое
-  // даёт текущая догадка, и сдвигаем её на разницу.
-  let guess = wallMs;
-  for (let i = 0; i < 3; i += 1) {
-    const delta = wallMs - (guess + kyivOffsetMinutesAt(guess) * 60_000);
-    if (!delta) break;
-    guess += delta;
-  }
-  return guess;
-}
-
-/** 48 получасовых подписей суток: `00:00`, `00:30`, … `23:30`. */
-function halfHourLabels(): string[] {
-  return Array.from({ length: 48 }, (_, index) =>
-    `${String(Math.floor(index / 2)).padStart(2, '0')}:${index % 2 === 0 ? '00' : '30'}`,
-  );
-}
-
-/** Код группы зеркала → код группы приложения: `2.2` → `2/2`, `3` → `3`. */
-function queueFromGroupKey(groupKey: string): string | null {
-  const match = /^(\d{1,2})(?:\.(\d{1,2}))?$/u.exec(groupKey.trim());
-  if (!match) return null;
-  return match[2] ? `${match[1]}/${match[2]}` : match[1]!;
-}
-
-function cellCode(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
-  if (typeof value === 'string' && /^\d{1,2}$/u.test(value.trim())) return Number(value.trim());
-  return null;
-}
-
-/**
- * Последовательность получасовых кодов → интервалы отключений (код 2), со склейкой соседних
- * ячеек в один отрезок. Склейка нужна, чтобы «с 00:00 по 04:00» показалось одним интервалом,
- * а не двумястами получасовками.
- */
-function offIntervalsFromCodes(codes: Array<number | null>, labels: string[]): Array<{ timeFrom: string; timeTo: string }> {
-  const intervals: Array<{ timeFrom: string; timeTo: string }> = [];
-  let start: number | null = null;
-  for (let index = 0; index <= codes.length; index += 1) {
-    const isOff = index < codes.length && codes[index] === MIRROR_OFF_CODE;
-    if (isOff && start === null) start = index;
-    if (!isOff && start !== null) {
-      intervals.push({
-        timeFrom: labels[start]!,
-        // Конец суток отдаём как `00:00` — так же делает оператор, так это понимает фронтенд.
-        timeTo: index === codes.length ? '00:00' : labels[index]!,
-      });
-      start = null;
-    }
-  }
-  return intervals;
-}
-
-/** Мапа `{"08:00": 2, …}` одного дня → интервалы отключений. */
-function offIntervalsFromDayMap(day: unknown): Array<{ timeFrom: string; timeTo: string }> {
-  if (typeof day !== 'object' || day === null || Array.isArray(day)) return [];
-  const map = day as Record<string, unknown>;
-  const labels = halfHourLabels();
-  return offIntervalsFromCodes(
-    labels.map((label) => cellCode(map[label])),
-    labels,
-  );
-}
-
-/** Компактный массив на 48 кодов (второй формат ядра: `region.today` / `region.tomorrow`). */
-function offIntervalsFromCompactArray(arr: unknown): Array<{ timeFrom: string; timeTo: string }> {
-  if (!Array.isArray(arr) || arr.length !== 48) return [];
-  const labels = halfHourLabels();
-  return offIntervalsFromCodes(arr.map((value) => cellCode(value)), labels);
-}
-
-function isYmd(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/u.test(value);
-}
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-interface Slot {
-  region: string;
-  queue: string;
-  date: string;
-  timeFrom: string;
-  timeTo: string;
-}
-
-/**
- * Разворачивает `{body: "<json>"}` во внутренний JSON.
- *
- * Зеркало отдаёт полезную нагрузку JSON-строкой внутри поля `body`, поэтому без этого шага
- * слоты не найдутся. Поддерживаем и вариант без обёртки — тогда `regions` лежит в корне.
- */
-function unwrapMirrorPayload(raw: unknown): Record<string, unknown> | null {
-  if (!isJsonObject(raw)) return null;
-  const body = raw['body'];
-  if (typeof body === 'string') {
-    try {
-      const inner: unknown = JSON.parse(body);
-      return isJsonObject(inner) ? inner : null;
-    } catch {
-      return null;
-    }
-  }
-  if (isJsonObject(body)) return body;
-  if ('regions' in raw || 'data' in raw) return raw;
-  return null;
-}
-
-function regionsOf(payload: Record<string, unknown>): unknown[] | null {
-  const direct = payload['regions'];
-  if (Array.isArray(direct)) return direct;
-  const data = payload['data'];
-  if (isJsonObject(data) && Array.isArray(data['regions'])) return data['regions'] as unknown[];
-  return null;
-}
-
-/** Слоты отключений одной области из разобранного payload зеркала. Чистая функция. */
-function extractSlots(payload: Record<string, unknown>, regionCpu: string): Slot[] {
-  const regions = regionsOf(payload);
-  if (!regions) return [];
-  const region = regions.find((item) => isJsonObject(item) && item['cpu'] === regionCpu);
-  if (!isJsonObject(region)) return [];
-
-  const slots: Slot[] = [];
-  const dateToday = typeof payload['date_today'] === 'string' ? payload['date_today'] : null;
-  const dateTomorrow = typeof payload['date_tomorrow'] === 'string' ? payload['date_tomorrow'] : null;
-
-  // Формат 2: компактные массивы `today`/`tomorrow`. Без названия группы в самом регионе код
-  // группы взять неоткуда — тогда честно не пишем ничего.
-  if (Array.isArray(region['today'])) {
-    const queue = queueFromGroupKey(String(region['group'] ?? ''));
-    if (!queue) return [];
-    for (const [date, compact] of [
-      [dateToday, region['today']],
-      [dateTomorrow, region['tomorrow']],
-    ] as Array<[string | null, unknown]>) {
-      if (!date || !isYmd(date)) continue;
-      for (const interval of offIntervalsFromCompactArray(compact)) {
-        slots.push({ region: regionCpu, queue, date, ...interval });
-      }
-    }
-    return slots;
-  }
-
-  // Формат 1 (реальный): `schedule[groupKey][date][HH:MM] = code`.
-  const schedule = region['schedule'];
-  if (!isJsonObject(schedule)) return [];
-  for (const [groupKey, byDate] of Object.entries(schedule)) {
-    const queue = queueFromGroupKey(groupKey);
-    if (!queue || !isJsonObject(byDate)) continue;
-    for (const [date, day] of Object.entries(byDate)) {
-      if (!isYmd(date)) continue;
-      for (const interval of offIntervalsFromDayMap(day)) {
-        slots.push({ region: regionCpu, queue, date, ...interval });
-      }
-    }
-  }
-  return slots;
-}
-
-/**
- * Строка покрытия ГПВ: «на эту дату оператор опубликовал график, и эта очередь в нём есть».
- *
- * Отдельно от `Slot` (`Slot` — только часы отключений). Причина: зеркало отдаёт
- * `schedule[группа][дата][HH:MM] = код`, где код 1 — «светло по графику», код 2 — «отключение».
- * По одним слотам (код 2) невозможно отличить «оператор опубликовал график без отключений» от
- * «оператор на эту дату ничего не публиковал»: и то, и другое давало пустой список слотов, и
- * приложение писало «Немає даних» там, где график есть.
- */
-interface CoverageEntry {
-  region: string;
-  date: string;
-  queue: string;
-  /** Есть ли в опубликованном ГПВ хотя бы одна получасовка отключения для этой очереди. */
-  hasOutages: boolean;
-}
-
-/**
- * Очередь-маркер «оператор сообщил про всю область целиком», а не про конкретную очередь.
- *
- * Нужна для постов вида «Графіки не діють» / «Погодинні відключення не застосовуються»: оператор
- * говорит про область и дату, а не про номер очереди. Такой пост — это покрытие (график
- * опубликован) без отключений, и именно поэтому регион перестаёт выглядеть «без данных».
- */
-const ALL_CLEAR_QUEUE = '*';
 
 /**
  * Кэш в памяти изолята. TTL — минута: данные обновляет крон раз в 20 минут, поэтому минута не
@@ -458,223 +194,6 @@ function compareQueueCodes(a: string, b: string): number {
   return aMajor - bMajor || aMinor - bMinor;
 }
 
-/** Покрытие одной области из разобранного payload зеркала. Чистая функция. */
-function extractCoverage(payload: Record<string, unknown>, regionCpu: string): CoverageEntry[] {
-  const regions = regionsOf(payload);
-  if (!regions) return [];
-  const region = regions.find((item) => isJsonObject(item) && item['cpu'] === regionCpu);
-  if (!isJsonObject(region)) return [];
-
-  const labels = halfHourLabels();
-  const entries: CoverageEntry[] = [];
-  const push = (queue: string, date: string, codes: Array<number | null>) => {
-    entries.push({
-      region: regionCpu,
-      date,
-      queue,
-      hasOutages: codes.some((code) => code === MIRROR_OFF_CODE),
-    });
-  };
-
-  const dateToday = typeof payload['date_today'] === 'string' ? payload['date_today'] : null;
-  const dateTomorrow = typeof payload['date_tomorrow'] === 'string' ? payload['date_tomorrow'] : null;
-
-  // Формат 2: компактные массивы на 48 получасовок. Без имени группы взять её неоткуда.
-  if (Array.isArray(region['today'])) {
-    const queue = queueFromGroupKey(String(region['group'] ?? ''));
-    if (!queue) return [];
-    for (const [date, compact] of [
-      [dateToday, region['today']],
-      [dateTomorrow, region['tomorrow']],
-    ] as Array<[string | null, unknown]>) {
-      if (!date || !isYmd(date) || !Array.isArray(compact) || compact.length !== 48) continue;
-      push(queue, date, compact.map((value) => cellCode(value)));
-    }
-    return entries;
-  }
-
-  // Формат 1 (реальный): `schedule[groupKey][date][HH:MM] = code`.
-  const schedule = region['schedule'];
-  if (!isJsonObject(schedule)) return [];
-  for (const [groupKey, byDate] of Object.entries(schedule)) {
-    const queue = queueFromGroupKey(groupKey);
-    if (!queue || !isJsonObject(byDate)) continue;
-    for (const [date, day] of Object.entries(byDate)) {
-      if (!isYmd(date) || !isJsonObject(day)) continue;
-      push(queue, date, labels.map((label) => cellCode(day[label])));
-    }
-  }
-
-  // Регион отдал список групп, но НИ ОДНОЙ даты с графиком (`schedule: { "1.1": {} }`) — именно так
-  // зеркало присылает Киев. Это не «нет данных», а «график опубликован, отключений не
-  // запланировано»: без служебной строки покрытия область с живым графиком показывала «Даних
-  // графіка немає». Пишем `ALL_CLEAR_QUEUE` на сегодня — по ней `covered`/`allClear` станут true, и
-  // человек увидит «Світло за графіком (відключень не заплановано)».
-  if (entries.length === 0 && Object.keys(schedule).length > 0) {
-    const date = dateToday && isYmd(dateToday) ? dateToday : kyivToday();
-    entries.push({ region: regionCpu, date, queue: ALL_CLEAR_QUEUE, hasOutages: false });
-  }
-  return entries;
-}
-
-/** Склеивает покрытие: одна строка на (область, дата, очередь). */
-function mergeCoverage(entries: CoverageEntry[]): CoverageEntry[] {
-  const byKey = new Map<string, CoverageEntry>();
-  for (const entry of entries) {
-    const key = `${entry.region}|${entry.date}|${entry.queue}`;
-    const existing = byKey.get(key);
-    if (existing) existing.hasOutages = existing.hasOutages || entry.hasOutages;
-    else byKey.set(key, { ...entry });
-  }
-  return [...byKey.values()];
-}
-
-/**
- * Склеивает соседние интервалы группы в один.
- *
- * Зеркало отдаёт получасовки, поэтому отключение с 00:00 до 04:00 приходит двадцатью
- * восемью интервалами. Фронтенд ждёт готовые интервалы, а человек — одно окно в графике.
- */
-function mergeSlots(slots: Slot[]): Slot[] {
-  const byKey = new Map<string, Slot[]>();
-  for (const slot of slots) {
-    const key = `${slot.region}|${slot.queue}|${slot.date}`;
-    const list = byKey.get(key);
-    if (list) list.push(slot);
-    else byKey.set(key, [slot]);
-  }
-
-  const merged: Slot[] = [];
-  for (const list of byKey.values()) {
-    list.sort((a, b) => a.timeFrom.localeCompare(b.timeFrom));
-    for (const slot of list) {
-      const last = merged[merged.length - 1];
-      // Склеиваем, только если предыдущий интервал того же отключения заканчивается там же,
-      // где следующий начинается, и оба принадлежат той же группе/дате.
-      const sameSeries =
-        last !== undefined &&
-        last.region === slot.region &&
-        last.queue === slot.queue &&
-        last.date === slot.date;
-      if (sameSeries && last.timeTo === slot.timeFrom) last.timeTo = slot.timeTo;
-      else merged.push({ ...slot });
-    }
-  }
-  return merged;
-}
-
-/**
- * Названия областей.
- *
- * Взяты из каталога `regions` нашего же проекта (миграция 0012), а не придуманы: зеркало
- * названий не отдаёт, но и выдумывать их нельзя — человек узнает свою область по этому тексту.
- *
- * Список полный (24 области + Киев + городские сети Дніпра), а не только знакомые слоты: зеркало
- * отдаёт области шире, чем мы видели в первых прогонах, и на области вне этого списка человек
- * получал в подписи технический слаг (`dnipropetrovska-oblast`) — по нему свою область не узнать.
- * Если зеркало присылает своё `name_ua`, оно подставляется как резерв (см. `regionSummaries`).
- */
-const REGION_NAMES: Record<string, string> = {
-  'chernihivska-oblast': 'Чернігівська область',
-  'kyiv': 'Київ',
-  'kiivska-oblast': 'Київська область',
-  'lvivska-oblast': 'Львівська область',
-  'poltavska-oblast': 'Полтавська область',
-  'cherkaska-oblast': 'Черкаська область',
-  'kharkivska-oblast': 'Харківська область',
-  'khmelnytska-oblast': 'Хмельницька область',
-  'ivano-frankivska-oblast': 'Івано-Франківська область',
-  'rivnenska-oblast': 'Рівненська область',
-  'ternopilska-oblast': 'Тернопільська область',
-  'zakarpatska-oblast': 'Закарпатська область',
-  'zaporizka-oblast': 'Запорізька область',
-  'zhytomyrska-oblast': 'Житомирська область',
-  'dnipropetrovska-oblast': 'Дніпропетровська область',
-  'dnipro-dnem': 'м. Дніпро (ДнЕМ)',
-  'dnipro-cek': 'м. Дніпро (ЦЕК)',
-  'volynska-oblast': 'Волинська область',
-  'vinnytska-oblast': 'Вінницька область',
-  'mykolaivska-oblast': 'Миколаївська область',
-  'odeska-oblast': 'Одеська область',
-  'khersonska-oblast': 'Херсонська область',
-  'donetska-oblast': 'Донецька область',
-  'luhanska-oblast': 'Луганська область',
-  'sumska-oblast': 'Сумська область',
-  'kirovohradska-oblast': 'Кіровоградська область',
-  'chernivetska-oblast': 'Чернівецька область',
-};
-
-/**
- * Канонические названия областей и их ключи фида — копия `packages/shared/src/regions-catalog.ts`.
- *
- * Копия, а не импорт: воркер собирается wrangler'ом отдельно от монорепо и намеренно не тянет
- * `@svitlo/shared` (тот везёт за собой zod). Источник правды — общий модуль, здесь только то, что
- * нужно воркеру: какие ключи фида стоят за областью.
- *
- * Зачем: человек ищет «Київська область», «Київ», «Дніпропетровська область», а данные зеркала
- * лежат под `kiivska-oblast`, `kyiv` и двумя ключами м. Дніпро (`dnipro-cek` — ЦЕК,
- * `dnipro-dnem` — ДнЕМ). Пока каталог отдавал ключи фида, поиск по названию не находил область, а
- * выбор `dnipropetrovska-oblast` давал пустой график при живой области.
- *
- * Порожний `feedKeys` — область, которую фид не отдаёт вовсе: она остаётся в каталоге с нулями,
- * чтобы человек нашёл свою область и увидел честное «даних немає».
- */
-const REGION_CATALOG: Array<{ cpu: string; feedKeys: string[] }> = [
-  { cpu: 'vinnytska-oblast', feedKeys: [] },
-  { cpu: 'volynska-oblast', feedKeys: [] },
-  { cpu: 'dnipropetrovska-oblast', feedKeys: ['dnipro-cek', 'dnipro-dnem'] },
-  { cpu: 'donetska-oblast', feedKeys: [] },
-  { cpu: 'zhytomyrska-oblast', feedKeys: ['zhytomyrska-oblast'] },
-  { cpu: 'zakarpatska-oblast', feedKeys: ['zakarpatska-oblast'] },
-  { cpu: 'zaporizka-oblast', feedKeys: ['zaporizka-oblast'] },
-  { cpu: 'ivano-frankivska-oblast', feedKeys: ['ivano-frankivska-oblast'] },
-  { cpu: 'kyiv-city', feedKeys: ['kyiv'] },
-  { cpu: 'kyivska-oblast', feedKeys: ['kiivska-oblast'] },
-  { cpu: 'kirovohradska-oblast', feedKeys: [] },
-  { cpu: 'luhanska-oblast', feedKeys: [] },
-  { cpu: 'lvivska-oblast', feedKeys: ['lvivska-oblast'] },
-  { cpu: 'mykolaivska-oblast', feedKeys: [] },
-  { cpu: 'odeska-oblast', feedKeys: [] },
-  { cpu: 'poltavska-oblast', feedKeys: ['poltavska-oblast'] },
-  { cpu: 'rivnenska-oblast', feedKeys: ['rivnenska-oblast'] },
-  { cpu: 'sumska-oblast', feedKeys: [] },
-  { cpu: 'ternopilska-oblast', feedKeys: ['ternopilska-oblast'] },
-  { cpu: 'kharkivska-oblast', feedKeys: ['kharkivska-oblast'] },
-  { cpu: 'khersonska-oblast', feedKeys: [] },
-  { cpu: 'khmelnytska-oblast', feedKeys: ['khmelnytska-oblast'] },
-  { cpu: 'cherkaska-oblast', feedKeys: ['cherkaska-oblast'] },
-  { cpu: 'chernivetska-oblast', feedKeys: [] },
-  { cpu: 'chernihivska-oblast', feedKeys: ['chernihivska-oblast'] },
-];
-
-/** Опечатки из старых закладок и ссылок: «dnipropetrovnska» (без «е»). */
-const REGION_ALIASES: Record<string, string> = {
-  'dnipropetrovnska-oblast': 'dnipropetrovska-oblast',
-};
-
-const REGION_BY_CPU = new Map(REGION_CATALOG.map((entry) => [entry.cpu, entry]));
-
-/** Ключ фида → канонический `cpu`. Копия той же карты, что в shared: без неё `kyiv` не находил
- * `kyiv-city`, и запрос со старым ключом из закладки читал пустую область. */
-const CANONICAL_BY_FEED_KEY = new Map<string, string>();
-for (const entry of REGION_CATALOG) {
-  for (const feedKey of entry.feedKeys) {
-    if (feedKey !== entry.cpu) CANONICAL_BY_FEED_KEY.set(feedKey, entry.cpu);
-  }
-}
-
-/** Все ключи фида, какие вообще бывают: по ним отличаем «сеть» (`dnipro-cek`) от «области». */
-const FEED_KEYS = new Set<string>(REGION_CATALOG.flatMap((entry) => entry.feedKeys));
-
-/** Канонический `cpu` для того, что пришло снаружи: ключ фида, псевдоним или уже канонический. */
-function canonicalRegionCpu(cpu: string): string {
-  const value = cpu.trim();
-  if (REGION_BY_CPU.has(value)) return value;
-  const alias = REGION_ALIASES[value];
-  if (alias) return alias;
-  return CANONICAL_BY_FEED_KEY.get(value) ?? value;
-}
-
 /**
  * Все ключи, под которыми данные запрошенного кода могут лежать в D1.
  *
@@ -783,10 +302,8 @@ async function resolveReadRegions(
  * областью.
  */
 function regionFeedKeysOf(cpu: string): string[] {
-  const canonical = canonicalRegionCpu(cpu);
-  const entry = REGION_BY_CPU.get(canonical);
-  if (entry) return [...entry.feedKeys];
-  return [canonical];
+  // То же правило, что и в каталоге (`./regions.js`): одна реализация вместо двух копий.
+  return regionFeedKeys(cpu);
 }
 
 /** Название области по-украински: из встроенного списка, дальше — по её ключу фида. */
@@ -798,32 +315,6 @@ function canonicalRegionName(cpu: string, mirrorNames: Record<string, string> = 
     if (viaFeed) return viaFeed;
   }
   return cpu;
-}
-
-/** Читает зеркало. Любая ошибка → `null`: лучше пустой график, чем правдоподобный мусор. */
-async function fetchMirror(env: Env): Promise<{ payload: Record<string, unknown>; timestamp: string | null } | null> {
-  try {
-    const response = await fetch(env.MIRROR_SCHEDULE_URL, {
-      headers: { 'user-agent': 'svitlo-cf-worker', accept: 'application/json' },
-    });
-    if (!response.ok) {
-      console.warn(`mirror: HTTP ${response.status} на ${env.MIRROR_SCHEDULE_URL}`);
-      return null;
-    }
-    const raw: unknown = await response.json();
-    const payload = unwrapMirrorPayload(raw);
-    if (!payload) {
-      console.warn('mirror: неожиданный формат ответа (не читается regions/body)');
-      return null;
-    }
-    const timestamp = isJsonObject(raw) && typeof raw['timestamp'] === 'string' ? raw['timestamp'] : null;
-    return { payload, timestamp };
-  } catch (error) {
-    // Логируем причину: молча проглоченная ошибка сети выглядит как «у оператора нет графика»,
-    // и это стоило бы нам недель тишины в проде вместо одного сообщения в логах.
-    console.warn(`mirror: сеть недоступна (${error instanceof Error ? error.message : 'unknown'})`);
-    return null;
-  }
 }
 
 interface NewsRow {
@@ -1632,90 +1123,48 @@ async function ensureSchema(env: Env): Promise<void> {
  */
 const MAX_VARIABLES = 100;
 
-/** Колонок в строке schedule_slots — от этого зависит размер пачки вставки. */
-const COLUMNS = 6;
+/**
+ * Чистка протухшей истории — не чаще раза в сутки.
+ *
+ * Раньше `DELETE FROM schedule_slots WHERE date < ?` выполнялся на каждом обходе крона и на каждом
+ * запросе к пустой базе. Строк он не находил, но `rows_written` за удаления D1 считает, а история
+ * меняется не чаще раза в сутки: двигается только граница «сегодня». Гейт — по дате в
+ * `snapshot_meta`, поэтому его видят все изоляты, а не только прогретый.
+ */
+let pruneCheckedOn: string | null = null;
+
+async function maybePruneHistory(env: Env): Promise<void> {
+  const today = kyivToday();
+  if (pruneCheckedOn === today) return;
+  try {
+    await pruneHistoryOncePerDay(env.DB, today);
+    pruneCheckedOn = today;
+  } catch (error) {
+    // Чистка — не повод не отдавать график: без неё данные просто живут дольше.
+    console.log(`prune: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 /**
  * Записывает слоты в D1.
  *
- * Авторитетный источник (зеркало) заменяет данные за затронутые (область, дата), но только
- * начиная со вчерашнего дня: зеркало отдаёт лишь ближайшие даты и не должно стирать уже
- * собранную историю — от неё зависят «Статистика електропостачання» и надёжность. Раньше крон
- * удалял ВСЕ пришедшие (область, дата), включая прошлые сутки, и история обнулялась при каждом
- * обходе.
+ * Авторитетный источник (зеркало) заменяет данные за затронутые (область, дата), но только начиная
+ * со вчерашнего дня: зеркало отдаёт лишь ближайшие даты и не должно стирать уже собранную историю —
+ * от неё зависят «Статистика електропостачання» и надёжность.
  *
  * Дополнительный источник (Telegram) снимает только СВОИ строки за (область, очередь, дата) и
- * вставляет с `INSERT OR IGNORE`: полный график оператора из зеркала он не перетирает, а
- * конфликт по ключу (область, очередь, дата, начало интервала) оставляет зеркалу. Та же
- * семантика, что у Node-бэкенда (`importTelegramScheduleSlots`,
- * `apps/api/src/services/telegram-schedule.service.ts`).
- */
-/**
- * Сколько дней хранить историю графика.
+ * вставляет с `INSERT OR IGNORE`: полный график оператора из зеркала он не перетирает. Та же
+ * семантика, что у Node-бэкенда (`importTelegramScheduleSlots`).
  *
- * Обоснование: зеркало отдаёт для некоторых областей график трёхмесячной давности
- * (2026-07-01, 2026-04-11). Если хранить его, человек открывает область и видит «график
- * есть» — а на деле это данные, по которым уже три месяца никто не отключался. Это
- * хуже, чем честное «данных нет»: человек планирует дела по неверной расписанию.
- *
- * Неделя — с запасом на то, чтобы история вчерашнего дня ещё показывалась (она полезна
- * для сверки «а вчера правда отключали?»), но всё, что старше, исчезает само.
+ * Сама запись — разницей (`saveSlotsDiff`): неизменившиеся интервалы не переписываются, иначе
+ * дневной лимит D1 (`rows_written`) сгорал на повторных обходах.
  */
-const HISTORY_KEEP_DAYS = 7;
-
-/**
- * Удаляет слоты старше окна хранения — по ВСЕМ областям, а не только по затронутым.
- *
- * Именно «по всем»: протухшие области не приходят в свежем импорте (зеркало по ним отдаёт
- * старьё, а не новьё), и при записи с историей-заменой они иначе остались бы навсегда.
- */
-async function pruneStaleSlots(env: Env): Promise<void> {
-  const border = addDays(kyivToday(), -HISTORY_KEEP_DAYS);
-  await env.DB.prepare(`DELETE FROM schedule_slots WHERE date < ?`).bind(border).run();
-}
-
 async function saveSlots(env: Env, slots: Slot[], options: { source?: string; replace?: boolean } = {}): Promise<void> {
-  if (slots.length === 0) return;
-  const source = options.source ?? 'mirror';
-  const replace = options.replace ?? true;
-  // Граница истории: вчера и позже — перетираем (там данные меняются в течение суток), раньше —
-  // только дополняем новыми интервалами, записанные строки не трогаем.
-  const historyBorder = addDays(kyivToday(), -1);
-
-  if (replace) {
-    const touched = new Set<string>();
-    for (const slot of slots) if (slot.date >= historyBorder) touched.add(`${slot.region}|${slot.date}`);
-    // Сначала чистим только те (область, дата), которые реально пришли: иначе старые слоты
-    // другой области за ту же дату были бы стёрты вместе с новыми.
-    for (const key of touched) {
-      const [region, date] = key.split('|') as [string, string];
-      await env.DB.prepare(`DELETE FROM schedule_slots WHERE region = ? AND date = ?`).bind(region, date).run();
-    }
-  } else {
-    const touched = new Set<string>();
-    for (const slot of slots) touched.add(`${slot.region}|${slot.queue}|${slot.date}`);
-    for (const key of touched) {
-      const [region, queue, date] = key.split('|') as [string, string, string];
-      await env.DB.prepare(
-        `DELETE FROM schedule_slots WHERE region = ? AND queue = ? AND date = ? AND source = ?`,
-      ).bind(region, queue, date, source).run();
-    }
-  }
-
-  // Пачка = MAX_VARIABLES / COLUMNS. Раньше было 90 строк (540 переменных), и любая запись
-  // падала с «too many SQL variables»: лимит D1 — это число связанных переменных, а не байт.
-  const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / COLUMNS));
-  const verb = replace ? 'INSERT OR REPLACE' : 'INSERT OR IGNORE';
-  for (let start = 0; start < slots.length; start += CHUNK) {
-    const chunk = slots.slice(start, start + CHUNK);
-    const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-    const values = chunk.flatMap((slot) => [slot.region, slot.queue, slot.date, slot.timeFrom, slot.timeTo, source]);
-    const statement = env.DB.prepare(
-      `${verb} INTO schedule_slots (region, queue, date, time_from, time_to, source)
-       VALUES ${placeholders}`,
-    );
-    await statement.bind(...values).run();
-  }
+  await saveSlotsDiff(env.DB, slots, {
+    source: options.source ?? 'mirror',
+    replace: options.replace ?? true,
+    historyBorder: addDays(kyivToday(), -1),
+  });
 }
 
 /** Строка покрытия ГПВ из D1. */
@@ -1726,9 +1175,6 @@ interface CoverageRow {
   has_outages: number;
   source: string;
 }
-
-/** Колонок в строке schedule_coverage — от этого зависит размер пачки вставки. */
-const COVERAGE_COLUMNS = 6;
 
 /**
  * Сохраняет покрытие ГПВ: какие очереди на какие даты оператор опубликовал.
@@ -1742,55 +1188,14 @@ async function saveCoverage(
   entries: CoverageEntry[],
   options: { source?: string; replace?: boolean } = {},
 ): Promise<void> {
-  if (entries.length === 0) return;
-  const source = options.source ?? 'mirror';
-  const replace = options.replace ?? true;
-  const now = new Date().toISOString();
-  const historyBorder = addDays(kyivToday(), -1);
-
-  if (replace) {
-    const touched = new Set<string>();
-    for (const entry of entries) if (entry.date >= historyBorder) touched.add(`${entry.region}|${entry.date}`);
-    for (const key of touched) {
-      const [region, date] = key.split('|') as [string, string];
-      await env.DB.prepare(`DELETE FROM schedule_coverage WHERE region = ? AND date = ?`).bind(region, date).run();
-    }
-  } else {
-    // Дополнительный источник снимает только свои строки за (область, дата, очередь): пост
-    // «графіки не діють» мог смениться постом «черга 6/2 з 16:40», и старое «світло за графіком»
-    // не должно пережить эту новость.
-    const touched = new Set<string>();
-    for (const entry of entries) touched.add(`${entry.region}|${entry.date}|${entry.queue}`);
-    for (const key of touched) {
-      const [region, date, queue] = key.split('|') as [string, string, string];
-      await env.DB.prepare(
-        `DELETE FROM schedule_coverage WHERE region = ? AND date = ? AND queue = ? AND source = ?`,
-      ).bind(region, date, queue, source).run();
-    }
-  }
-
-  const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / COVERAGE_COLUMNS));
-  for (let start = 0; start < entries.length; start += CHUNK) {
-    const chunk = entries.slice(start, start + CHUNK);
-    const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
-    const values = chunk.flatMap((entry) => [
-      entry.region,
-      entry.date,
-      entry.queue,
-      entry.hasOutages ? 1 : 0,
-      source,
-      now,
-    ]);
-    // OR IGNORE: строку зеркала не перетирает дополнение из Telegram. Для зеркала старые строки
-    // за дату уже сняты выше, поэтому IGNORE не мешает обновлению.
-    await env.DB.prepare(
-      `INSERT OR IGNORE INTO schedule_coverage (region, date, queue, has_outages, source, updated_at)
-       VALUES ${placeholders}`,
-    ).bind(...values).run();
-  }
+  await saveCoverageDiff(env.DB, entries, {
+    source: options.source ?? 'mirror',
+    replace: options.replace ?? true,
+  });
 }
-
-/** Покрытие одной области за диапазон дат (включительно). */
+/**
+ * Покрытие одной области за диапазон дат (включительно).
+ */
 async function loadCoverage(env: Env, regions: string[], from: string, to: string): Promise<CoverageRow[]> {
   const filter = regionIn(regions);
   const result = await env.DB.prepare(
@@ -2102,30 +1507,23 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
   let mirrorTimestamp: string | null = null;
   let mirrorRegions = 0;
 
-  const mirror = await fetchMirror(env);
-  if (mirror) {
-    const raw: Slot[] = [];
-    const coverage: CoverageEntry[] = [];
-    const names: Record<string, string> = {};
-    for (const item of regionsOf(mirror.payload) ?? []) {
-      if (!isJsonObject(item)) continue;
-      const cpu = item['cpu'];
-      if (typeof cpu !== 'string' || !cpu) continue;
-      raw.push(...extractSlots(mirror.payload, cpu));
-      // Покрытие — тем же обходом: без него «график опубликован, но отключений в нём нет»
-      // (коды 1 = «світло за графіком») снова выглядело бы как «Немає даних».
-      coverage.push(...extractCoverage(mirror.payload, cpu));
-      const nameUa = item['name_ua'];
-      if (typeof nameUa === 'string' && nameUa.trim()) names[cpu] = nameUa.trim();
+  const mirrorSync = await syncMirrorSchedule(env);
+  if (mirrorSync.ok) {
+    mirrorSlots = mirrorSync.slotsParsed;
+    mirrorCoverage = mirrorSync.coverageParsed;
+    mirrorTimestamp = mirrorSync.timestamp;
+    mirrorRegions = mirrorSync.regionsImported;
+    // Логируем только факт записи: на спокойном графике импорт не тратит ни одной строки, и
+    // именно это нужно видеть при разборе лимита D1 — молчание здесь означает «изменений нет».
+    if (!mirrorSync.skippedByFingerprint) {
+      console.log(
+        `scheduled: зеркало ${mirrorSync.regionsImported} областей: ` +
+          `+${mirrorSync.slotsInserted}/-${mirrorSync.slotsDeleted} слотов, ` +
+          `+${mirrorSync.coverageInserted}/-${mirrorSync.coverageDeleted} покрытия`,
+      );
     }
-    await saveSlots(env, mergeSlots(raw));
-    await saveCoverage(env, mergeCoverage(coverage));
-    await saveMirrorRegionNames(env, names);
-    await pruneStaleSlots(env);
-    mirrorSlots = raw.length;
-    mirrorCoverage = coverage.length;
-    mirrorTimestamp = mirror.timestamp ?? null;
-    mirrorRegions = Object.keys(names).length;
+  } else {
+    console.log(`scheduled: зеркало недоступно (${mirrorSync.error ?? 'unknown'})`);
   }
 
   // Второй источник: открытые каналы операторов. Нужен там, где зеркало область не отдаёт вовсе
@@ -2147,7 +1545,7 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
     console.log(`scheduled: не удалось перенести ГПВ в outage_events (${String(error)})`);
   }
 
-  if (mirror || telegram.slots > 0) {
+  if (mirrorSync.ok || telegram.slots > 0) {
     // Итог обхода пишем в snapshot_meta: по нему фронтенд знает, что борт был, и не выдаёт
     // старые данные за свежие. Считаем здесь, после Telegram, иначе цифры в отчёте были бы
     // только про зеркало и «0 слотов» выглядело бы как поломка.
@@ -2188,7 +1586,7 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
   // Данные переписаны — кэш изолята больше не актуален. У изолятов, которые обслуживают запросы,
   // свой кэш (и он живёт не дольше `MEMORY_CACHE_TTL_MS`), а здесь сбрасываем свой: иначе
   // следующий обход читал бы собственные старые ответы.
-  if (mirror || telegram.slots > 0) {
+  if (mirrorSync.ok || telegram.slots > 0) {
     scheduleSeeded = true;
     clearMemoryCache();
   }
@@ -2334,17 +1732,6 @@ function json(data: unknown, status = 200, headers: Record<string, string> = {})
   });
 }
 
-/**
- * Сегодня по Киеву (`YYYY-MM-DD`).
- *
- * Без `Intl`: форматтер создавался на каждый вызов, а `kyivToday()` зовут и в горячем пути
- * (`/status`, `/queues`, `/schedules`), где каждый миллисекунд CPU на счету.
- */
-function kyivToday(): string {
-  const now = Date.now();
-  return new Date(now + kyivOffsetMinutesAt(now) * 60_000).toISOString().slice(0, 10);
-}
-
 function addDays(date: string, offset: number): string {
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + offset);
@@ -2398,16 +1785,6 @@ async function loadMirrorRegionNames(env: Env): Promise<Record<string, string>> 
   } catch {
     return {};
   }
-}
-
-/** Сохраняет имена областей от зеркала, не теряя уже известные (объединение, а не замена). */
-async function saveMirrorRegionNames(env: Env, names: Record<string, string>): Promise<void> {
-  const fresh = Object.entries(names).filter(([, name]) => name.trim().length > 0);
-  if (fresh.length === 0) return;
-  const merged = { ...(await loadMirrorRegionNames(env)), ...Object.fromEntries(fresh) };
-  await env.DB.prepare(`INSERT OR REPLACE INTO snapshot_meta (key, value, updated_at) VALUES (?, ?, ?)`)
-    .bind('mirror_regions', JSON.stringify(merged), new Date().toISOString())
-    .run();
 }
 
 /**
@@ -2671,7 +2048,7 @@ async function ensureSchedule(env: Env): Promise<void> {
   // нет», поэтому протухшие слоты от июля месяца висели месяцами: крон запускал чистку, но
   // первый же запрос к /regions успевал отдать старьё, и человек видел «график есть».
   // Один DELETE с индексом по дате стоит копейки, а данные перестают вводить в заблуждение.
-  await pruneStaleSlots(env);
+  await maybePruneHistory(env);
 
   // Проверка «данные уже есть» нужна только один раз на изолят: она открывает отдельный запрос к
   // D1 на каждом вызове, а `/sync` и `/status` зовут эту функцию всегда.
@@ -2681,27 +2058,11 @@ async function ensureSchedule(env: Env): Promise<void> {
     scheduleSeeded = true;
     return;
   }
-  const mirror = await fetchMirror(env);
-  if (mirror) {
-    const raw: Slot[] = [];
-    const coverage: CoverageEntry[] = [];
-    const names: Record<string, string> = {};
-    for (const item of regionsOf(mirror.payload) ?? []) {
-      if (!isJsonObject(item)) continue;
-      const cpu = item['cpu'];
-      if (typeof cpu !== 'string' || !cpu) continue;
-      raw.push(...extractSlots(mirror.payload, cpu));
-      coverage.push(...extractCoverage(mirror.payload, cpu));
-      const nameUa = item['name_ua'];
-      if (typeof nameUa === 'string' && nameUa.trim()) names[cpu] = nameUa.trim();
-    }
-    console.log(
-      `ensureSchedule: зеркало дало ${raw.length} слотов и ${coverage.length} строк покрытия по ${regionsOf(mirror.payload)?.length ?? 0} областям`,
-    );
-    await saveSlots(env, mergeSlots(raw));
-    await saveCoverage(env, mergeCoverage(coverage));
-    await saveMirrorRegionNames(env, names);
-  }
+  const mirrorSync = await syncMirrorSchedule(env);
+  console.log(
+    `ensureSchedule: зеркало дало ${mirrorSync.slotsParsed} слотов и ${mirrorSync.coverageParsed} строк покрытия по ${mirrorSync.regionsImported} областям` +
+      (mirrorSync.ok ? '' : ` (недоступно: ${mirrorSync.error ?? 'unknown'})`),
+  );
 
   // Пустая база — единственный момент, когда импорт из Telegram по запросу человека допустим:
   // вызов ограничен одним разом, дальше данные приносит крон. Без него области, которых зеркало

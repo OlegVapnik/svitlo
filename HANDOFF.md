@@ -17,6 +17,8 @@
 | **Модель данных (`outage_events`)** | **Шаг 5 и 6 завершены**: все читатели (`/outages`, `/outages/stats`, `/reliability`, `/status`, `power-summary`) переведены на `outage_events`. `endsAt` убран из `outageEventKey()`. `updateOutageStatuses()` заглушена (статус вычисляется на лету). |
 | **Система закладок** | Создан **хук `useBookmarks`** (localStorage со `schemaVersion`, поддержка нескольких закладок из разных областей со своей `regionCpu`). Интегрирован в `HomeHeroSection` (чипы + кнопка «Додати в закладки»), `QueueSchedulePage` (карточки с `regionCpu` закладки), `StreetsPage` (кнопка «У закладки» на найденной улице), `MyAddressPage` (при проверке счёта — через `addBookmark` вместо `addQueue`). |
 | **Провайдеры графіків** | Созданы файлы `providers/mirror.provider.ts`, `providers/yasno.provider.ts`, `providers/dtek.provider.ts`, `providers/esvitlo.provider.ts`, `providers/chernihiv-oblenergo.provider.ts`. Зарегистрированы в `registry.ts`; интегрированы в `runParse()` (под `PROVIDER_SYNC_ENABLED`) и в `POST /api/v1/admin/parse`.
+| **Бюджет записи D1 (воркер)** | Импорт зеркала больше не пишет всё подряд: `cf-worker/src/d1-write.ts` пишет разницу множеств, `mirror-sync.ts` пропускает обход по отпечатку графа (`mirror_slots_fp`), историю чистит раз в сутки (`schedule_pruned_on`, окно 7 дней). Спокойные сутки крона стоят 0 `rows_written` вместо ~30–70 тыс. Импортируются все 19 областей фида; `MIRROR_SCHEDULE_IMPORT_REGIONS` — аварийный тормоз (ключи фида или канонические `cpu` через запятую).
+
 
 ---
 
@@ -210,6 +212,82 @@ TEST_DATABASE_URL=postgresql://svitlo:energymon@127.0.0.1:5432/svitlo_test pnpm 
 ### Next / Blockers (Что осталось следующей смене)
 1. ...
 ```
+
+---
+
+## Сессия 2026-10-17 (продолжение): бюджет записи D1 в воркере — разница вместо перезаписи (v2.13.1)
+
+- **Ветка / HEAD:** `redesign/wow-ui`, коммит поверх `b5d0488` (без деплоя: сначала локальная проверка)
+- **Задача:** перенести из архива `svitlo-clean/` исправление «воркер выжигает дневной лимит D1»,
+  ничего не сломав в `/reliability`, `ALL_CLEAR_QUEUE` Киева и подписях `/regions`.
+
+### Done (Что сделано)
+- **Причина подтверждена в живом коде:** `saveSlots` делал `DELETE (region,date)` + `INSERT` всех
+  интервалов на КАЖДОМ обходе крона (72 раза в сутки), а `pruneStaleSlots` — на каждом запросе.
+  При 19 областях это десятки тысяч `rows_written` в сутки при бесплатном лимите 100 000: квота
+  кончалась, и график «замирал» до следующих суток.
+- **`cf-worker/src/d1-write.ts`** (новый): `saveSlotsDiff`/`saveCoverageDiff` читают строки только
+  за затронутые `(область, дата)`, сравнивают множества и пишут только дельту; удаление точечное
+  по первичному ключу; `slotsFingerprint` (FNV-1a), `get/setMirrorFingerprint`,
+  `pruneStaleSlots`/`pruneStaleCoverage`, `HISTORY_KEEP_DAYS = 7`. Прошлые даты зеркало не
+  переписывает, но и не теряет: идут через `INSERT OR IGNORE` (на чистой базе это единственный
+  способ заполнить историю для `/reliability`).
+- **`cf-worker/src/mirror-sync.ts`** (новый): `syncMirrorSchedule` — один цикл fetch → разбор →
+  отпечаток → diff-write → имена областей; `pruneHistoryOncePerDay` — чистка по отметке
+  `schedule_pruned_on` в `snapshot_meta` (раньше `DELETE` шёл на каждом обходе и на каждом запросе).
+  Чистка стоит ДО раннего выхода по отпечатку, иначе в спокойный день история не чистилась бы.
+- **Защита от ложного «не изменилось»:** при совпавшем отпечатке дополнительно проверяется, что
+  `schedule_slots` не пуста. Без этого после ручного `DELETE` данные не восстановились бы никогда
+  (отпечаток живёт в мете, строки — в таблице).
+- **Все области фида** импортируются как раньше (19 ключей), но запись — по дельте. Добавлен
+  `MIRROR_SCHEDULE_IMPORT_REGIONS` (ключи фида или канонические `cpu` через запятую) — тот же
+  аварийный тормоз, что у Node-API.
+- **`mirror_regions` хранит `cpu → name_ua`** и сливается с прежним значением: в архиве туда
+  клался список ключей фида, из-за чего подписи областей в `/regions` превратились бы в слаги.
+- **Исправлена ошибка архива с часовым поясом:** граница «сегодня» считалась как `+3h`; теперь
+  смещение берётся по реальной дате (`kyivOffsetMinutesAt`), иначе в дни перехода на зимнее время
+  окно истории и дата «сегодня» съезжали на час.
+- **`index.ts` похудел на ~750 строк:** каталог областей, разбор зеркала, киевское время и запись
+  вынесены в `regions.ts`, `mirror-parser.ts`, `schedule-utils.ts`, `kyiv-time.ts`; `scheduled` и
+  `ensureSchedule` теперь зовут один `syncMirrorSchedule`, а не две разные копии импорта.
+
+### Changed (Ключевые файлы и миграции)
+- Новые: `cf-worker/src/{d1-write,mirror-sync,mirror-parser,schedule-utils,kyiv-time,regions}.ts`.
+- `cf-worker/src/index.ts` — импорты, `saveSlots`/`saveCoverage`/`maybePruneHistory` как тонкие
+  обёртки, `scheduled`/`ensureSchedule` через `syncMirrorSchedule`; `Env` получил
+  `MIRROR_SCHEDULE_IMPORT_REGIONS`.
+- `cf-worker/wrangler.toml` — комментарий про аварийный тормоз (переменная не задана).
+- `docs/regions-multiregion.md`, `docs/AI-ONBOARDING.md` — как воркер пишет данные и почему
+  `rows_written` считается даже за пустой `DELETE`. Миграций БД нет: схема та же
+  (`schedule_slots`, `schedule_coverage`, `snapshot_meta`).
+
+### Verified (Чем проверено — команды и коды возврата)
+- `tsc --noEmit` в `cf-worker`, `tsc -p apps/api/tsconfig.json`, `tsc -p apps/api/tsconfig.tests.json`,
+  `tsc -p apps/web/tsconfig.json` — 0 ошибок.
+- **Паритет разбора на живом payload зеркала:** старый парсер из `HEAD` и новый дали одинаковые
+  множества — 467 слотов и 266 строк покрытия (`diff` пуст).
+- **Симуляция D1 настоящим SQLite** (9 сценариев): первый импорт +467 слотов / +266 покрытия;
+  повторный — `skip=true`, 0 записей; 72 обхода без изменений — **0 `rows_written`**; правка одной
+  получасовки — 1 вставка и 0 удалений; Telegram с тем же ключом не удаляет строки зеркала;
+  чистка истории срабатывает один раз в сутки; ограничение импорта одной областью — 1 область в
+  базе; после очистки таблицы при совпавшем отпечатке импорт восстановил 468 строк.
+- **Локальный воркер (`wrangler dev --local`, D1 в `/tmp`):** `/api/v1/sync` — 200, в D1 473 слота
+  и 266 строк покрытия; после `DELETE FROM schedule_slots` тот же `/sync` восстановил данные и
+  записал в лог «отпечаток совпал, но таблица слотов пуста — перезаписываю»; `/__scheduled` —
+  200 за 9,7 с, лога записи нет (график не менялся); `/regions` — 27 строк с человеческими
+  подписями и `feedKeys`; `/queues?region=kyiv-city` — 200, очереди `1/1…6/1` (метка
+  `ALL_CLEAR_QUEUE`); `/reliability` — 200.
+- **Побочно:** `wrangler dev --local` теперь стартует (блокер из сессии v2.10.0 снят) — проверять
+  воркер можно локально, не дожидаясь деплоя.
+
+### Next / Blockers
+1. Деплой: `./deploy-cf.sh`, затем сверить в дашборде D1 `rows_written` за сутки (ожидание —
+   единицы тысяч вместо десятков тысяч) и `wrangler tail` на строку `scheduled: зеркало …`.
+2. Перед деплоем решить судьбу архива `svitlo-clean/` (в коммит не включён): удалить или держать
+   как справку. Код из него уже перенесён, поддерживать две копии нельзя.
+3. `ensureSchedule` пишет итог обхода только при `mirrorSync.ok || telegram.slots > 0` — если фид
+   недоступен и Telegram молчит, отметка `schedule` не обновляется (поведение прежнее, но теперь
+   это видно в логах как единственный признак «борт был»).
 
 ---
 
