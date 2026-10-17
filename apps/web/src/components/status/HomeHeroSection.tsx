@@ -20,7 +20,9 @@ import {
 } from 'lucide-react';
 import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
-import { ShareSchedule } from '../schedule/ShareSchedule.js';
+import { ShareScheduleButton } from '../schedule/ShareScheduleButton.js';
+import { PowerWindowPlanner } from '../schedule/PowerWindowPlanner.js';
+import { QueueCompareBar } from '../schedule/QueueCompareBar.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
@@ -299,6 +301,12 @@ export const HomeHeroSection: React.FC = () => {
         </div>
       </div>
 
+      {/* Перетин з другою групою — рядом з вибором черги: порівнювати хочеться саме тоді,
+          коли дивишся на свою. Блок згорнутий, доки людина не натисне кнопку. */}
+      {selectedQueue && (
+        <QueueCompareBar region={currentRegion} queue={selectedQueue} date={selectedDate} />
+      )}
+
       {/* Деликатная линия вместо волнистого разделителя: 1px и 6% белого — секция «управление»
           отделена от графика без декоративного шума. */}
       <div className="border-t border-hairline" aria-hidden />
@@ -439,20 +447,25 @@ export const HomeHeroSection: React.FC = () => {
           <div className="pt-1">
             <Timeline24h intervals={intervals} date={selectedDate} />
 
-            {/* Поделиться графиком. Текстом, а не картинкой: системное меню «Поделиться»
-                с текстом поддерживают все платформы, а с файлами — единицы, и рисовать
-                canvas ради простой задачи пришлось бы зря. */}
+            {/* Поділитися графіком: PNG-картка у системне меню, а на десктопі — файл. */}
             {selectedQueue && (
-              <div className="flex justify-end">
-                <ShareSchedule
+              <div className="flex justify-end pt-2">
+                <ShareScheduleButton
                   queue={selectedQueue}
                   regionName={currentRegionData.nameUa ?? currentRegion}
                   date={selectedDate}
                   intervals={intervals}
-                  summaryLine={statusHeadline || t('home.heroUnknown')}
                 />
               </div>
             )}
+
+            {/* Планувальник вікон: відповідає не «коли відключать», а «коли я встигну». */}
+            <PowerWindowPlanner
+              queue={selectedQueue ?? undefined}
+              region={currentRegion}
+              now={now}
+              className="mt-2"
+            />
           </div>
 
           {/* Графік узято з офлайн-снимка, а не зі свіжої відповіді оператора. Кажемо про це

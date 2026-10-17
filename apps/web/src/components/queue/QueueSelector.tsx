@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Layers } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
+import { hapticTick } from '../../lib/haptics.js';
 import { queueOptionsForGrid } from '../../lib/queue.js';
 
 interface QueueSelectorProps {
@@ -42,7 +43,10 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
         <div className="relative inline-flex items-center">
           <select
             value={selectedQueue ?? options[0]}
-            onChange={(e) => onSelect(e.target.value)}
+            onChange={(e) => {
+              hapticTick('select');
+              onSelect(e.target.value);
+            }}
             disabled={disabled}
             aria-label={t('queues.selectQueue')}
             className="min-h-11 appearance-none rounded-xl border border-hairline bg-surface-container-high py-1.5 pl-3 pr-8 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-container-highest focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -76,7 +80,10 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
                 role="radio"
                 aria-checked={isSelected}
                 disabled={disabled}
-                onClick={() => onSelect(q)}
+                onClick={() => {
+                  hapticTick('select');
+                  onSelect(q);
+                }}
                 className={cn(
                   'h-11 rounded-xl border text-xs font-semibold tabular transition-colors duration-150',
                   'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',

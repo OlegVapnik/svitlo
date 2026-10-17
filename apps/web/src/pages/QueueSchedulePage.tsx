@@ -11,6 +11,7 @@ import { Skeleton } from '../components/ui/Skeleton.js';
 import { EmptyState } from '../components/common/EmptyState.js';
 import { QueuePlacesChips } from '../components/queue/QueuePlacesChips.js';
 import { QueueScheduleBar } from '../components/schedule/QueueScheduleBar.js';
+import { ShareScheduleButton } from '../components/schedule/ShareScheduleButton.js';
 import { useBookmarks } from '../hooks/useBookmarks.js';
 import { useRegion } from '../hooks/useRegion.js';
 import { useQueueSchedule, useQueues } from '../api/queries.js';
@@ -198,6 +199,8 @@ export const QueueSchedulePage: React.FC = () => {
 
 type QueueCardProps = {
   regionCpu: string;
+  /** Назва області закладки — для підпису на PNG-картці. */
+  regionName: string;
   queue: string;
   street: string;
   date: string;
@@ -225,10 +228,12 @@ const BookmarkQueueCard: React.FC<{
   onRename: (label: string) => void;
 }> = ({ bookmark, date, onRemove, onSetPrimary, onRename }) => {
   const { data: regionQueues } = useQueues(bookmark.regionCpu);
+  const { regions } = useRegion();
   const places = (regionQueues?.data ?? []).find((item) => item.queue === bookmark.queue);
   return (
     <QueueScheduleCard
       regionCpu={bookmark.regionCpu}
+      regionName={regions.find((region) => region.cpu === bookmark.regionCpu)?.nameUa ?? bookmark.regionCpu}
       queue={bookmark.queue}
       street={bookmark.streetName ?? bookmark.label}
       date={date}
@@ -249,6 +254,7 @@ const BookmarkQueueCard: React.FC<{
  */
 const QueueScheduleCard: React.FC<QueueCardProps> = ({
   regionCpu,
+  regionName,
   queue,
   street,
   date,
@@ -321,7 +327,7 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
               </Badge>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {!isPrimary && (
               <Button
                 size="sm"
@@ -344,6 +350,12 @@ const QueueScheduleCard: React.FC<QueueCardProps> = ({
               <RefreshCw className={isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} aria-hidden />
               {isFetching ? t('queues.loading') : t('queues.refresh')}
             </Button>
+            <ShareScheduleButton
+              queue={queue}
+              regionName={regionName}
+              date={date}
+              intervals={intervals}
+            />
             <Button
               size="sm"
               variant="outline"

@@ -1,6 +1,8 @@
 package ua.com.svitlo.app;
 
+import android.os.Build;
 import android.os.Bundle;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
@@ -72,6 +74,7 @@ public class MainActivity extends BridgeActivity {
 
         if (!bridgeRegistered) {
             webView.addJavascriptInterface(new InsetsBridge(this), "SvitloInsets");
+            webView.addJavascriptInterface(new HapticsBridge(this), "SvitloHaptics");
             bridgeRegistered = true;
         }
 
@@ -150,6 +153,49 @@ public class MainActivity extends BridgeActivity {
         public int bottom() {
             MainActivity current = activity.get();
             return current == null ? 0 : insetCssPx(current, false);
+        }
+    }
+
+    /**
+     * Мост «веб → тактильный отклик»: window.SvitloHaptics.vibrateTick('tick'|'select'|'confirm').
+     *
+     * ЗАЧЕМ НЕ navigator.vibrate. В WebView вибрация требует разрешения VIBRATE в манифесте, а
+     * на Android 13+ ещё и зависит от канала уведомлений. performHapticFeedback работает без
+     * разрешений и уважает системный выключатель «тактильный отклик»: если человек его отключил,
+     * телефон молчит — это его выбор, и приложение не должно его обходить.
+     *
+     * Класс public static по той же причине, что и InsetsBridge: WebView вызывает методы через
+     * рефлексию. Activity держим по слабой ссылке — мост живёт дольше одного экрана.
+     */
+    public static class HapticsBridge {
+
+        private final WeakReference<MainActivity> activity;
+
+        HapticsBridge(MainActivity activity) {
+            this.activity = new WeakReference<>(activity);
+        }
+
+        @JavascriptInterface
+        public void vibrateTick(String kind) {
+            MainActivity current = activity.get();
+            if (current == null) return;
+            WebView webView = current.webView();
+            if (webView == null) return;
+            int feedback = hapticConstant(kind);
+            // post: вызов приходит из JS-потока, а методы View должны идти в UI-потоке.
+            webView.post(() -> webView.performHapticFeedback(feedback));
+        }
+
+        /** 'confirm' — значимая смена состояния, 'select' — выбор группы/области, иначе — тик. */
+        private static int hapticConstant(String kind) {
+            if ("confirm".equals(kind)) {
+                // CONFIRM появился в API 30; на старых версиях ведёт себя как обычное нажатие.
+                return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                    ? HapticFeedbackConstants.CONFIRM
+                    : HapticFeedbackConstants.VIRTUAL_KEY;
+            }
+            if ("select".equals(kind)) return HapticFeedbackConstants.CONTEXT_CLICK;
+            return HapticFeedbackConstants.CLOCK_TICK;
         }
     }
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn.js';
+import { hapticTick } from '../../lib/haptics.js';
 
 /**
  * Переключатель «Сьогодні / Завтра» над шкалой 24 часа.
@@ -34,7 +35,10 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
       <button
         type="button"
         aria-pressed={value === 'today'}
-        onClick={() => onChange('today')}
+        onClick={() => {
+          hapticTick('select');
+          onChange('today');
+        }}
         className={cn(
           'min-h-11 rounded-full px-4 text-sm font-semibold transition-colors',
           value === 'today'
@@ -47,7 +51,10 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
       <button
         type="button"
         aria-pressed={value === 'tomorrow'}
-        onClick={() => onChange('tomorrow')}
+        onClick={() => {
+          hapticTick('select');
+          onChange('tomorrow');
+        }}
         className={cn(
           'min-h-11 rounded-full px-4 text-sm font-semibold transition-colors',
           value === 'tomorrow'

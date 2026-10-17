@@ -4,6 +4,7 @@ import { Check, ChevronDown, MapPin, Search, X } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
 import { filterRegions, regionDataBadge, regionOptions, regionSlotsForBadge, type RegionSummary } from '../../lib/region.js';
 import { cn } from '../../lib/cn.js';
+import { hapticTick } from '../../lib/haptics.js';
 
 interface RegionPickerProps {
   className?: string;
@@ -75,6 +76,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
   }, [activeIndex, isOpen]);
 
   const handleSelect = (region: RegionSummary) => {
+    hapticTick('select');
     setRegion(region.cpu);
     setIsOpen(false);
   };

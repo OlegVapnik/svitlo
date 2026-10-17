@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
+import { hapticTick } from '@/lib/haptics';
 import { TAB_ITEMS, isNavItemActive, type TabItem } from './nav-items.js';
 
 /**
@@ -36,12 +37,8 @@ export const BottomNav = () => {
                 to={item.to}
                 aria-current={active ? 'page' : undefined}
                 // Haptic на переключении: короткая вибрация подтверждает смену экрана,
-                // не глядя на него. Поддерживается не везде, поэтому guarded и тихий.
-                onClick={() => {
-                  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                    navigator.vibrate(10);
-                  }
-                }}
+                // не глядя на него. В APK — нативный CLOCK_TICK, в браузере — navigator.vibrate(8).
+                onClick={() => hapticTick('tick')}
                 className="flex h-full flex-col items-center justify-center gap-1 text-[11px] font-semibold"
               >
                 <span
