@@ -47,6 +47,19 @@ const WEEKDAY_FORMAT = new Intl.DateTimeFormat('uk-UA', {
   timeZone: 'Europe/Kyiv',
   weekday: 'short',
 });
+const LAST_SEEN_FORMAT = new Intl.DateTimeFormat('uk-UA', {
+  timeZone: 'Europe/Kyiv',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+/** «01.07.2026» — дата последнего опубликованного графика: год здесь важен, в отличие от дня недели. */
+function lastSeenDate(iso: string): string {
+  const date = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return LAST_SEEN_FORMAT.format(date);
+}
 
 /** «17 жов» — без точки, как в компактном списке. */
 function shortDate(iso: string): string {
@@ -92,14 +105,14 @@ const PeriodRow: React.FC<{
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2.5">
-      <span className="w-[7.5rem] shrink-0 leading-tight sm:w-32">
+      <span className="w-30 shrink-0 leading-tight sm:w-32">
         <span className="block truncate text-xs font-semibold text-foreground">{label}</span>
         <span className="block h-3 truncate text-[10px] text-muted-foreground">
           {sublabel ?? (bucket.isForecast ? t('stats.forecast') : '')}
         </span>
       </span>
       <SplitBar pct={poweredPct(bucket)} label={`${label}: ${formatMinutes(bucket.outageMinutes)}`} />
-      <span className="w-[4.75rem] shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
+      <span className="w-19 shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
         −{formatMinutes(bucket.outageMinutes)}
       </span>
       <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
@@ -114,11 +127,11 @@ const GroupRow: React.FC<{ group: ReliabilityGroup }> = ({ group }) => {
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-2.5">
-      <span className="w-[7.5rem] shrink-0 truncate text-xs font-semibold text-foreground sm:w-32">
+      <span className="w-30 shrink-0 truncate text-xs font-semibold text-foreground sm:w-32">
         {t('home.heroQueue', { queue: group.queue })}
       </span>
       <SplitBar pct={poweredPct(group)} label={`${group.queue}: ${formatMinutes(group.outageMinutes)}`} />
-      <span className="w-[4.75rem] shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
+      <span className="w-19 shrink-0 rounded-md bg-red-500/10 px-1.5 py-0.5 text-right text-[11px] font-semibold tabular-nums text-red-400">
         −{formatMinutes(group.outageMinutes)}
       </span>
       <span className="w-12 shrink-0 text-right text-xs font-semibold tabular-nums text-foreground">
@@ -135,6 +148,8 @@ interface RegionRow {
   queues: number;
   slots: number;
   allClear: boolean;
+  /** Последняя дата, на которую оператор публиковал график (`YYYY-MM-DD`); null — не публиковал. */
+  lastDate: string | null;
   summary?: ReliabilityRegionSummary;
 }
 
@@ -282,6 +297,7 @@ export const ReliabilityCard: React.FC = () => {
           queues: option.region.queues?.length ?? 0,
           slots: option.region.todaySlots ?? option.region.slots ?? 0,
           allClear: option.region.allClear === true,
+          lastDate: option.region.lastDate ?? null,
           summary: summaries.get(cpu),
         };
       });
@@ -479,13 +495,26 @@ export const ReliabilityCard: React.FC = () => {
                     <span className="w-11 shrink-0 text-right text-[11px] font-semibold tabular-nums text-foreground">
                       {row.summary.reliabilityPct.toFixed(1)}%
                     </span>
-                    <span className="w-[3.75rem] shrink-0 text-right text-[10px] tabular-nums text-red-400">
+                    <span className="w-15 shrink-0 text-right text-[10px] tabular-nums text-red-400">
                       −{formatMinutes(row.summary.outageMinutes)}
                     </span>
                   </>
                 ) : (
-                  <span className="w-[6.5rem] shrink-0 text-right text-[10px] text-muted-foreground">
-                    {row.allClear ? t('stats.allClear') : t('stats.noDataShort')}
+                  <span
+                    className="w-26 shrink-0 truncate text-right text-[10px] text-muted-foreground"
+                    title={
+                      row.lastDate && row.lastDate < todayKey
+                        ? t('stats.lastPublishedHint', { date: lastSeenDate(row.lastDate) })
+                        : undefined
+                    }
+                  >
+                    {/* «Ост. 01.07.2026» вместо голого «немає даних»: человек видит, что график был,
+                        но оператор перестал его публиковать, и не ищет поломку в приложении. */}
+                    {row.allClear
+                      ? t('stats.allClear')
+                      : row.lastDate && row.lastDate < todayKey
+                        ? t('stats.lastPublished', { date: lastSeenDate(row.lastDate) })
+                        : t('stats.noDataShort')}
                   </span>
                 )}
               </button>

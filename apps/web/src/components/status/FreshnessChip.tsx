@@ -60,7 +60,7 @@ export const FreshnessChip = () => {
       )}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden />
-      <span className="max-w-[14rem] truncate">{label}</span>
+      <span className="max-w-56 truncate">{label}</span>
     </span>
   );
 };

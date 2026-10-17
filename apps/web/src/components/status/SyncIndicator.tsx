@@ -78,7 +78,7 @@ export const SyncIndicator = () => {
         )}
       >
         <Icon className={cn('h-3.5 w-3.5', style.animation)} strokeWidth={2.2} aria-hidden />
-        <span className="max-w-[12rem] truncate">{label}</span>
+        <span className="max-w-48 truncate">{label}</span>
         <button
           type="button"
           onClick={() => void syncNow(currentRegion)}
