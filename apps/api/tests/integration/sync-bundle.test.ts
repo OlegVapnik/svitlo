@@ -192,7 +192,11 @@ describeWithDb('GET /api/v1/sync: пакет офлайн-старту', () => {
     const bundle = body.data;
 
     expect(statusCode).toBe(200);
-    expect(bundle.regions).toEqual([]);
+    // Каталог областей у пакеті — ті самі канонічні області, що й у `/api/v1/regions`: людина має
+    // знайти свою область і офлайн. У порожній базі даних немає в жодної з них — і це видно.
+    expect(bundle.regions.map((region) => region.cpu)).toContain(CHERNIHIV);
+    expect(bundle.regions.map((region) => region.cpu)).toContain('dnipropetrovska-oblast');
+    expect(bundle.regions.every((region) => region.slots === 0 && region.lastDate === null)).toBe(true);
     expect(bundle.queues).toEqual([]);
     expect(bundle.schedulesByRegion[CHERNIHIV]?.buckets).toEqual([]);
     // НП області беруться ще й із довідника КОАТТГ, тому список не порожній навіть без слотів;

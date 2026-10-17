@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { listQueues } from '../services/queues.service.js';
-import { readRegionParam } from '../services/regions.service.js';
+import { readRegionParam, regionDataKeys } from '../services/regions.service.js';
 
 /**
  * Публичный список очередей: только те, о которых есть реальные данные.
@@ -19,7 +19,10 @@ export default async function queueRoutes(fastify: FastifyInstance) {
     // Данные меняются вместе с импортом графика (~реже 30 минут) — короткий публичный кеш уместен.
     reply.header('Cache-Control', 'public, max-age=30');
     // readRegionParam(undefined) → DEFAULT_REGION; некорректный cpu → 400 VALIDATION_ERROR.
-    const region = readRegionParam(request.query.region);
-    return { data: await listQueues(region) };
+    // `grouped: 'keep'` — область із кількома мережами (м. Дніпро: ЦЕК і ДнЕМ) лишається канонічною
+    // і зводиться з ключів фіда: це перелік кодів груп (метадані), а не години відключень, тому
+    // об'єднувати його безпечно. Графік такої області вимагає конкретної мережі (див. /schedules).
+    const region = readRegionParam(request.query.region, { grouped: 'keep' });
+    return { data: await listQueues(region, regionDataKeys(region)) };
   });
 }

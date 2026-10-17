@@ -12,6 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { AppError as AppErrorType } from '../../src/utils/errors.js';
 
 let readRegionParam: typeof import('../../src/services/regions.service.js').readRegionParam;
+let regionDataKeys: typeof import('../../src/services/regions.service.js').regionDataKeys;
 let DEFAULT_REGION: string;
 let AppError: typeof import('../../src/utils/errors.js').AppError;
 
@@ -19,6 +20,7 @@ describe('readRegionParam — граничні значення та валід�
   beforeAll(async () => {
     const regionsService = await import('../../src/services/regions.service.js');
     readRegionParam = regionsService.readRegionParam;
+    regionDataKeys = regionsService.regionDataKeys;
     DEFAULT_REGION = regionsService.DEFAULT_REGION;
     const errorsModule = await import('../../src/utils/errors.js');
     AppError = errorsModule.AppError;
@@ -40,11 +42,45 @@ describe('readRegionParam — граничні значення та валід�
   });
 
   it('валідний kebab-case cpu повертається без змін', () => {
-    // ЧОМУ: стандартні ідентифікатори областей із фіда дзеркала (наприклад kyivska-oblast або chernihivska-oblast) є основним валідним вводом.
-    expect(readRegionParam('kyivska-oblast')).toBe('kyivska-oblast');
+    // ЧОМУ: ключі фіда дзеркала (chernihivska-oblast, lvivska-oblast) — основний валідний ввід, і
+    // вони ж канонічні, тому підміняти нічого не треба.
     expect(readRegionParam('chernihivska-oblast')).toBe('chernihivska-oblast');
     expect(readRegionParam('lvivska-oblast')).toBe('lvivska-oblast');
-    expect(readRegionParam('kyiv-city')).toBe('kyiv-city');
+  });
+
+  it('канонічна назва області приводиться до ключа фіда (прозорий псевдонім)', () => {
+    // ЧОМУ: дані лежать під ключами дзеркала (`kiivska-oblast`, `kyiv`), а людина (і документація)
+    // називає область `kyivska-oblast` / `kyiv-city`. Без підміни запит повертав порожній графік
+    // про область, у якої насправді є опублікований ГПВ.
+    expect(readRegionParam('kyivska-oblast')).toBe('kiivska-oblast');
+    expect(readRegionParam('kyiv-city')).toBe('kyiv');
+    // Друкарська форма, закомічена в parsers/ukraine-providers.adapter.ts, теж має працювати.
+    expect(readRegionParam('dnipropetrovnska-oblast', { grouped: 'keep' })).toBe('dnipropetrovska-oblast');
+  });
+
+  it('область, якої фід не віддає, лишається собою: чесний порожній графік, а не 400', () => {
+    // ЧОМУ: у каталозі є всі 24 області + Київ, і людина має знайти свою область навіть тоді, коли
+    // дзеркало її ще не віддає. Помилки тут бути не може — тільки порожній результат.
+    expect(readRegionParam('odeska-oblast')).toBe('odeska-oblast');
+    expect(regionDataKeys('odeska-oblast')).toEqual(['odeska-oblast']);
+  });
+
+  it('область із кількома мережами вимагає конкретного ключа (м. Дніпро: ЦЕК і ДнЕМ)', () => {
+    // ЧОМУ: «2/2» у ЦЕК і «2/2» у ДнЕМ — різні фізичні групи. Злити їхні графіки означало б
+    // показати години відключень, яких у людини немає, тому без конкретного ключа — 400 з переліком.
+    expect(regionDataKeys('dnipropetrovska-oblast')).toEqual(['dnipro-cek', 'dnipro-dnem']);
+    expect(() => readRegionParam('dnipropetrovska-oblast')).toThrow(AppError);
+    try {
+      readRegionParam('dnipropetrovska-oblast');
+    } catch (err) {
+      const appErr = err as AppError;
+      expect(appErr.statusCode).toBe(400);
+      expect(appErr.code).toBe('AMBIGUOUS_REGION');
+      expect(appErr.message).toContain('dnipro-cek');
+      expect(appErr.message).toContain('dnipro-dnem');
+    }
+    // Список черг — метадані, його зводити безпечно, тому `/queues` просить `grouped: 'keep'`.
+    expect(readRegionParam('dnipropetrovska-oblast', { grouped: 'keep' })).toBe('dnipropetrovska-oblast');
   });
 
   it('валідний cpu із цифрами успішно проходить валідацію', () => {
@@ -53,8 +89,9 @@ describe('readRegionParam — граничні значення та валід�
   });
 
   it('валідний cpu з пробілами по краях очищається тримом', () => {
-    // ЧОМУ: випадкові пробіли на початку чи в кінці не повинні відхиляти коректний запит користувача.
-    expect(readRegionParam('  kyivska-oblast  ')).toBe('kyivska-oblast');
+    // ЧОМУ: випадкові пробіли на початку чи в кінці не повинні відхиляти коректний запит користувача
+    // (і не повинні ламати підстановку псевдоніма — тому порівнюємо з ключем фіда).
+    expect(readRegionParam('  kyivska-oblast  ')).toBe('kiivska-oblast');
   });
 
   it('довжина рівно 64 символи (валідний cpu) успішно приймається', () => {

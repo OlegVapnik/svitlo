@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, MapPin, Search, X } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
-import { regionDataBadge, type RegionSummary } from '../../lib/region.js';
+import { filterRegions, regionDataBadge, regionOptions, type RegionSummary } from '../../lib/region.js';
 import { cn } from '../../lib/cn.js';
 
 interface RegionPickerProps {
@@ -28,18 +28,18 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
   // Бейдж області: слоти / «світло за графіком» / «немає даних» — логіка спільна зі списком.
   const currentBadge = regionDataBadge(currentRegionData);
 
-  // Фільтруємо області за пошуковим запитом
-  const filteredRegions = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return regions;
-    return regions.filter((r) => {
-      const matchUa = r.nameUa.toLowerCase().includes(query);
-      const matchEn = r.nameEn ? r.nameEn.toLowerCase().includes(query) : false;
-      const matchCpu = r.cpu.toLowerCase().includes(query);
-      return matchUa || matchEn || matchCpu;
-    });
-  }, [regions, search]);
-
+  // Рядки списку з підпорядкуванням: область, яку фід віддає кількома мережами (м. Дніпро: ЦЕК і
+  // ДнЕМ), показуємо як заголовок із мережами-варіантами — вибрати «область цілком» неможливо,
+  // бо її графіка не існує (див. `regionOptions`).
+  const options = useMemo(() => regionOptions(filterRegions(regions, search)), [regions, search]);
+  // Клавіатурою й кліком вибираються лише реальні області: заголовок групи — не варіант.
+  const selectableOptions = useMemo(() => options.filter((option) => !option.isGroup), [options]);
+  // Мережі в списку стоять під своїм заголовком, тому індекс активної області мусить рахуватися
+  // лише за вибірними рядками — інакше стрілка «↓» зупинялася б на заголовку групи.
+  const selectableIndexByCpu = useMemo(
+    () => new Map(selectableOptions.map((option, index) => [option.region.cpu, index])),
+    [selectableOptions],
+  );
   // Закриття при кліку поза межами
   useEffect(() => {
     if (!isOpen) return;
@@ -66,7 +66,9 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
   // Прокручування до активного елемента при клавіатурній навігації
   useEffect(() => {
     if (!isOpen || !listRef.current) return;
-    const activeEl = listRef.current.children[activeIndex] as HTMLElement | undefined;
+    // Активний рядок шукаємо за індексом серед ВИБІРНИХ областей: у списку є ще заголовки груп,
+    // тому зсув за `children[activeIndex]` вказав би не туди.
+    const activeEl = listRef.current.querySelector<HTMLElement>(`[data-option-index="${activeIndex}"]`);
     if (activeEl) {
       activeEl.scrollIntoView({ block: 'nearest' });
     }
@@ -91,15 +93,15 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
       setIsOpen(false);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex((prev) => (prev + 1 < filteredRegions.length ? prev + 1 : 0));
+      setActiveIndex((prev) => (prev + 1 < selectableOptions.length ? prev + 1 : 0));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setActiveIndex((prev) => (prev - 1 >= 0 ? prev - 1 : filteredRegions.length - 1));
+      setActiveIndex((prev) => (prev - 1 >= 0 ? prev - 1 : selectableOptions.length - 1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const selected = filteredRegions[activeIndex];
+      const selected = selectableOptions[activeIndex];
       if (selected) {
-        handleSelect(selected);
+        handleSelect(selected.region);
       }
     }
   };
@@ -240,27 +242,48 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
               <li className="px-4 py-6 text-center text-sm text-muted-foreground">
                 {t('regions.loading')}
               </li>
-            ) : filteredRegions.length === 0 ? (
+            ) : options.length === 0 ? (
               <li className="px-4 py-6 text-center text-sm text-muted-foreground">
                 {t('regions.notFound')}
               </li>
             ) : (
-              filteredRegions.map((region, idx) => {
+              options.map((option) => {
+                const { region, depth, isGroup } = option;
+                // Заголовок групи не обирається: за областю стоять різні мережі (ЦЕК і ДнЕМ), у яких
+                // свої графіки з однаковою нумерацією черг. Вибір робить людина — під заголовком.
+                if (isGroup) {
+                  return (
+                    <li
+                      key={region.cpu}
+                      role="presentation"
+                      className="flex min-h-[32px] items-center justify-between gap-2 px-3 pb-1 pt-2"
+                    >
+                      <span className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {region.nameUa}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{t('regions.selectNetwork')}</span>
+                    </li>
+                  );
+                }
+                const selectableIndex = selectableIndexByCpu.get(region.cpu) ?? 0;
                 const isSelected = region.cpu === currentRegion;
-                const isItemActive = idx === activeIndex;
+                const isItemActive = selectableIndex === activeIndex;
                 const badge = regionDataBadge(region);
 
                 return (
                   <li
                     key={region.cpu}
                     role="option"
+                    data-option-index={selectableIndex}
                     aria-selected={isSelected}
                     onClick={() => handleSelect(region)}
-                    onMouseEnter={() => setActiveIndex(idx)}
+                    onMouseEnter={() => setActiveIndex(selectableIndex)}
                     className={cn(
                       'flex min-h-[44px] cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors',
                       isItemActive && 'bg-muted',
                       isSelected && 'bg-primary/10 font-semibold text-primary',
+                      // Мережа всередині області — з відступом і лінією, щоб було видно підпорядкування.
+                      depth === 1 && 'ml-3 border-l border-border pl-4',
                     )}
                   >
                     <div className="min-w-0 pr-2">

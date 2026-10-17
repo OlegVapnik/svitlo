@@ -3,11 +3,13 @@ import {
   DEFAULT_REGION,
   DEFAULT_REGION_NAME_UA,
   REGION_STORAGE_KEY,
+  filterRegions,
   formatRegionOption,
   getStoredRegion,
   isRegionCpu,
   normalizeRegionCpu,
   regionDataBadge,
+  regionOptions,
   setStoredRegion,
   type RegionSummary,
 } from './region';
@@ -86,5 +88,60 @@ describe('multi-region helper', () => {
     // Ні слотів, ні публікації: «даних немає» — це «не знаємо», а не «світло є».
     expect(regionDataBadge({ slots: 0, allClear: false })).toBe('noData');
     expect(regionDataBadge({ slots: 0 })).toBe('noData');
+  });
+
+  test('regionOptions показує область із кількома мережами як групу, а мережі — як вибір', () => {
+    // Так каталог віддає м. Дніпро: одна область із двома ключами фіда (ЦЕК і ДнЕМ) і дві підобласті.
+    const regions: RegionSummary[] = [
+      { cpu: 'lvivska-oblast', nameUa: 'Львівська область', nameEn: null, queues: ['1/1'], slots: 3, lastDate: null, feedKeys: ['lvivska-oblast'] },
+      { cpu: 'dnipropetrovska-oblast', nameUa: 'Дніпропетровська область', nameEn: null, queues: ['1/1'], slots: 4, lastDate: null, feedKeys: ['dnipro-cek', 'dnipro-dnem'] },
+      { cpu: 'dnipro-dnem', nameUa: 'м. Дніпро (ДнЕМ)', nameEn: null, queues: ['1/1'], slots: 2, lastDate: null, feedKeys: ['dnipro-dnem'], parentCpu: 'dnipropetrovska-oblast' },
+      { cpu: 'dnipro-cek', nameUa: 'м. Дніпро (ЦЕК)', nameEn: null, queues: ['1/1'], slots: 2, lastDate: null, feedKeys: ['dnipro-cek'], parentCpu: 'dnipropetrovska-oblast' },
+      { cpu: 'odeska-oblast', nameUa: 'Одеська область', nameEn: null, queues: [], slots: 0, lastDate: null, feedKeys: [] },
+    ];
+
+    const options = regionOptions(regions);
+
+    // Звичайні області вибираються завжди, навіть коли фід їх не віддає (тоді чесно «немає даних»).
+    expect(options.find((option) => option.region.cpu === 'lvivska-oblast')).toMatchObject({ depth: 0, isGroup: false });
+    expect(options.find((option) => option.region.cpu === 'odeska-oblast')).toMatchObject({ depth: 0, isGroup: false });
+    // Область із кількома мережами — лише заголовок: «графік області цілком» не існує.
+    expect(options.find((option) => option.region.cpu === 'dnipropetrovska-oblast')).toMatchObject({ isGroup: true });
+    // Мережі йдуть під своєю областю, з відступом.
+    const groupIndex = options.findIndex((option) => option.region.cpu === 'dnipropetrovska-oblast');
+    expect(options.slice(groupIndex + 1, groupIndex + 3).every((option) => option.depth === 1)).toBe(true);
+    expect(options.slice(groupIndex + 1, groupIndex + 3).map((option) => option.region.cpu).sort()).toEqual([
+      'dnipro-cek',
+      'dnipro-dnem',
+    ]);
+
+    // Дитина, чийого батька немає в списку (обріз даних, старий кеш), не зникає — стає звичайною областю.
+    const orphan = regionOptions([
+      { cpu: 'dnipro-cek', nameUa: 'м. Дніпро (ЦЕК)', nameEn: null, queues: [], slots: 0, lastDate: null, feedKeys: ['dnipro-cek'], parentCpu: 'dnipropetrovska-oblast' },
+    ]);
+    expect(orphan).toHaveLength(1);
+    expect(orphan[0]).toMatchObject({ depth: 0, isGroup: false });
+  });
+
+  test('filterRegions зберігає батьківську область, коли збіглася лише назва мережі', () => {
+    const regions: RegionSummary[] = [
+      { cpu: 'dnipropetrovska-oblast', nameUa: 'Дніпропетровська область', nameEn: null, queues: [], slots: 0, lastDate: null, feedKeys: ['dnipro-cek', 'dnipro-dnem'] },
+      { cpu: 'dnipro-cek', nameUa: 'м. Дніпро (ЦЕК)', nameEn: null, queues: [], slots: 0, lastDate: null, feedKeys: ['dnipro-cek'], parentCpu: 'dnipropetrovska-oblast' },
+      { cpu: 'dnipro-dnem', nameUa: 'м. Дніпро (ДнЕМ)', nameEn: null, queues: [], slots: 0, lastDate: null, feedKeys: ['dnipro-dnem'], parentCpu: 'dnipropetrovnska-oblast' },
+      { cpu: 'lvivska-oblast', nameUa: 'Львівська область', nameEn: 'Lviv Oblast', queues: [], slots: 0, lastDate: null, feedKeys: ['lvivska-oblast'] },
+    ];
+
+    // Пошук «Дніпро» знаходить мережі — і залишає їхню область, інакше мережа «висить» без батька.
+    expect(filterRegions(regions, 'дніпро').map((region) => region.cpu)).toContain('dnipropetrovska-oblast');
+    expect(filterRegions(regions, 'дніпро').map((region) => region.cpu)).toContain('dnipro-cek');
+    // Пошук області лишає видимими її мережі, щоб було з чого вибирати.
+    expect(filterRegions(regions, 'дніпропетровська').map((region) => region.cpu)).toContain('dnipro-cek');
+    // Мережа з батьком, якого немає в списку (обріз даних, старий кеш), не зникає сама по собі.
+    expect(filterRegions(regions, 'дніпро').map((region) => region.cpu)).toContain('dnipro-dnem');
+    // Пошук англійською і за cpu працює як раніше.
+    expect(filterRegions(regions, 'lviv').map((region) => region.cpu)).toEqual(['lvivska-oblast']);
+    expect(filterRegions(regions, 'lvivska-oblast').map((region) => region.cpu)).toEqual(['lvivska-oblast']);
+    // Порожній запит повертає каталог без змін.
+    expect(filterRegions(regions, '  ')).toHaveLength(regions.length);
   });
 });

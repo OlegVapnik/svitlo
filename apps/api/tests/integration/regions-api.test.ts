@@ -105,11 +105,28 @@ describeWithDb('Мультирегіональний API: каталог обл�
     expect(response.statusCode).toBe(200);
     expect(response.headers['cache-control']).toBe('public, max-age=300');
     const { data } = response.json() as { data: RegionRow[] };
-    expect(data.map((region) => region.cpu)).toEqual([CHERNIHIV, LVIV]);
+    // Каталог перелічує ВСІ області країни (24 + Київ), щоб людина знайшла свою навіть там, де
+    // фід нічого не віддає — тому перевіряємо наявність, а не рівність усьому списку.
+    expect(data.length).toBeGreaterThanOrEqual(25);
 
-    // Назви в довіднику немає → показуємо сам cpu, а не вигаданий трансліт.
-    expect(data[1]).toEqual({ cpu: LVIV, nameUa: LVIV, nameEn: null, queues: ['1/2', '2/2'], slots: 4, lastDate: '2026-10-12' });
-    expect(data[0]).toEqual({ cpu: CHERNIHIV, nameUa: CHERNIHIV, nameEn: null, queues: ['1/1'], slots: 1, lastDate: '2026-10-11' });
+    // Назва області береться з канонічного каталогу (це не вигаданий трансліт, а назва країни):
+    // сирого `cpu` у каталозі немає навіть тоді, коли довідник порожній.
+    const lviv = data.find((region) => region.cpu === LVIV)!;
+    expect(lviv).toMatchObject({
+      nameUa: 'Львівська область',
+      nameEn: null,
+      queues: ['1/2', '2/2'],
+      slots: 4,
+      lastDate: '2026-10-12',
+      feedKeys: [LVIV],
+    });
+    const chernihiv = data.find((region) => region.cpu === CHERNIHIV)!;
+    expect(chernihiv).toMatchObject({
+      nameUa: 'Чернігівська область',
+      queues: ['1/1'],
+      slots: 1,
+      lastDate: '2026-10-11',
+    });
   });
 
   it('GET /api/v1/regions: довідник дає українську назву, неактивна область не показується', async () => {
@@ -123,8 +140,9 @@ describeWithDb('Мультирегіональний API: каталог обл�
     const { data } = (await app.inject({ method: 'GET', url: '/api/v1/regions' })).json() as { data: RegionRow[] };
 
     // Область є в довіднику, але вимкнена — її не показуємо навіть разом зі слотами.
-    expect(data.map((region) => region.cpu)).toEqual([LVIV]);
-    expect(data[0]).toMatchObject({
+    expect(data.find((region) => region.cpu === 'zakarpatska-oblast')).toBeUndefined();
+    // Область є в довіднику — беремо її назву, а не cpu.
+    expect(data.find((region) => region.cpu === LVIV)).toMatchObject({
       cpu: LVIV,
       nameUa: 'Львівська область',
       nameEn: 'Lviv Oblast',
@@ -134,11 +152,15 @@ describeWithDb('Мультирегіональний API: каталог обл�
     });
   });
 
-  it('GET /api/v1/regions: обидва джерела порожні → порожній список, а не 500', async () => {
+  it('GET /api/v1/regions: порожні джерела → каталог країни з нулями, а не 500 і не порожній список', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/regions' });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ data: [] });
+    const { data } = response.json() as { data: RegionRow[] };
+    // Каталог перелічує області країни навіть без даних: людина має знайти свою область і прочитати
+    // «даних немає», а не дивитися порожній список. Вигаданих даних при цьому немає — усе по нулях.
+    expect(data.length).toBeGreaterThanOrEqual(25);
+    expect(data.every((region) => region.slots === 0 && region.lastDate === null && region.queues.length === 0)).toBe(true);
   });
 
   it('GET /api/v1/queues?region=… віддає лише черги цієї області (вулиці — тільки для Чернігівщини)', async () => {

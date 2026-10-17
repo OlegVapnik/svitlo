@@ -1,1 +1,18 @@
-{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","strict":true,"esModuleInterop":true,"skipLibCheck":true,"forceConsistentCasingInFileNames":true,"declaration":true,"sourceMap":true}}
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // `@svitlo/shared` поставляється в образ API як TS-джерело і виконується Node через type
+    // stripping, який не резолвить `./x.js` → `x.ts`. Тому відносні імпорти в shared пишуться з
+    // розширенням `.ts` (див. packages/shared/src/index.ts), а цей флаг дозволяє `tsc` їх приймати
+    // й переписує на `.js` у зібраних проєктах (apps/api dist).
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true
+  }
+}

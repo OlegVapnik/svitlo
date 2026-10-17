@@ -109,18 +109,36 @@ function kyivToday(at: Date = new Date()): string {
  * імпортовано». Возвращаем именно `queues` минус `offlineQueues`: группа из `offlineQueues` без
  * слотов означает отставший импорт, и объявлять её «без відключень» было бы неправдой.
  *
+ * Ключей фіда может быть НЕСКОЛЬКО (м. Дніпро обслуговують ЦЕК і ДнЕМ — разные сети с одинаковой
+ * нумерацией черг). Тогда признак ставится только группе, которую БЕЗ отключений опубликовала
+ * КАЖДАЯ сеть: если одна сеть молчит или показывает отключение, «світло за графіком» было бы
+ * обещанием, которого мы не знаем. Один ключ — прежнее поведение.
+ *
  * Читает ТОЛЬКО кеш зеркала: список групп — частый запрос, и ходить из него в сеть нельзя. Холодный
  * кеш возвращает пустой список — это честное «не знаем», а не повод показать группы «на глазок».
  * Импорт динамический: `mirror-schedule.service` импортирует `compareQueueCodes` из этого файла,
  * и статический импорт замкнул бы цикл.
  */
-async function publishedClearQueues(region: string, date: string = kyivToday()): Promise<string[]> {
+async function publishedClearQueues(regions: string[], date: string = kyivToday()): Promise<string[]> {
   const { mirrorDayCoverage, peekMirrorSnapshot } = await import('./mirror-schedule.service.js');
   const snapshot = peekMirrorSnapshot();
-  if (!snapshot) return [];
-  const coverage = mirrorDayCoverage(snapshot.payload, region, date);
-  if (!coverage) return [];
-  return coverage.queues.filter((queue) => !coverage.offlineQueues.includes(queue));
+  if (!snapshot || regions.length === 0) return [];
+  let clear: Set<string> | null = null;
+  for (const region of regions) {
+    const coverage = mirrorDayCoverage(snapshot.payload, region, date);
+    // Сеть, которая на эту дату вообще ничего не опубликовала, не даёт права звать группы
+    // «без отключений»: это «не знаем».
+    if (!coverage) return [];
+    const here = new Set(coverage.queues.filter((queue) => !coverage.offlineQueues.includes(queue)));
+    if (clear === null) {
+      clear = here;
+    } else {
+      // Перетин: група лишається «без відключень», лише якщо так її опублікувала кожна мережа.
+      for (const queue of [...clear]) if (!here.has(queue)) clear.delete(queue);
+    }
+    if (clear.size === 0) return [];
+  }
+  return clear === null ? [] : [...clear];
 }
 
 /** Ключ для сравнения названий: регистр і пробіли не мають значення. */
@@ -150,9 +168,17 @@ export async function listQueueSettlements(region: string): Promise<Map<string, 
     .innerJoin(settlements, eq(settlementQueues.settlementId, settlements.id))
     .innerJoin(regions, eq(settlements.region, regions.cpu))
     .where(eq(settlementQueues.region, region));
+  return groupNamesByQueue(rows.map((row) => ({ queue: row.queue, name: row.name, skip: nameKey(row.name) === nameKey(row.regionName) })));
+}
+
+/**
+ * Групування реальних назв за кодом групи (НП або вулиці). Чиста допоміжна функція: однакові назви
+ * не дублюються, порожні/заглушки відкидаються, порядок — за абеткою українською.
+ */
+function groupNamesByQueue(rows: Array<{ queue: string; name: string; skip?: boolean }>): Map<string, string[]> {
   const byQueue = new Map<string, string[]>();
   for (const row of rows) {
-    if (nameKey(row.name) === nameKey(row.regionName)) continue;
+    if (row.skip || row.name.trim() === '') continue;
     const list = byQueue.get(row.queue) ?? [];
     if (!list.includes(row.name)) list.push(row.name);
     byQueue.set(row.queue, list);
@@ -170,16 +196,8 @@ export async function listQueueStreetNames(region: string): Promise<Map<string, 
     .select({ queue: streetQueues.queue, streetName: streetQueues.streetName })
     .from(streetQueues)
     .where(eq(streetQueues.region, region));
-  const byQueue = new Map<string, string[]>();
-  for (const row of rows) {
-    const list = byQueue.get(row.queue) ?? [];
-    if (!list.includes(row.streetName)) list.push(row.streetName);
-    byQueue.set(row.queue, list);
-  }
-  for (const list of byQueue.values()) {
-    list.sort((a, b) => a.localeCompare(b, 'uk'));
-    list.length = Math.min(list.length, 50);
-  }
+  const byQueue = groupNamesByQueue(rows.map((row) => ({ queue: row.queue, name: row.streetName })));
+  for (const list of byQueue.values()) list.length = Math.min(list.length, 50);
   return byQueue;
 }
 
@@ -195,10 +213,10 @@ export async function listQueueStreetNames(region: string): Promise<Map<string, 
  * без них область, где оператор график опубликовал, а отключений нет, отдавала пустой список групп
  * и человек видел «графік не імпортовано».
  */
-export async function listQueues(region?: string): Promise<QueueSummary[]> {
+export async function listQueues(region?: string, keys: string[] = region ? [region] : []): Promise<QueueSummary[]> {
   const { db } = await import('../db/connection.js');
   const { scheduleSlots, streetQueues } = await import('../db/schema.js');
-  const { eq, sql } = await import('drizzle-orm');
+  const { inArray, sql } = await import('drizzle-orm');
   const slotsQuery = db
     .select({
       queue: scheduleSlots.queue,
@@ -209,14 +227,19 @@ export async function listQueues(region?: string): Promise<QueueSummary[]> {
   const streetsQuery = db
     .select({ queue: streetQueues.queue, streets: sql<number>`count(*)::int` })
     .from(streetQueues);
-  const [slotsRows, streetRows, settlementNames, streetNames, published] = await Promise.all([
-    region ? slotsQuery.where(eq(scheduleSlots.region, region)).groupBy(scheduleSlots.queue) : slotsQuery.groupBy(scheduleSlots.queue),
-    region ? streetsQuery.where(eq(streetQueues.region, region)).groupBy(streetQueues.queue) : streetsQuery.groupBy(streetQueues.queue),
-    region ? listQueueSettlements(region) : Promise.resolve(new Map<string, string[]>()),
-    region ? listQueueStreetNames(region) : Promise.resolve(new Map<string, string[]>()),
+  const scope = keys.length > 0 ? keys : [];
+  const settlementNames = mergeNameMaps(
+    scope.length > 0 ? await Promise.all(scope.map((key) => listQueueSettlements(key))) : [],
+  );
+  const streetNames = mergeNameMaps(
+    scope.length > 0 ? await Promise.all(scope.map((key) => listQueueStreetNames(key))) : [],
+  );
+  const [slotsRows, streetRows, published] = await Promise.all([
+    (scope.length > 0 ? slotsQuery.where(inArray(scheduleSlots.region, scope)) : slotsQuery).groupBy(scheduleSlots.queue),
+    (scope.length > 0 ? streetsQuery.where(inArray(streetQueues.region, scope)) : streetsQuery).groupBy(streetQueues.queue),
     // Область без имени сюда не попадает: `?region=` роут всегда подставляет (readRegionParam),
     // а гадать область по умолчанию для чужого запроса нельзя.
-    region ? publishedClearQueues(region) : Promise.resolve([]),
+    publishedClearQueues(scope),
   ]);
   // Обе карты про один ключ `queue`, поэтому собираем по очереди, а не конкатенируем два ряда:
   // иначе вторая перезаписала бы первую, и один из списков молча потерялся бы.
@@ -227,4 +250,19 @@ export async function listQueues(region?: string): Promise<QueueSummary[]> {
     streetNames: streetNames.get(queue) ?? [],
   }));
   return mergeQueues(slotsRows, streetRows, placesRows, published);
+
+/** Об'єднання карт «код групи → назви» по кількох ключах області (без дублів, за абеткою). */
+function mergeNameMaps(maps: Array<Map<string, string[]>>): Map<string, string[]> {
+  const merged = new Map<string, string[]>();
+  for (const map of maps) {
+    for (const [queue, names] of map) {
+      const list = merged.get(queue) ?? [];
+      for (const name of names) if (!list.includes(name)) list.push(name);
+      merged.set(queue, list);
+    }
+  }
+  for (const list of merged.values()) list.sort((a, b) => a.localeCompare(b, 'uk'));
+  return merged;
+}
+
 }

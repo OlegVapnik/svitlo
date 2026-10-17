@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
-import { DEFAULT_REGION, formatRegionOption } from '../../lib/region.js';
+import { DEFAULT_REGION, formatRegionOption, regionOptions, type RegionOption } from '../../lib/region.js';
 import { cn } from '../../lib/cn.js';
 
 interface RegionSelectProps {
@@ -11,9 +11,18 @@ interface RegionSelectProps {
   showIcon?: boolean;
 }
 
+/** Рядок `<select>`: або звичайна область, або `optgroup` з мережами всередині області. */
+type SelectEntry =
+  | { kind: 'region'; option: RegionOption }
+  | { kind: 'group'; label: string; options: RegionOption[] };
+
 /**
  * Вибір області (мультирегіональність /tmp/API-CONTRACT-regions.md).
  * Семантичні класи Tailwind tokens, доступний елемент select, підтримка тач-зон.
+ *
+ * Область, яку фід віддає кількома мережами (м. Дніпро: ЦЕК і ДнЕМ), віддаємо `optgroup`-ом: у
+ * нативному `<select>` заголовок optgroup не обирається — саме те, що потрібно, бо графіка «по
+ * області цілком» не існує, обирати треба мережу (див. `regionOptions`).
  */
 export const RegionSelect: React.FC<RegionSelectProps> = ({
   id = 'region-select',
@@ -26,6 +35,24 @@ export const RegionSelect: React.FC<RegionSelectProps> = ({
   const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setRegion(event.target.value);
   };
+
+  const entries = useMemo<SelectEntry[]>(() => {
+    const result: SelectEntry[] = [];
+    for (const option of regionOptions(regions)) {
+      if (option.isGroup) {
+        result.push({ kind: 'group', label: formatRegionOption(option.region), options: [] });
+        continue;
+      }
+      const last = result[result.length - 1];
+      // Мережі йдуть одразу за своїм заголовком (див. `regionOptions`), тому достатньо перевірити хвіст.
+      if (option.depth === 1 && last?.kind === 'group') {
+        last.options.push(option);
+        continue;
+      }
+      result.push({ kind: 'region', option });
+    }
+    return result;
+  }, [regions]);
 
   return (
     <div className={cn('relative inline-flex items-center', className)}>
@@ -50,11 +77,21 @@ export const RegionSelect: React.FC<RegionSelectProps> = ({
             {isLoading ? t('regions.loading') : t('regions.defaultChernihiv')}
           </option>
         ) : (
-          regions.map((region) => (
-            <option key={region.cpu} value={region.cpu}>
-              {formatRegionOption(region)}
-            </option>
-          ))
+          entries.map((entry) =>
+            entry.kind === 'region' ? (
+              <option key={entry.option.region.cpu} value={entry.option.region.cpu}>
+                {formatRegionOption(entry.option.region)}
+              </option>
+            ) : (
+              <optgroup key={entry.label} label={entry.label}>
+                {entry.options.map((option) => (
+                  <option key={option.region.cpu} value={option.region.cpu}>
+                    {formatRegionOption(option.region)}
+                  </option>
+                ))}
+              </optgroup>
+            ),
+          )
         )}
       </select>
     </div>

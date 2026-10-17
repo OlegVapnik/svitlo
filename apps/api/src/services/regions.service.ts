@@ -1,5 +1,12 @@
 import type { RegionCoverageItem, RegionCoverageResponse, RegionSummary } from '@svitlo/shared';
-import { isRegionCpu } from '@svitlo/shared';
+import {
+  REGION_CATALOG,
+  canonicalRegionCpu,
+  isRegionCpu,
+  regionFeedKeys,
+  regionFeedName,
+  regionReadKeys,
+} from '@svitlo/shared';
 import { env } from '../config.js';
 import { AppError } from '../utils/errors.js';
 import { mirrorDayCoverage, peekMirrorSnapshot, queueCodesOfRegion, regionsFromPayload } from './mirror-schedule.service.js';
@@ -22,14 +29,88 @@ export const DEFAULT_REGION = env.MIRROR_SCHEDULE_REGION;
  * Розбирає `?region=`. Порожньо → типова область (старий фронт без параметра працює як раніше).
  * Сміття в параметрі — 400: це не «невідома область», а підозрілий рядок, який далі піде в SQL і логи.
  * Невідома, але коректна за форматом область — НЕ помилка: віддаємо порожній графік (контракт).
+ *
+ * Псевдоніми приводяться до ключа фіда (див. shared/regions-catalog.ts): усі дані лежать під
+ * ключами дзеркала, тому `?region=kyivska-oblast` читає `kiivska-oblast`, а `?region=kyiv-city` —
+ * `kyiv`. Підміна прозора і нічого не втрачає: це та сама область під іншою назвою.
+ *
+ * Область, яку фід віддає КІЛЬКОМА мережами (м. Дніпро: ЦЕК і ДнЕМ), вимагає конкретного ключа,
+ * тому за замовчуванням — 400 `AMBIGUOUS_REGION` з переліком мереж: мовчазне злиття двох графіків
+ * показало б години відключень, яких у людини немає. `grouped: 'keep'` лишає канонічний `cpu` —
+ * так робить `/queues`, який зводить лише перелік черг (метадані, не години).
  */
-export function readRegionParam(raw: unknown): string {
+export function readRegionParam(raw: unknown, options: { grouped?: 'reject' | 'keep' } = {}): string {
   const value = String(raw ?? '').trim();
   if (!value) return DEFAULT_REGION;
   if (value.length > 64 || !isRegionCpu(value)) {
     throw new AppError(400, 'VALIDATION_ERROR', 'region має вигляд «chernihivska-oblast» (cpu з каталогу /api/v1/regions)');
   }
-  return value;
+  const canonical = canonicalRegionCpu(value);
+  const keys = regionReadKeys(value);
+  // Один ключ — підставляємо його: саме він ключ у `schedule_slots`, довідниках і кеші дзеркала.
+  if (keys.length === 1) return keys[0]!;
+  // Фід цю область не віддає: лишаємо канонічний `cpu`, запит дасть чесний порожній графік.
+  if (keys.length === 0) return canonical;
+  if (options.grouped === 'keep') return canonical;
+  throw new AppError(
+    400,
+    'AMBIGUOUS_REGION',
+    `Область «${canonical}» обслуговують кілька мереж (${keys.join(', ')}): вкажіть конкретний region із /api/v1/regions`,
+  );
+}
+
+/** Ключі фіда, під якими лежать дані області (для читання БД і дзеркала). Ніколи не порожній. */
+export function regionDataKeys(cpu: string): string[] {
+  return regionReadKeys(cpu);
+}
+
+/**
+ * Звужує область, яку фід віддає кількома мережами, до ОДНІЄЇ — якщо на конкретну чергу й дату
+ * дані є лише в ній.
+ *
+ * Навіщо: людина в Дніпрі не знає, ЦЕК у неї чи ДнЕМ, і не має вгадувати. Якщо ж відключення
+ * показують обидві мережі, відповіді не існує — краще чесна 400 з переліком ключів, ніж злитий
+ * графік двох різних мереж (спільна нумерація черг 1/1…6/2 тут нічого не гарантує).
+ *
+ * Коли жодна мережа на цю добу нічого не має (`keys` лишається повним), відповідь однаково
+ * порожня: читати треба всі ключі, щоб `covered`/`allClear` були спільними для області, а не
+ * взяті з першої-ліпшої мережі.
+ */
+export async function resolveScheduleRegionScope(
+  region: string,
+  queue: string,
+  date: string,
+): Promise<{ canonical: string; keys: string[] }> {
+  // Ключі беремо від того, що реально прийшло в `?region=` (а `canonical` — лише для підпису
+  // в помилці): якщо людина вже назвала мережу (`dnipro-cek`), уточнювати нічого.
+  const keys = regionDataKeys(region);
+  const canonical = canonicalRegionCpu(region);
+  if (keys.length <= 1) return { canonical, keys };
+
+  const { db } = await import('../db/connection.js');
+  const { scheduleSlots } = await import('../db/schema.js');
+  const { and, eq, inArray, sql } = await import('drizzle-orm');
+  const slotRows = await db
+    .select({ region: scheduleSlots.region, slots: sql<number>`count(*)::int` })
+    .from(scheduleSlots)
+    .where(and(inArray(scheduleSlots.region, keys), eq(scheduleSlots.queue, queue), eq(scheduleSlots.date, date)))
+    .groupBy(scheduleSlots.region);
+  const snapshot = peekMirrorSnapshot();
+
+  const candidates = keys.filter((key) => {
+    const hasSlots = (slotRows.find((row) => row.region === key)?.slots ?? 0) > 0;
+    const coverage = snapshot ? mirrorDayCoverage(snapshot.payload, key, date) : null;
+    const feedShowsOutage = coverage?.offlineQueues.includes(queue) ?? false;
+    return hasSlots || feedShowsOutage;
+  });
+
+  if (candidates.length === 1) return { canonical, keys: candidates };
+  if (candidates.length === 0) return { canonical, keys };
+  throw new AppError(
+    400,
+    'AMBIGUOUS_REGION',
+    `Область «${canonical}» обслуговують кілька мереж (${keys.join(', ')}), і на ${date} черга «${queue}» є не в одній: вкажіть конкретний region із /api/v1/regions`,
+  );
 }
 
 type RegionRow = { cpu: string; nameUa: string; nameEn: string | null; isActive: boolean };
@@ -62,7 +143,16 @@ async function readCatalogFromDb(): Promise<{ regions: RegionRow[]; slots: SlotR
 
 /**
  * Каталог областей для `GET /api/v1/regions`.
- * Сортування — українською назвою, далі `cpu`: людина шукає «Чернігівська», а не «chernihivska».
+ *
+ * Канонічні області беруться з `REGION_CATALOG` (див. shared/regions-catalog.ts), а дані — з ключів
+ * фіда, зазначених у `feedKeys`. Область із ОДНИМ ключем віддається як один рядок (Київська →
+ * `kiivska-oblast`, Київ → `kyiv`); область із КІЛЬКОМА — як група з підобластями (`parentCpu`),
+ * бо ЦЕК і ДнЕМ мають однакову нумерацію черг, але різні мережі. Область, якої фід не віддає
+ * взагалі, у каталозі є з нулями: людина бачить свою область і чесне «даних немає», а не порожній
+ * список без неї.
+ *
+ * Порядок — за назвою, але підобласть завжди стоїть ОДРАЗУ за своїм батьком (ключ сортування
+ * враховує назву батька), інакше «м. Дніпро (ЦЕК)» відірвалося б від «Дніпропетровської області».
  */
 export async function listRegions(): Promise<RegionSummary[]> {
   const [catalog, snapshot] = await Promise.all([
@@ -72,24 +162,42 @@ export async function listRegions(): Promise<RegionSummary[]> {
   ]);
   const { regions: regionRows, slots: slotRows } = catalog;
 
-  const byCpu = new Map<string, RegionSummary>();
+  /** Факти по КЛЮЧУ ФІДА: те, що справді лежить у БД і в кеші дзеркала. */
+  type FeedFacts = {
+    cpu: string;
+    nameUa: string;
+    nameEn: string | null;
+    queues: string[];
+    slots: number;
+    lastDate: string | null;
+    allClear?: boolean;
+  };
+  const byFeedKey = new Map<string, FeedFacts>();
+  const feedNames = new Map<string, string>();
   const inactive = new Set(regionRows.filter((row) => !row.isActive).map((row) => row.cpu));
 
   for (const row of regionRows) {
-    if (row.isActive) byCpu.set(row.cpu, { cpu: row.cpu, nameUa: row.nameUa, nameEn: row.nameEn, queues: [], slots: 0, lastDate: null });
+    if (row.isActive) {
+      byFeedKey.set(row.cpu, {
+        cpu: row.cpu,
+        nameUa: row.nameUa,
+        nameEn: row.nameEn,
+        queues: [],
+        slots: 0,
+        lastDate: null,
+      });
+    }
   }
 
   // Слоти, яких немає в довіднику (імпорт ДО появи каталогу): показуємо з чесною назвою = cpu.
   for (const row of slotRows) {
     if (inactive.has(row.cpu)) continue;
-    const existing = byCpu.get(row.cpu);
-    if (existing) {
-      existing.queues.push(row.queue);
-      existing.slots += row.slots;
-      if (row.lastDate && (!existing.lastDate || row.lastDate > existing.lastDate)) existing.lastDate = row.lastDate;
-    } else {
-      byCpu.set(row.cpu, { cpu: row.cpu, nameUa: row.cpu, nameEn: null, queues: [row.queue], slots: row.slots, lastDate: row.lastDate });
-    }
+    const existing =
+      byFeedKey.get(row.cpu) ?? { cpu: row.cpu, nameUa: row.cpu, nameEn: null, queues: [], slots: 0, lastDate: null };
+    existing.queues.push(row.queue);
+    existing.slots += row.slots;
+    if (row.lastDate && (!existing.lastDate || row.lastDate > existing.lastDate)) existing.lastDate = row.lastDate;
+    byFeedKey.set(row.cpu, existing);
   }
 
   if (snapshot) {
@@ -99,30 +207,101 @@ export async function listRegions(): Promise<RegionSummary[]> {
     const todayYmd = kyivYmd(new Date());
     for (const feedRegion of regionsFromSnapshot(snapshot)) {
       if (inactive.has(feedRegion.cpu)) continue;
+      feedNames.set(feedRegion.cpu, feedRegion.nameUa);
+      const existing =
+        byFeedKey.get(feedRegion.cpu) ??
+        { cpu: feedRegion.cpu, nameUa: feedRegion.nameUa, nameEn: null, queues: [], slots: 0, lastDate: null };
       const coverage = mirrorDayCoverage(snapshot.payload, feedRegion.cpu, todayYmd);
-      const allClear = coverage ? coverage.offlineQueues.length === 0 : undefined;
-      const existing = byCpu.get(feedRegion.cpu);
-      if (existing) {
-        existing.nameUa = feedRegion.nameUa;
-        if (allClear !== undefined) existing.allClear = allClear;
-        for (const queue of feedRegion.queues) if (!existing.queues.includes(queue)) existing.queues.push(queue);
-      } else {
-        byCpu.set(feedRegion.cpu, {
-          cpu: feedRegion.cpu,
-          nameUa: feedRegion.nameUa,
-          nameEn: null,
-          queues: feedRegion.queues,
-          slots: 0,
-          lastDate: null,
-          allClear,
-        });
+      if (coverage) existing.allClear = coverage.offlineQueues.length === 0;
+      for (const queue of feedRegion.queues) if (!existing.queues.includes(queue)) existing.queues.push(queue);
+      byFeedKey.set(feedRegion.cpu, existing);
+    }
+  }
+
+  /** Один рядок каталогу з ключа фіда (підобласть або область, якої немає в каталозі). */
+  const rowOf = (facts: FeedFacts, nameUa: string, parentCpu?: string): RegionSummary => ({
+    cpu: facts.cpu,
+    nameUa,
+    nameEn: facts.nameEn,
+    queues: [...new Set(facts.queues)].sort(compareQueueCodes),
+    slots: facts.slots,
+    lastDate: facts.lastDate,
+    ...(facts.allClear !== undefined ? { allClear: facts.allClear } : {}),
+    feedKeys: [facts.cpu],
+    ...(parentCpu ? { parentCpu } : {}),
+  });
+
+  const rows: RegionSummary[] = [];
+  const consumed = new Set<string>();
+
+  for (const entry of REGION_CATALOG) {
+    // Область вимкнена в довіднику (`is_active = false`) — це свідоме рішення оператора приховати
+    // її, тому в каталозі її немає. Область, якої в довіднику просто немає, навпаки, показуємо:
+    // саме заради «знайти свою область» каталог і перелічує всі 24 області та Київ.
+    if (entry.feedKeys.length > 0 && entry.feedKeys.every((key) => inactive.has(key))) {
+      for (const key of entry.feedKeys) consumed.add(key);
+      continue;
+    }
+    const facts = entry.feedKeys
+      .map((key) => byFeedKey.get(key))
+      .filter((fact): fact is FeedFacts => Boolean(fact));
+    for (const key of entry.feedKeys) consumed.add(key);
+
+    // Зведення по мережах області: черги — об'єднання, слоти — сума, дата — найсвіжіша.
+    const merged: RegionSummary = {
+      cpu: entry.cpu,
+      // Назву беремо з довідника (`regions.name_ua`) або з фіда, якщо оператор її там перейменував;
+      // інакше — з канонічного каталогу. Для області з кількома мережами назви мереж належать
+      // підобластям («м. Дніпро (ЦЕК)»), тому група завжди зветься назвою області.
+      nameUa:
+        entry.feedKeys.length > 1
+          ? entry.nameUa
+          : facts.find((fact) => fact.nameUa !== fact.cpu)?.nameUa ?? entry.nameUa,
+      // Англійську назву беремо з довідника (`name_en`), якщо вона там є; трансліт не вигадуємо.
+      nameEn: facts.find((fact) => fact.nameEn)?.nameEn ?? null,
+      queues: [...new Set(facts.flatMap((fact) => fact.queues))].sort(compareQueueCodes),
+      slots: facts.reduce((sum, fact) => sum + fact.slots, 0),
+      lastDate: facts.reduce<string | null>(
+        (max, fact) => (fact.lastDate && (!max || fact.lastDate > max) ? fact.lastDate : max),
+        null,
+      ),
+      feedKeys: [...entry.feedKeys],
+    };
+    // «Світло за графіком» для області з кількома мережами — тільки якщо КОЖНА з них опублікувала
+    // добу без відключень: якщо хоч одна мережа мовчить, чесніше «немає даних», ніж обіцянка світла.
+    if (facts.length > 0 && facts.every((fact) => fact.allClear !== undefined)) {
+      merged.allClear = facts.every((fact) => fact.allClear === true);
+    }
+    rows.push(merged);
+
+    // Підобласті — лише для областей із кількома мережами: для 1:1 підміна прозора, окремий рядок
+    // був би дублем («Київська область» і ще раз «Київська область»).
+    if (entry.feedKeys.length > 1) {
+      for (const key of entry.feedKeys) {
+        const fact = byFeedKey.get(key);
+        if (fact) rows.push(rowOf(fact, regionFeedName(key, feedNames.get(key)), entry.cpu));
       }
     }
   }
 
-  return [...byCpu.values()]
-    .map((region) => ({ ...region, queues: [...new Set(region.queues)].sort(compareQueueCodes) }))
-    .sort((a, b) => a.nameUa.localeCompare(b.nameUa, 'uk') || a.cpu.localeCompare(b.cpu));
+  // Ключі, яких немає в каталозі (напр. легасі-область із власним імпортом): віддаємо як є з
+  // чесною назвою — вигадувати їм область-«батька» не можна.
+  for (const fact of byFeedKey.values()) {
+    if (consumed.has(fact.cpu)) continue;
+    rows.push(rowOf(fact, feedNames.get(fact.cpu) ?? fact.nameUa));
+  }
+
+  // Ключ сортування: підобласть сортується за назвою БАТЬКА, тому вона не відривається від нього.
+  const sortKey = new Map<string, string>();
+  for (const row of rows) {
+    const parentName = row.parentCpu ? rows.find((item) => item.cpu === row.parentCpu)?.nameUa : undefined;
+    sortKey.set(row.cpu, parentName ? `${parentName} ${row.nameUa}` : row.nameUa);
+  }
+  return rows.sort(
+    (a, b) =>
+      (sortKey.get(a.cpu) ?? a.nameUa).localeCompare(sortKey.get(b.cpu) ?? b.nameUa, 'uk') ||
+      a.cpu.localeCompare(b.cpu),
+  );
 }
 
 /** Області та їхні черги з payload дзеркала (без мережі — payload уже в кеші). */
