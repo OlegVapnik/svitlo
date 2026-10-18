@@ -2844,7 +2844,11 @@ async function resolveAddress(
   }
 
   const streetNormalized = normalizeAddress(input.street);
-  const wholeSettlement = entries.filter((row) => !row.street_normalized);
+  // `mirror` — это «в населённом пункте есть такие-то группы», а не «вся улица/село относится
+  // к одной группе». Синхронизатор справочника когда-то схлопывал такие строки в одну и подставлял
+  // первую группу; для Киева это давало ложное «1/1 на весь город». Такие подсказки не используем:
+  // номер группы нельзя угадывать, его подтверждают только адресные привязки.
+  const wholeSettlement = entries.filter((row) => !row.street_normalized && row.source !== 'mirror');
 
   // Уровень 1: конкретный дом на конкретной улице.
   const streetEntries = streetNormalized
@@ -3791,9 +3795,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     }
 
     // Если на всё село известна одна очередь — отдаём её, чтобы мастер сразу показал ответ.
+    // `source = 'mirror'` исключаем: это перечень групп населённого пункта, а не привязка адреса.
     const whole = await env.DB.prepare(
       `SELECT DISTINCT queue FROM address_queues
        WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized = ''
+         AND source <> 'mirror'
        LIMIT 100`,
     ).bind(...streetRegions.bindings, settlementNormalized).all<{ queue: string }>();
     const queues = [...new Set((whole.results ?? []).map((row) => normalizeQueue(row.queue)))];
