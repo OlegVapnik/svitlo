@@ -13,10 +13,20 @@ interface OutageListProps {
   isLoading: boolean;
   isError: boolean;
   onRetry?: () => void;
+  /** Честное пустое состояние, когда оператор ещё не опубликовал график на сегодня. */
+  emptyTitle?: string;
+  emptyDescription?: string;
 }
 
 /** Список отключений: скелет совпадает по форме с карточкой, чтобы контент не «прыгал». */
-export const OutageList: React.FC<OutageListProps> = ({ outages, isLoading, isError, onRetry }) => {
+export const OutageList: React.FC<OutageListProps> = ({
+  outages,
+  isLoading,
+  isError,
+  onRetry,
+  emptyTitle,
+  emptyDescription,
+}) => {
   const { t } = useTranslation();
 
   if (isLoading) {
@@ -46,8 +56,8 @@ export const OutageList: React.FC<OutageListProps> = ({ outages, isLoading, isEr
     return (
       <EmptyState
         icon={ZapOff}
-        title={t('outages.noOutages')}
-        description={t('outages.noOutagesDesc')}
+        title={emptyTitle ?? t('outages.noOutages')}
+        description={emptyDescription ?? t('outages.noOutagesDesc')}
       />
     );
   }

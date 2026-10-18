@@ -36,12 +36,13 @@ const TabFallback = () => (
     <Skeleton className="h-40 w-full rounded-2xl" />
   </div>
 );
-import { useOutages, useOutageStats, useQueues } from '../api/queries.js';
+import { useOutages, useOutageStats, useQueues, useUpcomingGroupOutages } from '../api/queries.js';
 import type { Outage } from '@svitlo/shared';
 import { useRegion } from '../hooks/useRegion.js';
 import { useBookmarks } from '../hooks/useBookmarks.js';
 import { outageCategory, resolveOutageMapPoint } from '../lib/outage-location.js';
-import { kyivDayStart, outageOverlapsKyivDay } from '../lib/outage-dates.js';
+import { kyivDateOffsetKey, kyivDayStart, outageOverlapsKyivDay } from '../lib/outage-dates.js';
+import { mergeGroupOutages, synthesizeGroupOutages } from '../lib/group-outages.js';
 import { queueNumber } from '../lib/queue-label.js';
 
 /** Чи перетинається відключення з вибраною (київською) добою. */
@@ -138,8 +139,39 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
     firstSeenAt: item.startsAt,
     updatedAt: item.startsAt,
   })) as Outage[];
+
+  /**
+   * Плановые окна из графика очередей области.
+   *
+   * `/api/v1/outages` — это события ОСР (аварии, ремонты). Когда оператор опубликовал только
+   * ГПВ, список «Планові відключення» оставался пустым, хотя график живой. Синтез берёт окна
+   * строго за сегодня/завтра: архивные июльские/апрельские слоты в зеркалах не должны выглядеть
+   * как текущий график.
+   */
+  const { data: upcomingData } = useUpcomingGroupOutages(currentRegionData.cpu, 2);
+  const todayKey = kyivDateOffsetKey(0);
+  const tomorrowKey = kyivDateOffsetKey(1);
+  const synthesized = useMemo(
+    () =>
+      synthesizeGroupOutages(upcomingData?.data, {
+        regionCpu: currentRegionData.cpu,
+        areaName: currentRegionData.nameUa,
+        todayKey,
+        tomorrowKey,
+      }),
+    [upcomingData, currentRegionData.cpu, currentRegionData.nameUa, todayKey, tomorrowKey],
+  );
+  // Дубли по «група + час» убираем: одно окно может прийти и событием ОСР, и слотом расписания.
+  const combinedOutages = useMemo(
+    () => mergeGroupOutages(outages, synthesized),
+    [outages, synthesized],
+  );
+  // Есть ли на сегодня хоть один опубликованный слот (любой очереди). Без него пустой список —
+  // это честное «оператор ще не опублікував графік», а не «відключень немає».
+  const hasScheduleToday = (upcomingData?.data ?? []).some((bucket) => bucket.date === todayKey);
+
   const stats = statsResponse?.data;
-  const displayOutages = outages.map((outage) => {
+  const displayOutages = combinedOutages.map((outage) => {
     const point = resolveOutageMapPoint(outage.areaName, outage.addressesRaw);
     const isResolvedArea = outage.areaName === 'Чернігівська область' && point.label !== 'Чернігівська область (точне місце не визначено)';
     return isResolvedArea ? { ...outage, areaName: point.label.replace(/^с\\.\s*/u, '') } : outage;
@@ -160,9 +192,9 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
   // Unique area names for dropdown
   const uniqueAreas = useMemo(() => {
     const set = new Set<string>();
-    outages.forEach((o: Outage) => set.add(o.areaName));
+    combinedOutages.forEach((o: Outage) => set.add(o.areaName));
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
-  }, [outages]);
+  }, [combinedOutages]);
 
   /** Реальні коди груп області: саме вони бувають у графіку, а не «Черга 1…6». */
   const queueCodes = useMemo(() => {
@@ -235,7 +267,14 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
           <h2 className="text-sm font-semibold text-foreground">
             {t('outages.plannedSection')} ({plannedOutages.length})
           </h2>
-          <OutageList outages={plannedOutages} isLoading={isLoading} isError={isError} onRetry={() => refetch()} />
+          <OutageList
+            outages={plannedOutages}
+            isLoading={isLoading}
+            isError={isError}
+            onRetry={() => refetch()}
+            emptyTitle={hasScheduleToday ? undefined : t('outages.scheduleNotPublished')}
+            emptyDescription={hasScheduleToday ? undefined : t('outages.scheduleNotPublishedDesc')}
+          />
         </div>
       )}
 

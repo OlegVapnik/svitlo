@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn.js';
-import { Clock, CheckCircle2, CalendarClock, MapPin, Tag, ExternalLink, Search, Radio } from 'lucide-react';
-import { Card, CardContent } from '../components/ui/Card.js';
+import { CalendarClock, CheckCircle2, Search, Radio, Tag } from 'lucide-react';
 import { Badge } from '../components/ui/Badge.js';
+import { EventCard } from '../components/events/EventCard.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { EmptyState } from '../components/common/EmptyState.js';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs.js';
@@ -115,7 +115,12 @@ export const IncidentsPage: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   );
 };
 
-/** Картка події: показує ДЕ (місце), ЧОМУ (причина) і КОЛИ (початок/відновлення). */
+/**
+ * Картка події: показує ДЕ (місце), ЧОМУ (причина) і КОЛИ (початок/відновлення).
+ *
+ * Вёрстка — общий `EventCard`, тот же, что у отключений: одинаковый статусный бейдж, место и
+ * прогресс активного окна «минуло / залишилось» (по `etaAt`, если источник его отдал).
+ */
 const IncidentCard: React.FC<{ incident: Incident }> = ({ incident }) => {
   const { t } = useTranslation();
   const isActive = incident.status === 'active';
@@ -129,62 +134,52 @@ const IncidentCard: React.FC<{ incident: Incident }> = ({ incident }) => {
   const severityLabel = severityKey ? t(severityKey) : (incident.severity ?? '').toUpperCase();
 
   return (
-    <Card className={isActive ? 'border-destructive/40 bg-destructive/5' : isScheduled ? 'border-warning/40 bg-warning/5' : undefined}>
-      <CardContent className="space-y-2.5 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {severityLabel && (
-              <Badge variant={SEVERITY_VARIANT[incident.severity] ?? 'muted'}>{severityLabel}</Badge>
-            )}
-            {status && <Badge variant={status.variant}>{t(status.key)}</Badge>}
-            <Badge variant="outline" className="gap-1">
-              <Radio className="h-3 w-3" aria-hidden />
-              {incident.kind === 'outage' ? t('incidents.kindOutage') : t('incidents.kindReport')}
-            </Badge>
-          </div>
-          <span className="tabular flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock className="h-3.5 w-3.5" aria-hidden />
-            {t('incidents.startedAt')}: {formatDateTime(incident.startedAt)}
-          </span>
-        </div>
-
-        <h2 className="text-sm font-semibold text-foreground sm:text-base">{incident.title}</h2>
-
-        <dl className="grid gap-1.5 text-xs sm:grid-cols-2">
-          <div className="flex items-start gap-1.5">
-            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-            <dt className="text-muted-foreground">{t('incidents.place')}:</dt>
-            <dd className="font-medium text-foreground">{incident.areaName || t('incidents.placeUnknown')}</dd>
-          </div>
-          <div className="flex items-start gap-1.5">
-            <Tag className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
-            <dt className="text-muted-foreground">{t('incidents.cause')}:</dt>
-            <dd className="font-medium text-foreground">{incident.reason || t('incidents.reasonUnknown')}</dd>
-          </div>
-        </dl>
-
-        <p className="text-xs leading-relaxed text-foreground/80 sm:text-sm">{incident.description}</p>
-
-        {incident.etaAt && (
+    <EventCard
+      tone={isActive ? 'active' : isScheduled ? 'scheduled' : 'none'}
+      badges={
+        <>
+          {severityLabel ? (
+            <Badge variant={SEVERITY_VARIANT[incident.severity] ?? 'muted'}>{severityLabel}</Badge>
+          ) : null}
+          {status ? <Badge variant={status.variant}>{t(status.key)}</Badge> : null}
+          <Badge variant="outline" className="gap-1">
+            <Radio className="h-3 w-3" aria-hidden />
+            {incident.kind === 'outage' ? t('incidents.kindOutage') : t('incidents.kindReport')}
+          </Badge>
+        </>
+      }
+      timeLabel={`${t('incidents.startedAt')}: ${formatDateTime(incident.startedAt)}`}
+      title={incident.title}
+      place={{ name: incident.areaName || t('incidents.placeUnknown') }}
+      details={[
+        {
+          icon: Tag,
+          label: t('incidents.cause'),
+          value: incident.reason || t('incidents.reasonUnknown'),
+        },
+      ]}
+      description={incident.description}
+      // Прогресс только у активного окна с известным ETA: без конца окна считать «залишилось»
+      // не из чего, и выдумывать срок нельзя.
+      window={
+        incident.etaAt
+          ? { startsAt: incident.startedAt, endsAt: incident.etaAt, active: isActive }
+          : null
+      }
+      sourceUrl={incident.sourceUrl}
+      footer={
+        incident.etaAt ? (
           <p className="flex items-center gap-2 text-xs font-medium text-warning">
             <CalendarClock className="h-3.5 w-3.5" aria-hidden />
-            {isActive ? t('incidents.etaActive') : isScheduled ? t('incidents.etaScheduled') : t('incidents.etaResolved')}:
-            <span className="tabular">{formatDateTime(incident.etaAt)}</span>
+            {isActive
+              ? t('incidents.etaActive')
+              : isScheduled
+                ? t('incidents.etaScheduled')
+                : t('incidents.etaResolved')}
+            :<span className="tabular">{formatDateTime(incident.etaAt)}</span>
           </p>
-        )}
-
-        {incident.sourceUrl && (
-          <a
-            href={incident.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-primary hover:underline"
-          >
-            {t('incidents.source')}
-            <ExternalLink className="h-3 w-3" aria-hidden />
-          </a>
-        )}
-      </CardContent>
-    </Card>
+        ) : null
+      }
+    />
   );
 };
