@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
 
@@ -95,8 +96,11 @@ export const Sheet: React.FC<SheetProps> = ({ open, onClose, title, children, he
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+  // Портал обязателен: страницы живут внутри `.tab-enter` с `transform`, а transform создаёт
+  // containing block для `position: fixed`. Без портала шторка приклеивалась к контенту вкладки:
+  // шапка и нижняя навигация оставались поверх неё, а крестик уезжал под шапку.
+  const panel = (
+    <div className="fixed inset-0 z-100 flex items-end justify-center sm:items-center">
       <button
         type="button"
         aria-label="Закрити"
@@ -154,4 +158,6 @@ export const Sheet: React.FC<SheetProps> = ({ open, onClose, title, children, he
       </div>
     </div>
   );
+
+  return typeof document === 'undefined' ? panel : createPortal(panel, document.body);
 };
