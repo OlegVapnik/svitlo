@@ -10,7 +10,7 @@
  * а фронтенд показывает EmptyState. Подставлять «похожий» график хуже, чем не показать ничего.
  */
 
-import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeQueue } from './address.js';
+import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeHouseNumber, normalizeQueue } from './address.js';
 import { searchSettlements } from './settlements.js';
 import { collectChernihivOutages, fetchCityIds, type ChernihivOutage } from './chernihiv.js';
 // Разбор ГПВ из открытых Telegram-каналов операторов. Модуль — копия проверенного
@@ -2926,6 +2926,7 @@ function dedupeQueues(options: Array<{ housePattern: string; queue: string }>): 
  */
 async function handleContribute(request: Request, env: Env): Promise<Response> {
   let body: unknown;
+
   try {
     body = await request.json();
   } catch {
@@ -2971,6 +2972,127 @@ async function handleContribute(request: Request, env: Env): Promise<Response> {
   return json({
     data: { saved: true, queue, source: 'community', housePattern },
   }, 201);
+}
+
+/**
+ * Подтверждённый жителем адрес → общий справочник D1.
+ *
+ * Маршрут отличается от старого `/addresses/contribute` тем, что пишет не только привязку
+ * `address_queues`, но и названия населённого пункта и улицы в `directory_*`: без этого
+ * следующий человек не увидит подсказку и не сможет подтвердить тот же дом.
+ *
+ * `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE` намеренно не перезаписывает строку, если
+ * ничего не изменилось: D1 на бесплатном тарифе считает каждую запись, а повторные нажатия
+ * «Це моя група» не должны расходовать лимит.
+ */
+async function handleAddressConfirm(request: Request, env: Env): Promise<Response> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується JSON' } }, 400);
+  }
+  if (typeof body !== 'object' || body === null) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується об’єкт' } }, 400);
+  }
+
+  const payload = body as Record<string, unknown>;
+  const requestedRegion = String(payload['region'] ?? '').trim();
+  const region = canonicalRegionCpu(requestedRegion);
+  if (!REGION_CATALOG.some((entry) => entry.cpu === region)) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: `Невідомий регіон «${requestedRegion}»` } }, 400);
+  }
+
+  const settlement = String(payload['settlement'] ?? '').trim();
+  const street = String(payload['street'] ?? '').trim();
+  const house = String(payload['house'] ?? '').trim();
+  const queue = normalizeQueue(String(payload['queue'] ?? ''));
+
+  if (settlement.length < 2 || settlement.length > 80) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Населений пункт — від 2 до 80 символів' } }, 400);
+  }
+  if (street.length < 2 || street.length > 80) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Вулиця — від 2 до 80 символів' } }, 400);
+  }
+  if (house.length < 1 || house.length > 16) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Будинок — від 1 до 16 символів' } }, 400);
+  }
+  if (!isQueueCode(queue)) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: `Невірний код черги «${queue}»` } }, 400);
+  }
+
+  const settlementNormalized = normalizeAddress(settlement);
+  const streetNormalized = normalizeAddress(street);
+  const housePattern = normalizeHouseNumber(house);
+  if (!settlementNormalized || !streetNormalized || !housePattern) {
+    return json({ error: { code: 'VALIDATION_ERROR', message: 'Адреса не нормалізується' } }, 400);
+  }
+
+  const updatedAt = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO directory_settlements (region, name, normalized, source)
+       VALUES (?, ?, ?, 'community')
+       ON CONFLICT(region, normalized) DO UPDATE SET
+         name = excluded.name,
+         source = excluded.source
+       WHERE directory_settlements.name <> excluded.name
+          OR directory_settlements.source <> excluded.source`,
+    ).bind(region, settlement, settlementNormalized),
+    env.DB.prepare(
+      `INSERT INTO directory_streets (region, settlement_normalized, name, normalized, source)
+       VALUES (?, ?, ?, ?, 'community')
+       ON CONFLICT(region, settlement_normalized, normalized) DO UPDATE SET
+         name = excluded.name,
+         source = excluded.source
+       WHERE directory_streets.name <> excluded.name
+          OR directory_streets.source <> excluded.source`,
+    ).bind(region, settlementNormalized, street, streetNormalized),
+    env.DB.prepare(
+      `INSERT INTO address_queues
+         (region, settlement_name, settlement_normalized, street_name, street_normalized,
+          house_pattern, queue, source, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'community', ?)
+       ON CONFLICT(region, settlement_normalized, street_normalized, house_pattern) DO UPDATE SET
+         settlement_name = excluded.settlement_name,
+         street_name = excluded.street_name,
+         queue = excluded.queue,
+         source = excluded.source,
+         updated_at = excluded.updated_at
+       WHERE address_queues.settlement_name <> excluded.settlement_name
+          OR address_queues.street_name <> excluded.street_name
+          OR address_queues.queue <> excluded.queue
+          OR address_queues.source <> excluded.source`,
+    ).bind(region, settlement, settlementNormalized, street, streetNormalized, housePattern, queue, updatedAt),
+  ]);
+
+  invalidateAddressCache(settlementNormalized);
+
+  return json({
+    data: {
+      saved: true,
+      region,
+      queue,
+      source: 'community',
+      housePattern,
+    },
+  }, 201);
+}
+
+/**
+ * Сбрасывает справочные ответы по конкретному НП: подсказки улиц, домов и `resolve`.
+ * Ключи `memoryCache` содержат нормализованный НП, а готовые HTTP-ответы — путь `/addresses/`;
+ * после подтверждения сосед должен увидеть новый дом без ожидания TTL.
+ */
+function invalidateAddressCache(settlementNormalized: string): void {
+  for (const key of memoryCache.keys()) {
+    if (key.startsWith('address-') && key.includes(settlementNormalized)) {
+      memoryCache.delete(key);
+    }
+  }
+  for (const key of httpMemoryCache.keys()) {
+    if (key.includes('/addresses/')) httpMemoryCache.delete(key);
+  }
 }
 
 /**
@@ -3912,6 +4034,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     });
   }
 
+  if (path === '/addresses/confirm') return handleAddressConfirm(request, env);
   if (path === '/addresses/contribute') return handleContribute(request, env);
 
   // Остальные разделы зеркало не отдаёт, и выдумывать их нельзя. Честная пустая выдача:
