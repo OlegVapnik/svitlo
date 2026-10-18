@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { formatQueueLabel } from './queue-label.js';
+import { formatQueueLabel, queueNumber } from './queue-label.js';
 
 describe('formatQueueLabel', () => {
   test('Київ називає групою навіть число', () => {
@@ -20,5 +20,22 @@ describe('formatQueueLabel', () => {
 
   test('порожній регіон не ламає підпис', () => {
     expect(formatQueueLabel('2/2')).toBe('Черга 2/2');
+  });
+});
+
+describe('queueNumber', () => {
+  test('складений код дає номер основної групи', () => {
+    expect(queueNumber('2/2')).toBe(2);
+    expect(queueNumber('35/1')).toBe(35);
+  });
+
+  test('простий код групи лишається числом', () => {
+    expect(queueNumber('7')).toBe(7);
+  });
+
+  test('порожнє або нечислове значення не перетворюється на NaN-фільтр', () => {
+    expect(queueNumber('')).toBeUndefined();
+    expect(queueNumber(undefined)).toBeUndefined();
+    expect(queueNumber('черга')).toBeUndefined();
   });
 });

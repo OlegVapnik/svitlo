@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp, Clock, MapPin, AlertCircle, Users } from 'lucide-react';
 import { Card, CardContent } from '../ui/Card.js';
 import { Badge } from '../ui/Badge.js';
+import { WavyProgressBar } from '../ui/WavyProgressBar.js';
 import { cn } from '../../lib/cn.js';
 import { formatDateTime, formatTimeRange, isActive } from '../../lib/date.js';
 import { outageCategory } from '../../lib/outage-location.js';
+import { formatQueueLabel } from '../../lib/queue-label.js';
+import { formatMinutesUk } from '../../lib/scheduleWindow.js';
+import { useRegion } from '../../hooks/useRegion.js';
 import type { Outage } from '@svitlo/shared';
 
 interface OutageCardProps {
@@ -19,11 +23,39 @@ interface OutageCardProps {
  */
 export const OutageCard: React.FC<OutageCardProps> = ({ outage }) => {
   const { t } = useTranslation();
+  const { currentRegionData } = useRegion();
   const [expanded, setExpanded] = useState(false);
 
   const currentlyActive = isActive(outage.startsAt, outage.endsAt);
   const isIncidentWork = outageCategory(outage.reason) === 'incident';
   const highlight = currentlyActive || isIncidentWork;
+
+  /**
+   * Прогрес активного вікна. Планове відключення триває години, тому хвилинного кроку досить:
+   * частіший таймер гортав би список без видимої зміни цифр. Коли вікно не активне — таймера
+   * немає взагалі.
+   */
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!currentlyActive) return;
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [currentlyActive, outage.startsAt, outage.endsAt]);
+
+  const windowProgress = (() => {
+    if (!currentlyActive) return null;
+    const start = Date.parse(outage.startsAt);
+    const end = Date.parse(outage.endsAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    const totalMinutes = Math.round((end - start) / 60_000);
+    const elapsedMinutes = Math.min(totalMinutes, Math.max(0, Math.round((nowMs - start) / 60_000)));
+    return {
+      progress: Math.min(100, Math.max(0, (elapsedMinutes / totalMinutes) * 100)),
+      elapsedMinutes,
+      remainingMinutes: Math.max(0, totalMinutes - elapsedMinutes),
+    };
+  })();
 
   const badgeVariant = (() => {
     if (highlight) return 'destructive' as const;
@@ -52,13 +84,21 @@ export const OutageCard: React.FC<OutageCardProps> = ({ outage }) => {
       <CardContent className="space-y-2.5 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
+            {outage.kind === 'group' && (
+              <Badge variant="info">{t('outages.bySchedule')}</Badge>
+            )}
             <Badge variant={badgeVariant}>{statusLabel}</Badge>
-            {outage.queue != null && (
+            {outage.group ? (
+              <Badge variant="outline" className="tabular">
+                <Users className="h-3 w-3" aria-hidden />
+                {formatQueueLabel(outage.group, currentRegionData.cpu)}
+              </Badge>
+            ) : outage.queue != null ? (
               <Badge variant="outline" className="font-mono tabular">
                 <Users className="h-3 w-3" aria-hidden />
                 {t('outages.queue')} {outage.queue}
               </Badge>
-            )}
+            ) : null}
           </div>
           <div className="tabular flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
             <Clock className="h-3.5 w-3.5" aria-hidden />
@@ -73,6 +113,16 @@ export const OutageCard: React.FC<OutageCardProps> = ({ outage }) => {
             <div className="tabular text-xs text-muted-foreground">{formatDateTime(outage.startsAt)}</div>
           </div>
         </div>
+
+        {windowProgress && (
+          <WavyProgressBar
+            progress={windowProgress.progress}
+            tone="off"
+            elapsedLabel={t('home.waveElapsed', { time: formatMinutesUk(windowProgress.elapsedMinutes) })}
+            remainingLabel={t('home.waveRemaining', { time: formatMinutesUk(windowProgress.remainingMinutes) })}
+            aria-label={t('outages.active')}
+          />
+        )}
 
         {outage.reason && (
           <div className="flex items-start gap-2 rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground">

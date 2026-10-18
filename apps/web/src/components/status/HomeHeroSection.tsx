@@ -3,27 +3,23 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
   BadgeCheck,
-  Briefcase,
   CalendarDays,
   Check,
+  ChevronDown,
+  ChevronUp,
   FileQuestion,
-  Heart,
-  Home,
-  MapPin,
   PhoneCall,
   RefreshCw,
-  Sparkles,
   Star,
   X,
   Zap,
   ZapOff,
-  type LucideIcon,
 } from 'lucide-react';
+import { PlaceIconMark } from '../places/PlaceIcon.js';
 import { QueueSelector } from '../queue/QueueSelector.js';
 import { Timeline24h } from '../schedule/Timeline24h.js';
 import { ShareScheduleButton } from '../schedule/ShareScheduleButton.js';
-import { QueueCompareBar } from '../schedule/QueueCompareBar.js';
-import { PowerWindowPlanner } from './PowerWindowPlanner.js';
+import { HomeToolsPills } from './HomeToolsPills.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { Button } from '../ui/Button.js';
 import { useRegion } from '../../hooks/useRegion.js';
@@ -59,18 +55,13 @@ function formatKyivTime(iso: string): string {
 }
 
 /**
- * Иконка закладки по её названию. Раньше роль значка играли текстовые эмодзи («Дім»,
- * «Робота»), но эмодзи разъезжаются по шрифтам и выглядят по-разному на Android, iOS и
- * Windows. Подпись как была, а значок — векторный: дім, робота, батьки, село/місто.
+ * Скільки місць видно на головній без «Ще».
+ *
+ * Чотири — межа швидкого перемикача: пʼятий чип уже починає виглядати як список і зʼїдає
+ * перший екран. Решта ховається за «Ще N», а повний список із перейменуванням живе на
+ * сторінці пошуку адреси.
  */
-function bookmarkIcon(label: string): LucideIcon {
-  const value = label.toLowerCase();
-  if (/дім|дом|home|квартир/.test(value)) return Home;
-  if (/робот|work|офіс/.test(value)) return Briefcase;
-  if (/батьк|мам[аи]|тато|родин/.test(value)) return Heart;
-  if (/село|місто|вул\.|смт/.test(value)) return MapPin;
-  return Sparkles;
-}
+const PLACE_CHIP_LIMIT = 4;
 
 export const HomeHeroSection: React.FC = () => {
   const { t } = useTranslation();
@@ -78,6 +69,7 @@ export const HomeHeroSection: React.FC = () => {
   const { address } = useMyAddress();
   const { bookmarks, primaryBookmark, addBookmark, removeBookmark, setPrimaryBookmark } =
     useBookmarks();
+  const [showAllPlaces, setShowAllPlaces] = useState(false);
 
   // Вибір дати: сьогодні (0) або завтра (1) у київському часі
   const [selectedDayOffset, setSelectedDayOffset] = useState<0 | 1>(0);
@@ -372,9 +364,8 @@ export const HomeHeroSection: React.FC = () => {
           aria-label={t('home.bookmarks')}
           className="-mx-1 flex snap-x snap-mandatory items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
         >
-          {bookmarks.map((bm) => {
+          {(showAllPlaces ? bookmarks : bookmarks.slice(0, PLACE_CHIP_LIMIT)).map((bm) => {
             const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
-            const BookmarkIcon = bookmarkIcon(bm.label);
             return (
               <div
                 key={bm.id}
@@ -398,7 +389,7 @@ export const HomeHeroSection: React.FC = () => {
                   {isActive ? (
                     <Check className="h-4 w-4" strokeWidth={2.5} aria-hidden />
                   ) : (
-                    <BookmarkIcon className="h-4 w-4" strokeWidth={2.2} aria-hidden />
+                    <PlaceIconMark icon={bm.icon} className="h-4 w-4" />
                   )}
                   <span className="max-w-40 truncate">{bm.label}</span>
                   {bm.addressConfirmed && (
@@ -422,6 +413,26 @@ export const HomeHeroSection: React.FC = () => {
               </div>
             );
           })}
+
+          {/* «Ще» — не навігація, а розкриття ряду: людина не втрачає контекст головної.
+              Рахунок показуємо тільки для прихованих, щоб кнопка не обіцяла більше, ніж є. */}
+          {bookmarks.length > PLACE_CHIP_LIMIT && (
+            <button
+              type="button"
+              onClick={() => setShowAllPlaces((value) => !value)}
+              aria-expanded={showAllPlaces}
+              className="inline-flex min-h-10 shrink-0 snap-start items-center gap-1 rounded-full border border-outline-variant/70 bg-surface-container px-3 text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-high"
+            >
+              {showAllPlaces ? (
+                <ChevronUp className="h-4 w-4" aria-hidden />
+              ) : (
+                <ChevronDown className="h-4 w-4" aria-hidden />
+              )}
+              {showAllPlaces
+                ? t('places.hideMoreChips')
+                : t('places.moreChips', { count: bookmarks.length - PLACE_CHIP_LIMIT })}
+            </button>
+          )}
         </div>
       )}
 
@@ -460,12 +471,6 @@ export const HomeHeroSection: React.FC = () => {
           />
         </div>
       </div>
-
-      {/* Перетин з другою групою — рядом з вибором черги: порівнювати хочеться саме тоді,
-          коли дивишся на свою. Блок згорнутий, доки людина не натисне кнопку. */}
-      {selectedQueue && (
-        <QueueCompareBar region={currentRegion} queue={selectedQueue} date={selectedDate} />
-      )}
 
       {/* Деликатная линия вместо волнистого разделителя: 1px и 6% белого — секция «управление»
           отделена от графика без декоративного шума. */}
@@ -619,9 +624,19 @@ export const HomeHeroSection: React.FC = () => {
               </div>
             )}
 
-            {/* Планувальник побутових вікон: показує конкретне вікно з графіка, а не обіцяє
-                «встигнете» без меж. Під кнопкою «Поділитися», одразу під таймлайном. */}
-            {selectedQueue && <PowerWindowPlanner days={plannerDays} now={now} className="mt-3" />}
+            {/* Компактні інструменти: планувальник приладів і порівняння черг за пігулками.
+                Під таймлайном і кнопкою «Поділитися» — там, де людина вже побачила вікна зі
+                світлом і хоче щось із ними зробити. */}
+            {selectedQueue && (
+              <HomeToolsPills
+                region={currentRegion}
+                queue={selectedQueue}
+                date={selectedDate}
+                days={plannerDays}
+                now={now}
+                className="mt-3"
+              />
+            )}
 
           </div>
 

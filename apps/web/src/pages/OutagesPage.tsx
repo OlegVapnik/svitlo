@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { List, Calendar as CalendarIcon, BarChart2, MapPin } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/Tabs.js';
 import { SearchBar } from '../components/search/SearchBar.js';
-import { FilterPanel } from '../components/search/FilterPanel.js';
+import { FilterPanel, type OutageFiltersState } from '../components/search/FilterPanel.js';
 import { OutageList } from '../components/outages/OutageList.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 
@@ -36,11 +36,13 @@ const TabFallback = () => (
     <Skeleton className="h-40 w-full rounded-2xl" />
   </div>
 );
-import { useOutages, useOutageStats } from '../api/queries.js';
-import type { Outage, OutageStatus } from '@svitlo/shared';
+import { useOutages, useOutageStats, useQueues } from '../api/queries.js';
+import type { Outage } from '@svitlo/shared';
 import { useRegion } from '../hooks/useRegion.js';
+import { useBookmarks } from '../hooks/useBookmarks.js';
 import { outageCategory, resolveOutageMapPoint } from '../lib/outage-location.js';
 import { kyivDayStart, outageOverlapsKyivDay } from '../lib/outage-dates.js';
+import { queueNumber } from '../lib/queue-label.js';
 
 /** Чи перетинається відключення з вибраною (київською) добою. */
 const startsOnSelectedKyivDay = (outage: Pick<Outage, 'startsAt' | 'endsAt'>, day: Date): boolean =>
@@ -59,12 +61,7 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabView>('list');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState<{
-    status?: OutageStatus;
-    queue?: number;
-    area?: string;
-    datePreset?: 'all' | 'today' | 'tomorrow' | 'week';
-  }>({ datePreset: 'all' });
+  const [filters, setFilters] = useState<OutageFiltersState>({ datePreset: 'all' });
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<Date | null>(null);
 
   // Compute date filters
@@ -109,11 +106,15 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
 
   // Fetch outages with filters
   const { currentRegionData } = useRegion();
+  const { primaryBookmark } = useBookmarks();
+  const { data: queuesResponse } = useQueues(currentRegionData.cpu);
   const { data: outagesResponse, isLoading, isError, refetch } = useOutages({
     query: searchQuery || undefined,
     status: filters.status,
-    queue: filters.queue,
-    area: filters.area,
+    // Сервер тримає номер групи числом; точний код («2/2») добираємо на клієнті нижче.
+    queue: queueNumber(filters.queueCode),
+    // Район не передаємо: на сервері цей фільтр звужує лише точкові ремонти й викидав би
+    // планові вікна груп, через що список ставав порожнім. Фільтруємо об'єднаний результат.
     region: currentRegionData.cpu,
     ...dateParams,
   });
@@ -143,16 +144,39 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
     const isResolvedArea = outage.areaName === 'Чернігівська область' && point.label !== 'Чернігівська область (точне місце не визначено)';
     return isResolvedArea ? { ...outage, areaName: point.label.replace(/^с\\.\s*/u, '') } : outage;
   });
+
+  // Точні фільтри «черга» і «район» — по вже об'єднаному списку (планові вікна груп + ремонти).
+  // Код групи порівнюємо повністю: «2/1» і «2/2» — різні черги, і зливати їх не можна.
+  const scopedOutages = displayOutages.filter((outage) => {
+    const matchesQueue = !filters.queueCode || outage.group === filters.queueCode;
+    const matchesArea = !filters.area || outage.areaName === filters.area;
+    return matchesQueue && matchesArea;
+  });
+
   // На цій сторінці — лише планові роботи. Аварійні та ремонтні відключення
   // (з місцем і причиною) перенесено на сторінку «Аварії».
-  const plannedOutages = displayOutages.filter((outage) => outageCategory(outage.reason) !== 'incident');
+  const plannedOutages = scopedOutages.filter((outage) => outageCategory(outage.reason) !== 'incident');
 
   // Unique area names for dropdown
   const uniqueAreas = useMemo(() => {
     const set = new Set<string>();
     outages.forEach((o: Outage) => set.add(o.areaName));
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk'));
   }, [outages]);
+
+  /** Реальні коди груп області: саме вони бувають у графіку, а не «Черга 1…6». */
+  const queueCodes = useMemo(() => {
+    const set = new Set<string>();
+    (queuesResponse?.data ?? []).forEach((item) => {
+      const code = String(item.queue ?? '').trim();
+      if (code) set.add(code);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'uk', { numeric: true }));
+  }, [queuesResponse]);
+
+  // Пігулка «Моя черга» має сенс лише для місця з цієї ж області.
+  const myQueue =
+    primaryBookmark && primaryBookmark.regionCpu === currentRegionData.cpu ? primaryBookmark.queue : null;
 
   return (
     <div className={cn('space-y-4', embedded ? '' : 'max-w-5xl mx-auto pb-16 md:pb-6')}>
@@ -171,7 +195,14 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
       {/* Search and Filters */}
       <div className="space-y-2">
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
-        <FilterPanel filters={filters} onChange={setFilters} areas={uniqueAreas} />
+        <FilterPanel
+          filters={filters}
+          onChange={setFilters}
+          areas={uniqueAreas}
+          queueCodes={queueCodes}
+          regionCpu={currentRegionData.cpu}
+          myQueue={myQueue}
+        />
       </div>
 
       {/* Переключатель вида — ui/Tabs: роли ARIA, стрелки влево/вправо, aria-selected */}
@@ -212,7 +243,7 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
         <React.Suspense fallback={<TabFallback />}>
           <div className="space-y-4">
             <OutageCalendar
-              outages={outages}
+              outages={scopedOutages}
               selectedDate={calendarSelectedDate}
               onSelectDate={setCalendarSelectedDate}
             />
@@ -235,7 +266,7 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
           <div className="space-y-4">
             {/* Заголовок графіка — «відключень ТА РЕМОНТІВ», тому показуємо всі події
                 (ремонтні роботи + планові/аварійні обмеження), а не лише «планові». */}
-            {displayOutages.length > 0 && <OutageTimeline outages={displayOutages} />}
+            {scopedOutages.length > 0 && <OutageTimeline outages={scopedOutages} />}
             {stats && (
               <>
                 <OutageBarChart byArea={stats.byArea} byDay={stats.byDay} />
@@ -253,7 +284,7 @@ export const OutagesPage: React.FC<{ embedded?: boolean }> = ({ embedded = false
 
       {activeTab === 'map' && (
         <React.Suspense fallback={<TabFallback />}>
-          <OutageMap outages={outages} />
+          <OutageMap outages={scopedOutages} />
         </React.Suspense>
       )}
     </div>

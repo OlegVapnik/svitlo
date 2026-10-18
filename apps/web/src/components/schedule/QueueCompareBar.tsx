@@ -47,6 +47,12 @@ export interface QueueCompareBarProps {
   queue: string;
   /** Киевская дата, на которую сравниваем (та же, что выбрана в герое). */
   date: string;
+  /**
+   * Встроен в панель инструментов главной: заголовок и кнопку-переключатель рисует родитель
+   * (сегментована пігулка), сравнение сразу открыто. Без этого получались две кнопки «Порівняти
+   * з іншою чергою» одна над одною і другий тап, щоб побачити смуги.
+   */
+  embedded?: boolean;
   className?: string;
 }
 
@@ -63,12 +69,20 @@ const OVERLAP_TONE: Record<OverlapState, string> = {
   unknown: 'bg-surface-container-highest',
 };
 
-export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue, date, className }) => {
+export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({
+  region,
+  queue,
+  date,
+  embedded = false,
+  className,
+}) => {
   const { t } = useTranslation();
   const { bookmarks } = useBookmarks();
   const { regions } = useRegion();
   const { data: queuesResponse } = useQueues(region);
-  const [open, setOpen] = useState(false);
+  // Во встроенном режиме сравнение открыто с первого кадра: пігулка «Порівняння черг» — это и
+  // есть команда «покажи сравнение», второй кнопки внутри не нужно.
+  const [open, setOpen] = useState(embedded);
   const [selection, setSelection] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -143,30 +157,32 @@ export const QueueCompareBar: React.FC<QueueCompareBarProps> = ({ region, queue,
 
   return (
     <div className={cn('rounded-2xl border border-hairline bg-surface-container-high/50 p-3', className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-on-surface-variant">
-          <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-          {t('compare.title')}
-        </span>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          aria-expanded={open}
-          className="gap-1.5"
-          onClick={() => {
-            hapticTick('select');
-            if (open) setPickerOpen(false);
-            setOpen((value) => !value);
-          }}
-        >
-          {open ? <X className="h-3.5 w-3.5" aria-hidden /> : <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />}
-          {open ? t('compare.hide') : t('compare.button')}
-        </Button>
-      </div>
+      {!embedded && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+            <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+            {t('compare.title')}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-expanded={open}
+            className="gap-1.5"
+            onClick={() => {
+              hapticTick('select');
+              if (open) setPickerOpen(false);
+              setOpen((value) => !value);
+            }}
+          >
+            {open ? <X className="h-3.5 w-3.5" aria-hidden /> : <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />}
+            {open ? t('compare.hide') : t('compare.button')}
+          </Button>
+        </div>
+      )}
 
       {open && (
-        <div className="mt-2.5 space-y-2">
+        <div className={cn('space-y-2', embedded ? undefined : 'mt-2.5')}>
           {candidates.length === 0 ? (
             <p className="text-xs leading-relaxed text-muted-foreground">
               {t('compare.needSecond')}{' '}

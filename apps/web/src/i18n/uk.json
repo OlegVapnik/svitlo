@@ -179,7 +179,13 @@
     "selectedDay": "Відключення на",
     "allDays": "Усі відключення",
     "noRecordsForPeriod": "За вибраний період записів немає. Для перегляду історії скиньте фільтр дат.",
-    "queueNumber": "Черга {{queue}}"
+    "queueNumber": "Черга {{queue}}",
+    "filterAll": "Усі",
+    "filterActive": "Тривають",
+    "filterScheduled": "Заплановані",
+    "wholeRegion": "Уся область",
+    "myQueue": "Моя черга {{queue}}",
+    "bySchedule": "За графіком ГПВ"
   },
   "places": {
     "title": "Збережені місця",
@@ -219,6 +225,11 @@
     "iconSchool": "Школа",
     "iconStar": "Інше",
     "switchHint": "Натисніть, щоб перемкнути графік на це місце"
+  },
+  "tools": {
+    "title": "Інструменти",
+    "devices": "Прилади",
+    "compare": "Порівняння черг"
   },
   "incidents": {
     "title": "Аварії та ремонтні роботи",
@@ -305,7 +316,8 @@
     "refreshing": "Оновлюємо…",
     "save": "Зберегти",
     "bookmarksSaved": "В закладках",
-    "comingSoon": "Розділ готується"
+    "comingSoon": "Розділ готується",
+    "reset": "Скинути фільтри"
   },
   "charts": {
     "byHour": "За годинами",
