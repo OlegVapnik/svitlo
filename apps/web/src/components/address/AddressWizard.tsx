@@ -762,16 +762,34 @@ const SettlementSuggestions: React.FC<{
   const stats = useMemo(() => offlineSettlementStats(region), [region]);
 
   const names = useMemo(() => {
+    const serverNames = (server.data?.data ?? []).map((entry) => entry.name);
+    const baseName = (value: string) => {
+      const parts = value.split(' · ');
+      return parts[parts.length - 1]!.trim();
+    };
+    const qualifiedCounts = new Map<string, number>();
+    for (const name of serverNames) {
+      if (!name.includes(' · ')) continue;
+      const base = baseName(name).toLocaleLowerCase('uk-UA');
+      qualifiedCounts.set(base, (qualifiedCounts.get(base) ?? 0) + 1);
+    }
+
     const seen = new Set<string>();
-    const result: string[] = [];
-    for (const item of [
-      ...offline.map((entry) => entry.name),
-      ...(server.data?.data ?? []).map((entry) => entry.name),
-    ]) {
-      const key = item.toLocaleLowerCase('uk-UA');
-      if (key === query.trim().toLocaleLowerCase('uk-UA') || seen.has(key)) continue;
-      seen.add(key);
-      result.push(item);
+    const result: Array<{ label: string; value: string }> = [];
+    for (const item of [...offline.map((entry) => entry.name), ...serverNames]) {
+      const base = baseName(item);
+      const key = base.toLocaleLowerCase('uk-UA');
+      const isQualified = item.includes(' · ');
+      const isAmbiguous = (qualifiedCounts.get(key) ?? 0) > 1;
+      if (isAmbiguous && !isQualified) continue;
+      const label = isAmbiguous && isQualified
+        ? item
+        : base.charAt(0).toLocaleUpperCase('uk-UA') + base.slice(1).toLocaleLowerCase('uk-UA');
+      const value = isAmbiguous && isQualified ? item : base;
+      const labelKey = label.toLocaleLowerCase('uk-UA');
+      if (labelKey === query.trim().toLocaleLowerCase('uk-UA') || seen.has(labelKey)) continue;
+      seen.add(labelKey);
+      result.push({ label, value });
       if (result.length >= 6) break;
     }
     return result;
@@ -782,14 +800,14 @@ const SettlementSuggestions: React.FC<{
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap gap-1.5">
-        {names.map((name) => (
+        {names.map(({ label, value }) => (
           <button
-            key={name}
+            key={value}
             type="button"
-            onClick={() => onPick(name)}
+            onClick={() => onPick(value)}
             className="min-h-9 rounded-full border border-border bg-muted px-3 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
           >
-            {highlight(name, query)}
+            {highlight(label, query)}
           </button>
         ))}
       </div>

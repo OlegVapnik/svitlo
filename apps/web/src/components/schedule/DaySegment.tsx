@@ -30,7 +30,7 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
     <div
       role="group"
       aria-label={t('timeline.daySegmentLabel')}
-      className={cn('inline-flex rounded-full border border-border bg-card p-0.5', className)}
+      className={cn('inline-flex h-11 rounded-lg border border-border bg-surface-container p-0.5', className)}
     >
       <button
         type="button"
@@ -40,7 +40,7 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
           onChange('today');
         }}
         className={cn(
-          'min-h-11 rounded-full px-4 text-sm font-semibold transition-colors',
+          'min-h-10 rounded-md px-3.5 text-sm font-semibold transition-colors',
           value === 'today'
             ? 'bg-primary text-primary-foreground'
             : 'text-muted-foreground hover:bg-muted',
@@ -56,7 +56,7 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
           onChange('tomorrow');
         }}
         className={cn(
-          'min-h-11 rounded-full px-4 text-sm font-semibold transition-colors',
+          'min-h-10 rounded-md px-3.5 text-sm font-semibold transition-colors',
           value === 'tomorrow'
             ? 'bg-primary text-primary-foreground'
             : 'text-muted-foreground hover:bg-muted',

@@ -42,6 +42,7 @@
   --animate-fade-in: fade-in 220ms ease-out both;
   --animate-rise: rise 260ms ease-out both;
   --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+  --animate-timeline-breathe: timeline-breathe 3.4s ease-in-out infinite;
   /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны (28px, см.
      WAVELENGTH в WavyProgressBar) делает цикл бесшовным — тайл повтора встаёт сам в себя.
      Скорость приходит с элемента через inline animationDuration: у спокойных состояний
@@ -59,6 +60,10 @@
   @keyframes pulse-soft {
     0%, 100% { opacity: 0.55; }
     50% { opacity: 1; }
+  }
+  @keyframes timeline-breathe {
+    0%, 100% { filter: saturate(0.9); }
+    50% { filter: saturate(1.2); }
   }
   /* Непрерывное движение волнистой змейки (M3 Wavy progress): сдвигаем тайл волны на одну
      длину. Сдвиг берём из --wave-shift, поэтому одна и та же анимация обслуживает и бодрую

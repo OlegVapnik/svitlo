@@ -1,20 +1,22 @@
 {
- "generatedAt": "2026-10-18T04:43:34.614Z",
- "version": "2.19.0",
+ "generatedAt": "2026-10-18T05:00:50.765Z",
+ "version": "2.19.1",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "totalReleases": 16,
  "totalFeatures": 33,
- "totalFixes": 14,
+ "totalFixes": 15,
  "totalOptimizations": 2,
  "releases": [
   {
-   "version": "2.19.0",
+   "version": "2.19.1",
    "date": "2026-10-18",
-   "tag": "Release",
+   "tag": "Update",
    "features": [
     "Діліться графіком, перейменовуйте закладки та швидше знаходьте свою адресу."
    ],
-   "fixes": [],
+   "fixes": [
+    "Адреси Деснянського знаходяться без районної приписки, а графік став виразнішим."
+   ],
    "optimizations": []
   },
   {
@@ -210,7 +212,14 @@
  ],
  "entries": [
   {
-   "hash": "3d6b12d",
+   "hash": "3cf2227",
+   "date": "2026-10-18",
+   "kind": "fix",
+   "label": "Виправлено",
+   "text": "Адреси Деснянського знаходяться без районної приписки, а графік став виразнішим."
+  },
+  {
+   "hash": "2f2dfeb",
    "date": "2026-10-18",
    "kind": "new",
    "label": "Нове",

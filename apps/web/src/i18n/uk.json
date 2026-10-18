@@ -65,6 +65,7 @@
     "heroNoData": "Даних графіка немає",
     "bookmarks": "Мої закладки",
     "addToBookmarks": "Додати в закладки",
+    "addBookmarkShort": "У закладки",
     "renameBookmark": "Перейменувати закладку {{label}}",
     "bookmarkName": "Назва закладки",
     "heroOffNow": "Зараз відключення — до {{time}}",

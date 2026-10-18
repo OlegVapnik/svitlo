@@ -314,6 +314,36 @@ function regionIn(regions: string[], column = 'region'): { clause: string; bindi
   return { clause: `${column} IN (${keys.map(() => '?').join(', ')})`, bindings: keys };
 }
 
+/**
+ * ОСР иногда уточняет одинаковые названия районом: «Коропська дільниця · ДЕСНЯНСЬКЕ».
+ * Поиск показывает человеку короткое «Деснянське», поэтому перед чтением улиц и домов
+ * однозначно переводим короткую форму в каноническое имя каталога. При нескольких совпадениях
+ * ничего не угадываем: остаётся исходное имя, а UI может предложить районные варианты.
+ */
+async function canonicalDirectorySettlement(env: Env, regions: string[], value: string): Promise<string> {
+  const input = value.trim();
+  const normalized = normalizeAddress(input);
+  const filter = regionIn(regions, 'region');
+  if (!normalized || !filter.clause) return input;
+  const cacheRegion = [...regions].sort().join(',');
+  return cached(`canonical-settlement:${cacheRegion}:${normalized}`, async () => {
+    const suffix = ` · ${normalized}`;
+    const qualified = await env.DB.prepare(
+      `SELECT name FROM directory_settlements
+       WHERE ${filter.clause} AND substr(normalized, -length(?)) = ?
+       LIMIT 2`,
+    ).bind(...filter.bindings, suffix, suffix).all<{ name: string }>();
+    if (qualified.results?.length === 1) return qualified.results[0]!.name;
+    if ((qualified.results?.length ?? 0) > 1) return input;
+
+    const exact = await env.DB.prepare(
+      `SELECT name FROM directory_settlements
+       WHERE ${filter.clause} AND normalized = ? LIMIT 1`,
+    ).bind(...filter.bindings, normalized).first<{ name: string }>();
+    return exact?.name ?? input;
+  }, AGGREGATE_CACHE_TTL_MS);
+}
+
 /** Сколько данных у каждой сети многомережной области на дату: слоты, слоты нужной черги, покрытие. */
 async function networkDataOn(
   env: Env,
@@ -3070,12 +3100,12 @@ async function handleAddressConfirm(request: Request, env: Env): Promise<Respons
     return json({ error: { code: 'VALIDATION_ERROR', message: `Невідомий регіон «${requestedRegion}»` } }, 400);
   }
 
-  const settlement = String(payload['settlement'] ?? '').trim();
+  const settlementInput = String(payload['settlement'] ?? '').trim();
   const street = String(payload['street'] ?? '').trim();
   const house = String(payload['house'] ?? '').trim();
   const queue = normalizeQueue(String(payload['queue'] ?? ''));
 
-  if (settlement.length < 2 || settlement.length > 80) {
+  if (settlementInput.length < 2 || settlementInput.length > 80) {
     return json({ error: { code: 'VALIDATION_ERROR', message: 'Населений пункт — від 2 до 80 символів' } }, 400);
   }
   if (street.length < 2 || street.length > 80) {
@@ -3088,6 +3118,7 @@ async function handleAddressConfirm(request: Request, env: Env): Promise<Respons
     return json({ error: { code: 'VALIDATION_ERROR', message: `Невірний код черги «${queue}»` } }, 400);
   }
 
+  const settlement = await canonicalDirectorySettlement(env, [region], settlementInput);
   const settlementNormalized = normalizeAddress(settlement);
   const streetNormalized = normalizeAddress(street);
   const housePattern = normalizeHouseNumber(house);
@@ -4008,10 +4039,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (path === '/addresses/streets') {
-    const settlement = (url.searchParams.get('settlement') ?? '').trim();
+    const settlementInput = (url.searchParams.get('settlement') ?? '').trim();
     const query = (url.searchParams.get('q') ?? '').trim();
-    if (settlement.length < 2) return json({ data: [], wholeSettlementQueue: null });
+    if (settlementInput.length < 2) return json({ data: [], wholeSettlementQueue: null });
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 10) || 10));
+    const settlement = await canonicalDirectorySettlement(env, readRegions, settlementInput);
     const settlementNormalized = normalizeAddress(settlement);
     const needle = normalizeAddress(query);
 
@@ -4082,14 +4114,15 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   if (path === '/addresses/houses') {
     // Дома выбранной улицы вместе с их группами. Это отдельный запрос, а не часть resolve:
     // человек выбирает улицу ещё до дома, и список нужен для чипов «12 → 2/2», а не для ответа.
-    const settlement = (url.searchParams.get('settlement') ?? '').trim();
+    const settlementInput = (url.searchParams.get('settlement') ?? '').trim();
     const street = (url.searchParams.get('street') ?? '').trim();
-    if (settlement.length < 2 || street.length < 2) {
+    if (settlementInput.length < 2 || street.length < 2) {
       return json({ data: [], wholeStreetQueue: null });
     }
     const filter = regionIn(readRegions.length > 0 ? readRegions : ['']);
     if (filter.clause === '') return json({ data: [], wholeStreetQueue: null });
 
+    const settlement = await canonicalDirectorySettlement(env, readRegions, settlementInput);
     const settlementNormalized = normalizeAddress(settlement);
     const streetNormalized = normalizeAddress(street);
     // Ключи — ровно те, по которым ищет индекс address_queues (region + settlement + street).
@@ -4134,10 +4167,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (path === '/addresses/resolve') {
-    const settlement = (url.searchParams.get('settlement') ?? '').trim();
-    if (settlement.length < 2) {
+    const settlementInput = (url.searchParams.get('settlement') ?? '').trim();
+    if (settlementInput.length < 2) {
       return json({ error: { code: 'VALIDATION_ERROR', message: 'settlement обовʼязковий' } }, 400);
     }
+    const settlement = await canonicalDirectorySettlement(env, readRegions, settlementInput);
     const street = (url.searchParams.get('street') ?? '').trim();
     const house = (url.searchParams.get('house') ?? '').trim();
 

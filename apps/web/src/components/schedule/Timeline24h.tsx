@@ -97,28 +97,30 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         <div
           role="region"
           aria-label={t('timeline.barAriaLabel', { date })}
-          className="relative grid h-9 w-full grid-cols-48 items-stretch gap-0.75 rounded-xl border border-hairline bg-surface-container-low p-1"
+          className="relative grid h-12 w-full grid-cols-48 items-stretch gap-0.75 overflow-hidden rounded-2xl border border-hairline bg-gradient-to-b from-surface-container-high to-surface-container-low p-1.5 shadow-inner"
         >
           {slots.map((slot) => {
             // Тон сегмента: свет — спокойный изумруд, отключение — контрастный рубин со
             // штриховкой, «можливо вимкнути» — янтарь, нет графика — глухой цинк.
             const capsuleTone =
               slot.stateCode === 3
-                ? 'border-rose-500/40 bg-rose-500/25'
+                ? 'border-rose-400/50 bg-rose-500/40'
                 : slot.stateCode === 2
-                  ? 'border-amber-500/30 bg-amber-500/20'
+                  ? 'border-amber-400/40 bg-amber-500/30'
                   : slot.stateCode === 1
-                    ? 'border-emerald-500/30 bg-emerald-500/20'
+                    ? 'border-emerald-400/40 bg-emerald-500/30'
                     : 'border-hairline bg-surface-container-high';
 
             return (
               <div
                 key={slot.index}
                 className={cn(
-                  'relative h-full overflow-hidden rounded-sm border transition-opacity duration-200',
+                  'relative h-full overflow-hidden rounded-md border shadow-xs transition-[filter,opacity,transform] duration-300 ease-m3-expressive-fast hover:z-10 hover:-translate-y-0.5 hover:brightness-125',
                   capsuleTone,
                   slot.isPast && 'opacity-55',
+                  slot.stateCode === 3 && 'motion-safe:animate-timeline-breathe',
                 )}
+                style={slot.stateCode === 3 ? { animationDelay: `-${(slot.index % 8) * 170}ms` } : undefined}
                 title={`${slot.rangeLabel}: ${slot.stateName}`}
               >
                 {slot.stateCode === 3 && (
@@ -130,14 +132,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             );
           })}
 
-          {/* Линия «зараз» — только линия. Подпись «Зараз HH:MM» раньше висела белой плашкой
-              ровно на шкале и закрывала сегменты: на телефоне это выглядело как дыра в графике.
-              Теперь время стоит текстом в строке легенды под шкалой, а на самой шкале остаётся
-              тонкая белая риска — видно, где сейчас, и ничего не перекрыто. */}
         </div>
-
-        {/* Маркер поточного часу «Зараз» переехал внутрь шкалы (см. выше): снаружи он
-            выходил за полосу и перекрывал подписи часов. */}
       </div>
 
       {/* Легенда станів: у відключення — та сама штриховка, що в шкалі, щоб не вигадувати
@@ -154,10 +149,6 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               <rect width="12" height="12" rx="2" fill={`url(#${hatchId})`} />
             </svg>
             {t('home.heroOff')}
-          </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-container-high px-2.5 py-1 text-[11px] font-medium text-on-surface-variant">
-            <span className="h-2.5 w-2.5 rounded-full border border-hairline bg-surface-container-high" />
-            {t('timeline.noScheduleShort')}
           </span>
         </div>
         {action}

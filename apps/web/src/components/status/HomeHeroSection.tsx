@@ -501,18 +501,19 @@ export const HomeHeroSection: React.FC = () => {
           disabled={scheduleLoading}
         />
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5"
+            className="gap-1.5 rounded-lg"
             disabled={!selectedQueue}
             onClick={saveCurrentAsBookmark}
             aria-label={t('home.addToBookmarks')}
+            title={t('home.addToBookmarks')}
           >
             <Star className="h-3.5 w-3.5" aria-hidden />
-            {t('home.addToBookmarks')}
+            {t('home.addBookmarkShort')}
           </Button>
 
           {/* Перемикач дати: Сьогодні / Завтра. Прежний был 28px высотой и ролью tablist
@@ -522,7 +523,7 @@ export const HomeHeroSection: React.FC = () => {
             today={t('outages.today')}
             tomorrow={t('outages.tomorrow')}
             onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
-            className="self-start"
+            className="shrink-0"
           />
         </div>
       </div>
