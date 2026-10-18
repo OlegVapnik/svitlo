@@ -2915,75 +2915,123 @@ function dedupeQueues(options: Array<{ housePattern: string; queue: string }>): 
   return result;
 }
 
-/**
- * Народная привязка: человек сам называет очередь своего адреса, если её ещё нет в базе.
- *
- * Ограничения на публикацию сознательные:
- *   - очередь должна быть настоящим кодом (1/1…6/2), иначе в базу попадёт мусор;
- *   - сохраняется ОДИН адрес за раз, без имени и телефона — персональных данных не собираем;
- *   - источник помечается `community`, поэтому в интерфейсе видно, что привязка народная,
- *     и её можно перепроверить, а не выдать за выгрузку оператора.
- */
-async function handleContribute(request: Request, env: Env): Promise<Response> {
-  let body: unknown;
+/** Кворум народной привязки: минимум 3 голоса и не меньше 70% за одну группу. */
+const COMMUNITY_QUORUM_VOTES = 3;
+const COMMUNITY_QUORUM_SHARE = 0.7;
 
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується JSON' } }, 400);
-  }
-  if (typeof body !== 'object' || body === null) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується об’єкт' } }, 400);
-  }
+interface AddressVoteKey {
+  region: string;
+  settlementNorm: string;
+  streetNorm: string;
+  houseNorm: string;
+}
 
-  const payload = body as Record<string, unknown>;
-  const region = String(payload['region'] ?? '').trim();
-  const settlement = String(payload['settlement'] ?? '').trim();
-  const street = String(payload['street'] ?? '').trim();
-  const house = String(payload['house'] ?? '').trim();
-  const queue = normalizeQueue(String(payload['queue'] ?? ''));
-
-  if (!region || settlement.length < 2) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'region і settlement обовʼязкові' } }, 400);
-  }
-  if (!isQueueCode(queue)) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: `Невірний код черги «${queue}»` } }, 400);
-  }
-
-  const housePattern = house || '*';
-  await env.DB.prepare(
-    `INSERT OR REPLACE INTO address_queues
-       (region, settlement_name, settlement_normalized, street_name, street_normalized,
-        house_pattern, queue, source, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'community', ?)`,
-  )
-    .bind(
-      region,
-      settlement,
-      normalizeAddress(settlement),
-      street,
-      normalizeAddress(street),
-      housePattern,
-      queue,
-      new Date().toISOString(),
-    )
-    .run();
-
-  return json({
-    data: { saved: true, queue, source: 'community', housePattern },
-  }, 201);
+interface AddressVoteTally {
+  leaderQueue: string;
+  leaderVotes: number;
+  totalVotes: number;
+  verified: boolean;
 }
 
 /**
- * Подтверждённый жителем адрес → общий справочник D1.
+ * Идентификатор голосующего для антинакрутки.
  *
- * Маршрут отличается от старого `/addresses/contribute` тем, что пишет не только привязку
- * `address_queues`, но и названия населённого пункта и улицы в `directory_*`: без этого
- * следующий человек не увидит подсказку и не сможет подтвердить тот же дом.
+ * IP + User-Agent + установочный id приложения. Хеш, а не сами значения: D1 не должен хранить
+ * IP жителя — для подсчёта голосов достаточно несвязанного с личностью отпечатка. Первые
+ * 16 символов SHA-256 (64 бита) дают достаточную уникальность и короткий первичный ключ.
+ */
+async function addressVoterHash(request: Request, payload: Record<string, unknown>): Promise<string> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? '';
+  const agent = request.headers.get('User-Agent') ?? '';
+  const installId = String(payload['clientInstallId'] ?? '').trim().slice(0, 64);
+  const bytes = new TextEncoder().encode(`${ip}|${agent}|${installId}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16);
+}
+
+/**
+ * Текущее распределение голосов по дому.
  *
- * `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE` намеренно не перезаписывает строку, если
- * ничего не изменилось: D1 на бесплатном тарифе считает каждую запись, а повторные нажатия
- * «Це моя група» не должны расходовать лимит.
+ * `verified` — тот самый кворум. Если голоса разделились (например 2/2 и 2/1), лидер без 70%
+ * остаётся `community_pending`: показывать его как проверенный факт нельзя.
+ */
+async function readAddressVotes(
+  env: Env,
+  key: AddressVoteKey,
+  fallbackQueue = '',
+): Promise<AddressVoteTally> {
+  const rows = await env.DB.prepare(
+    `SELECT queue, COUNT(*) AS votes FROM address_queue_votes
+     WHERE region = ? AND settlement_norm = ? AND street_norm = ? AND house_norm = ?
+     GROUP BY queue ORDER BY votes DESC, queue ASC`,
+  )
+    .bind(key.region, key.settlementNorm, key.streetNorm, key.houseNorm)
+    .all<{ queue: string; votes: number }>();
+
+  const tallies = (rows.results ?? []).map((row) => ({
+    queue: normalizeQueue(row.queue),
+    votes: Number(row.votes) || 0,
+  }));
+  const totalVotes = tallies.reduce((sum, item) => sum + item.votes, 0);
+  const leader = tallies[0] ?? { queue: fallbackQueue, votes: 0 };
+  return {
+    leaderQueue: leader.queue,
+    leaderVotes: leader.votes,
+    totalVotes,
+    verified:
+      leader.votes >= COMMUNITY_QUORUM_VOTES &&
+      totalVotes > 0 &&
+      leader.votes / totalVotes >= COMMUNITY_QUORUM_SHARE,
+  };
+}
+
+/**
+ * Записывает голос и возвращает новое распределение.
+ *
+ * Первичный ключ включает `voter_hash`, поэтому повторная отправка меняет собственный голос,
+ * а не добавляет второй. `WHERE queue <> excluded.queue` не тратит `rows_written`, когда
+ * человек нажал «Підтвердити» повторно с той же группой.
+ */
+async function recordAddressVote(
+  env: Env,
+  key: AddressVoteKey,
+  queue: string,
+  voterHash: string,
+  updatedAt: string,
+): Promise<AddressVoteTally> {
+  await env.DB.prepare(
+    `INSERT INTO address_queue_votes
+       (region, settlement_norm, street_norm, house_norm, voter_hash, queue, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(region, settlement_norm, street_norm, house_norm, voter_hash) DO UPDATE SET
+       queue = excluded.queue,
+       updated_at = excluded.updated_at
+     WHERE address_queue_votes.queue <> excluded.queue`,
+  )
+    .bind(key.region, key.settlementNorm, key.streetNorm, key.houseNorm, voterHash, queue, updatedAt)
+    .run();
+  return readAddressVotes(env, key, queue);
+}
+
+/**
+ * Подтверждённый жителем адрес → голос за очередь и, после кворума, общий справочник D1.
+ *
+ * ПОЧЕМУ ГОЛОСА, А НЕ ПРЯМАЯ ЗАПИСЬ. `/addresses/contribute` раньше делал `INSERT OR REPLACE`
+ * в `address_queues`, и один случайный клик соседа выдавался за проверенную привязку. Теперь
+ * голос ложится в `address_queue_votes` (одна строка на человека и дом), а `address_queues`
+ * пополняется только когда за группу >= 3 голосов и >= 70% — и только для домов, которых нет
+ * в официальном справочнике.
+ *
+ * Названия населённого пункта и улицы пополняют `directory_*`: без этого следующий человек не
+ * увидит подсказку и не сможет подтвердить тот же дом. Существующий `source` не понижается:
+ * справочник `curated` остаётся справочником.
+ *
+ * `WHERE` в upsert'ах намеренно не перезаписывает строку, если ничего не изменилось: D1 на
+ * бесплатном тарифе считает каждую запись, а повторные нажатия «Це моя група» не должны
+ * расходовать лимит.
  */
 async function handleAddressConfirm(request: Request, env: Env): Promise<Response> {
   let body: unknown;
@@ -3028,27 +3076,65 @@ async function handleAddressConfirm(request: Request, env: Env): Promise<Respons
     return json({ error: { code: 'VALIDATION_ERROR', message: 'Адреса не нормалізується' } }, 400);
   }
 
+  // Официальная привязка дома неприкосновенна. Раньше здесь стоял `INSERT ... DO UPDATE`
+  // без проверки источника: один клик мог переписать выгрузку ОСР, и «2/2 из справочника»
+  // молча превращалось в «2/1 от соседа». Теперь голос возвращает официальную группу и не
+  // трогает строку справочника.
+  const existing = await env.DB.prepare(
+    `SELECT queue, source FROM address_queues
+     WHERE region = ? AND settlement_normalized = ? AND street_normalized = ? AND house_pattern = ?`,
+  )
+    .bind(region, settlementNormalized, streetNormalized, housePattern)
+    .first<{ queue: string; source: string }>();
+
+  if (existing && existing.source !== 'community') {
+    return json({
+      data: {
+        saved: false,
+        region,
+        queue: normalizeQueue(existing.queue),
+        source: existing.source,
+        housePattern,
+        confidence: 'official',
+        votesCount: 0,
+        protected: true,
+      },
+    }, 200);
+  }
+
   const updatedAt = new Date().toISOString();
+  const voteKey = {
+    region,
+    settlementNorm: settlementNormalized,
+    streetNorm: streetNormalized,
+    houseNorm: housePattern,
+  };
+  const voterHash = await addressVoterHash(request, payload);
+  const tally = await recordAddressVote(env, voteKey, queue, voterHash, updatedAt);
+
+  // Названия населённого пункта и улицы нужны подсказкам. `source` существующей строки не
+  // понижаем: справочник `curated` остаётся справочником, даже если его дополнил житель.
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO directory_settlements (region, name, normalized, source)
        VALUES (?, ?, ?, 'community')
        ON CONFLICT(region, normalized) DO UPDATE SET
-         name = excluded.name,
-         source = excluded.source
-       WHERE directory_settlements.name <> excluded.name
-          OR directory_settlements.source <> excluded.source`,
+         name = excluded.name
+       WHERE directory_settlements.name <> excluded.name`,
     ).bind(region, settlement, settlementNormalized),
     env.DB.prepare(
       `INSERT INTO directory_streets (region, settlement_normalized, name, normalized, source)
        VALUES (?, ?, ?, ?, 'community')
        ON CONFLICT(region, settlement_normalized, normalized) DO UPDATE SET
-         name = excluded.name,
-         source = excluded.source
-       WHERE directory_streets.name <> excluded.name
-          OR directory_streets.source <> excluded.source`,
+         name = excluded.name
+       WHERE directory_streets.name <> excluded.name`,
     ).bind(region, settlementNormalized, street, streetNormalized),
-    env.DB.prepare(
+  ]);
+
+  // В общий справочник адрес попадает только после кворума. До него голос живёт в
+  // `address_queue_votes`: сосед увидит осторожную подсказку, а не «100% проверенный» факт.
+  if (tally.verified) {
+    await env.DB.prepare(
       `INSERT INTO address_queues
          (region, settlement_name, settlement_normalized, street_name, street_normalized,
           house_pattern, queue, source, updated_at)
@@ -3057,14 +3143,26 @@ async function handleAddressConfirm(request: Request, env: Env): Promise<Respons
          settlement_name = excluded.settlement_name,
          street_name = excluded.street_name,
          queue = excluded.queue,
-         source = excluded.source,
          updated_at = excluded.updated_at
-       WHERE address_queues.settlement_name <> excluded.settlement_name
-          OR address_queues.street_name <> excluded.street_name
-          OR address_queues.queue <> excluded.queue
-          OR address_queues.source <> excluded.source`,
-    ).bind(region, settlement, settlementNormalized, street, streetNormalized, housePattern, queue, updatedAt),
-  ]);
+       WHERE address_queues.source = 'community'
+         AND (address_queues.queue <> excluded.queue
+              OR address_queues.settlement_name <> excluded.settlement_name
+              OR address_queues.street_name <> excluded.street_name)`,
+    )
+      .bind(region, settlement, settlementNormalized, street, streetNormalized, housePattern, tally.leaderQueue, updatedAt)
+      .run();
+  } else {
+    // Кворум распался (например, голос переехал на другую группу): убираем community-строку,
+    // иначе список домов улицы показывал бы «подтверждённую» группу, которой больше нет.
+    // Официальные строки этот DELETE не трогает — фильтр по `source = 'community'`.
+    await env.DB.prepare(
+      `DELETE FROM address_queues
+       WHERE region = ? AND settlement_normalized = ? AND street_normalized = ?
+         AND house_pattern = ? AND source = 'community'`,
+    )
+      .bind(region, settlementNormalized, streetNormalized, housePattern)
+      .run();
+  }
 
   invalidateAddressCache(settlementNormalized);
 
@@ -3072,9 +3170,12 @@ async function handleAddressConfirm(request: Request, env: Env): Promise<Respons
     data: {
       saved: true,
       region,
-      queue,
+      queue: tally.leaderQueue,
       source: 'community',
       housePattern,
+      confidence: tally.verified ? 'community_verified' : 'community_pending',
+      votesCount: tally.leaderVotes,
+      totalVotes: tally.totalVotes,
     },
   }, 201);
 }
@@ -3995,9 +4096,36 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const house = (url.searchParams.get('house') ?? '').trim();
 
     const resolved = await resolveAddress(env, { regions: readRegions, settlement, street, house });
-    if (!resolved.queue) {
+
+    // Народный кворум. Голоса читаем только когда официальной привязки нет: справочник ОСР
+    // сильнее любого числа кликов, и голосование не должно «переголосовать» выгрузку оператора.
+    const officialBinding = Boolean(resolved.queue) && resolved.source !== 'community';
+    const houseNormalized = house ? normalizeHouseNumber(house) : '';
+    const streetNormalized = normalizeAddress(street);
+    let tally: AddressVoteTally | null = null;
+    if (!officialBinding && streetNormalized && houseNormalized) {
+      const votes = await readAddressVotes(env, {
+        region,
+        settlementNorm: normalizeAddress(settlement),
+        streetNorm: streetNormalized,
+        houseNorm: houseNormalized,
+      });
+      if (votes.totalVotes > 0) tally = votes;
+    }
+
+    const communityQueue = !officialBinding && tally ? tally.leaderQueue : null;
+    const queue = communityQueue ?? resolved.queue;
+    if (!queue) {
       return json({
-        data: { queue: null, options: resolved.options, reason: 'not-found', source: null, schedule: null },
+        data: {
+          queue: null,
+          options: resolved.options,
+          reason: 'not-found',
+          source: null,
+          confidence: null,
+          votesCount: 0,
+          schedule: null,
+        },
       });
     }
 
@@ -4007,22 +4135,37 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       loadSlots(env, readRegions, today),
       coverageOfDay(env, readRegions, today),
     ]);
-    const intervals = toIntervals(rows, resolved.queue, today);
+    const intervals = toIntervals(rows, queue, today);
     // Покрытие читаем и здесь: иначе мастер поиска писал «графіку на сьогодні немає» про группу,
     // у которой график опубликован, а отключений в нём нет (та же разница, что в `/schedules`).
-    const queueCovered = coverage.queues.has(resolved.queue) || coverage.queues.has(ALL_CLEAR_QUEUE);
+    const queueCovered = coverage.queues.has(queue) || coverage.queues.has(ALL_CLEAR_QUEUE);
     const covered = queueCovered || intervals.length > 0;
-    const offByFeed = coverage.offQueues.has(resolved.queue);
+    const offByFeed = coverage.offQueues.has(queue);
     // Источник — у самих слотов: жёсткий 'mirror' выдавал данные Telegram за данные зеркала.
     const slotSource = rows.find((row) => row.source)?.source ?? null;
+    // `community_verified` — только реальный кворум. Один-два голоса остаются
+    // `community_pending`, чтобы случайный клик соседа не выглядел проверенным фактом.
+    const confidence = communityQueue
+      ? tally!.verified
+        ? 'community_verified'
+        : 'community_pending'
+      : resolved.source === 'community'
+        ? 'community_verified'
+        : 'official';
     return json({
       data: {
-        queue: resolved.queue,
+        queue,
         options: resolved.options,
-        reason: resolved.reason,
-        source: resolved.source,
+        reason: communityQueue
+          ? tally!.verified
+            ? 'community-verified'
+            : 'community-pending'
+          : resolved.reason,
+        source: communityQueue ? 'community' : resolved.source,
+        confidence,
+        votesCount: communityQueue ? tally!.leaderVotes : 0,
         schedule: {
-          queue: resolved.queue,
+          queue,
           date: today,
           intervals,
           source: intervals.length > 0 ? slotSource : queueCovered ? ([...coverage.sources][0] ?? null) : null,
@@ -4035,7 +4178,9 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (path === '/addresses/confirm') return handleAddressConfirm(request, env);
-  if (path === '/addresses/contribute') return handleContribute(request, env);
+  // Старый маршрут ведёт в тот же кворум: раньше он делал `INSERT OR REPLACE` поверх
+  // официальных привязок, и один запрос мог молча переписать справочник оператора.
+  if (path === '/addresses/contribute') return handleAddressConfirm(request, env);
 
   // Остальные разделы зеркало не отдаёт, и выдумывать их нельзя. Честная пустая выдача:
   // фронтенд на ней показывает свой EmptyState, а не рисует вымышленные отключения.

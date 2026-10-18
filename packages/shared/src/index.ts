@@ -580,11 +580,49 @@ export interface AddressResolveResult {
   /** Найденная группа; null — привязки в базе нет. */
   queue: string | null;
   options: AddressHouseOption[];
-  reason: 'exact-house' | 'whole-street' | 'whole-settlement' | 'not-found';
-  /** Откуда привязка: 'manual' | 'operator' | 'dtek' | 'curated'. */
+  reason:
+    | 'exact-house'
+    | 'whole-street'
+    | 'whole-settlement'
+    | 'not-found'
+    /** Кворум голосов жителей: >= 3 голосов и >= 70% за одну группу. */
+    | 'community-verified'
+    /** 1–2 голоса: подсказка, а не подтверждённый факт. */
+    | 'community-pending';
+  /** Откуда привязка: 'manual' | 'operator' | 'dtek' | 'curated' | 'community'. */
   source: string | null;
+  /**
+   * Насколько привязке можно верить.
+   *
+   * `official` — справочник ОСР/провайдера; `community_verified` — кворум жителей;
+   * `community_pending` — голосов ещё мало (1–2), и один клик соседа не должен выглядеть как
+   * проверенный факт. Старые сборки поля не знают и ведут себя как раньше.
+   */
+  confidence?: AddressQueueConfidence | null;
+  /** Сколько голосов у лидирующей группы по этому дому (0 для официальной привязки). */
+  votesCount?: number;
   /** График найденной группы на сегодня — чтобы не делать второй запрос. */
   schedule: QueueScheduleData | null;
+}
+
+/** Достоверность привязки адреса → очередь. */
+export type AddressQueueConfidence = 'official' | 'community_verified' | 'community_pending';
+
+/** Ответ на голос «це моя черга» (POST /api/v1/addresses/confirm). */
+export interface AddressConfirmResult {
+  saved: boolean;
+  region: string;
+  /** Группа, за которую голос учтён (при защите официальных данных — официальная). */
+  queue: string;
+  source: string;
+  housePattern: string;
+  confidence?: AddressQueueConfidence | null;
+  /** Голоса за лидирующую группу по этому дому. */
+  votesCount?: number;
+  /** Сколько всего голосов по дому (включая голоса за другие группы). */
+  totalVotes?: number;
+  /** true — дом уже есть в справочнике, и голос не перезаписывал официальную привязку. */
+  protected?: boolean;
 }
 
 /** Параметры поиска группы по адресу. */

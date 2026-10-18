@@ -1,5 +1,6 @@
-import type { AddressHousesResponse, AddressResolveResult, AddressStreetsResponse, AppVersionInfo } from '@svitlo/shared';
+import type { AddressConfirmResult, AddressHousesResponse, AddressResolveResult, AddressStreetsResponse, AppVersionInfo } from '@svitlo/shared';
 import { noteServedFromCache, noteServedOnline, readCache, writeCache } from './offline-cache.js';
+import { getClientInstallId } from '../lib/install-id.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] || '/api/v1';
 
@@ -136,26 +137,29 @@ export const api = {
    * либо группой на всё село, либо списком вариантов по улице.
    */
   /**
-   * Народная привязка: человек называет очередь своего адреса, если её нет в базе.
+   * Голос «це моя черга»: очередь дома, которой нет в официальном справочнике.
    *
-   * Имя и телефон не передаём — для привязки они не нужны, а личные данные собирать не должны.
+   * Безопасность: имя и телефон не передаём, только адрес, код черги и случайный id установки.
+   * Один голос на человека и дом; официальные привязки воркер не перезаписывает и возвращает
+   * `protected: true` с группой из справочника.
    */
-  contributeAddressQueue: async (
+  confirmAddressQueue: async (
     params: { region: string; settlement: string; street?: string; house?: string; queue: string },
-  ): Promise<string | null> => {
+  ): Promise<AddressConfirmResult> => {
     const body: Record<string, string> = {
       region: params.region,
       settlement: params.settlement,
       queue: params.queue,
+      clientInstallId: getClientInstallId(),
     };
     if (params.street?.trim()) body['street'] = params.street.trim();
     if (params.house?.trim()) body['house'] = params.house.trim();
-    const res = (await fetcher('/addresses/contribute', {
+    const res = (await fetcher('/addresses/confirm', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-    })) as { data: { saved: boolean; queue: string } | null };
-    return res.data?.saved ? res.data.queue : null;
+    })) as { data: AddressConfirmResult };
+    return res.data;
   },
 
   resolveAddressQueue: async (

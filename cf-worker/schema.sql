@@ -123,6 +123,22 @@ CREATE TABLE IF NOT EXISTS address_queues (
 CREATE INDEX IF NOT EXISTS idx_aq_settlement ON address_queues (region, settlement_normalized);
 CREATE INDEX IF NOT EXISTS idx_aq_queue ON address_queues (region, queue);
 
+-- Голоса жителей за очередь дома. Один человек — один голос на адрес: `voter_hash` считается
+-- на воркере из CF-Connecting-IP + User-Agent + clientInstallId, поэтому повторное нажатие
+-- меняет собственный голос, а не накручивает счётчик. Официальные записи `address_queues`
+-- (`source` не `community`) этими голосами никогда не перезаписываются: кворум нужен только
+-- для домов, которых в справочнике оператора нет.
+CREATE TABLE IF NOT EXISTS address_queue_votes (
+  region TEXT NOT NULL,
+  settlement_norm TEXT NOT NULL,
+  street_norm TEXT NOT NULL,
+  house_norm TEXT NOT NULL,
+  voter_hash TEXT NOT NULL,
+  queue TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (region, settlement_norm, street_norm, house_norm, voter_hash)
+);
+
 -- Справочные данные с. Деснянське: перенесены из apps/api 0004_desnyanske_streets.sql.
 -- Идемпотентно (INSERT OR IGNORE по составному первичному ключу) — повторный прогон безопасен.
 INSERT OR IGNORE INTO directory_settlements (region, name, normalized, source)

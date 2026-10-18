@@ -10,6 +10,7 @@ import {
   ListFilter,
   MapPin,
   Search,
+  Users,
   Zap,
   ZapOff,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ import {
   useAddressLookup,
   useAddressSettlements,
   useAddressStreets,
+  useConfirmAddress,
   useQueues,
   useQueueSchedule,
 } from '../../api/queries.js';
@@ -31,6 +33,7 @@ import {
 import { QueueScheduleBar } from '../schedule/QueueScheduleBar.js';
 import { PlaceNameEditor } from '../places/PlaceNameEditor.js';
 import { Button } from '../ui/Button.js';
+import { Badge } from '../ui/Badge.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { cn } from '../../lib/cn.js';
 import { formatKyivTime } from '../../lib/date.js';
@@ -92,6 +95,17 @@ type SaveFeedback =
   | { kind: 'duplicate'; label: string; queueDiffers: boolean }
   | { kind: 'limit' };
 
+/**
+ * Ответ на голос «це моя черга».
+ *
+ * `protected` — дом уже есть в официальном справочнике, поэтому голос не применён: человек
+ * должен видеть правду, а не «збережено», после которого ничего не изменилось.
+ */
+type VoteFeedback =
+  | { kind: 'saved'; verified: boolean; votes: number }
+  | { kind: 'protected'; queue: string }
+  | { kind: 'error' };
+
 export const AddressWizard: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, setRegion, regions } = useRegion();
@@ -109,8 +123,10 @@ export const AddressWizard: React.FC = () => {
   const [draftIcon, setDraftIcon] = useState<PlaceIcon>('home');
   const [draftPrimary, setDraftPrimary] = useState(true);
   const [saveFeedback, setSaveFeedback] = useState<SaveFeedback | null>(null);
+  const [voteFeedback, setVoteFeedback] = useState<VoteFeedback | null>(null);
 
   const resolve = useAddressLookup();
+  const confirmAddress = useConfirmAddress();
   const streetsQuery = useAddressStreets(currentRegion, settlement, street);
   const housesQuery = useAddressHouses(currentRegion, settlement, street);
   const queuesQuery = useQueues(currentRegion);
@@ -124,6 +140,7 @@ export const AddressWizard: React.FC = () => {
     setConfirmedQueue(null);
     setSaveOpen(false);
     setSaveFeedback(null);
+    setVoteFeedback(null);
   };
 
   const submit = async (overrides: { settlement?: string; street?: string; house?: string } = {}) => {
@@ -274,6 +291,44 @@ export const AddressWizard: React.FC = () => {
     setManualQueue(groupDraft);
     setConfirmedQueue(null);
     setSaveFeedback(null);
+    setVoteFeedback(null);
+  };
+
+  /**
+   * Голос «це моя черга».
+   *
+   * Отправляем только адрес, код черги и случайный id установки — без имени и телефона. Пока
+   * у дома меньше трёх голосов, ответ помечен `community_pending`: сосед увидит осторожную
+   * подсказку, а не «проверенный» факт. Повторное нажатие меняет собственный голос, а не
+   * добавляет второй.
+   */
+  const confirmQueue = async (queueToConfirm: string) => {
+    if (!queueToConfirm || !settlement.trim()) return;
+    setVoteFeedback(null);
+    try {
+      const outcome = await confirmAddress.mutateAsync({
+        region: currentRegion,
+        settlement: settlement.trim(),
+        street: street.trim() || undefined,
+        house: house.trim() || undefined,
+        queue: queueToConfirm,
+      });
+      if (outcome.protected) {
+        setVoteFeedback({ kind: 'protected', queue: outcome.queue });
+        return;
+      }
+      setVoteFeedback({
+        kind: 'saved',
+        verified: outcome.confidence === 'community_verified',
+        votes: outcome.votesCount ?? 0,
+      });
+      hapticTick('confirm');
+      // Перечитываем адрес: кворум мог только что записать дом в справочник, и бейдж должен
+      // показать новое состояние, а не картинку до голоса.
+      void submit();
+    } catch {
+      setVoteFeedback({ kind: 'error' });
+    }
   };
 
   const operator = operatorLink(currentRegion);
@@ -515,6 +570,84 @@ export const AddressWizard: React.FC = () => {
                 <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
                   <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
                   {t('addressWizard.confirmedByYou')}
+                </p>
+              )}
+              {result?.confidence === 'community_verified' && (
+                <p className="mt-1">
+                  <Badge variant="success" className="gap-1">
+                    <BadgeCheck className="h-3 w-3" aria-hidden />
+                    {t('addressWizard.communityVerified', { count: result.votesCount ?? 0 })}
+                  </Badge>
+                </p>
+              )}
+              {result?.confidence === 'community_pending' && result.queue && (
+                <div className="mt-2 space-y-2">
+                  <Badge variant="warning" className="gap-1 whitespace-normal text-left">
+                    <Users className="h-3 w-3 shrink-0" aria-hidden />
+                    {t('addressWizard.communityPending', {
+                      queue: formatQueueLabel(result.queue, currentRegion),
+                      count: result.votesCount ?? 0,
+                    })}
+                  </Badge>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => void confirmQueue(activeQueue)}
+                      disabled={confirmAddress.isPending}
+                      className="gap-1.5"
+                    >
+                      <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                      {t('addressWizard.confirmThisQueue')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        // Возвращаемся к ручному выбору группы: человек не согласен с подсказкой.
+                        setResult(null);
+                        setManualQueue(null);
+                        setVoteFeedback(null);
+                      }}
+                    >
+                      {t('addressWizard.specifyOther')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {manualQueue && (
+                <div className="mt-2 space-y-2">
+                  <p className="text-[11px] leading-snug text-warning">
+                    {t('addressWizard.manualVoteHint')}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void confirmQueue(manualQueue)}
+                    disabled={confirmAddress.isPending}
+                    className="gap-1.5"
+                  >
+                    <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                    {t('addressWizard.confirmThisQueue')}
+                  </Button>
+                </div>
+              )}
+              {voteFeedback?.kind === 'saved' && (
+                <p role="status" className="mt-1 text-[11px] font-semibold text-success">
+                  {voteFeedback.verified
+                    ? t('addressWizard.voteVerified')
+                    : t('addressWizard.votePending', { count: Math.max(0, 3 - voteFeedback.votes) })}
+                </p>
+              )}
+              {voteFeedback?.kind === 'protected' && (
+                <p role="status" className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                  {t('addressWizard.voteProtected', {
+                    queue: formatQueueLabel(voteFeedback.queue, currentRegion),
+                  })}
+                </p>
+              )}
+              {voteFeedback?.kind === 'error' && (
+                <p role="alert" className="mt-1 text-[11px] font-semibold text-destructive">
+                  {t('addressWizard.voteError')}
                 </p>
               )}
             </div>
