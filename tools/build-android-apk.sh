@@ -131,7 +131,7 @@ cd "${REPO_ROOT}"
 
 # Чейджлог генерируется из git. В Docker истории нет, поэтому обновляем до сборки.
 echo ">>> Обновление чейджлога"
-node tools/gen_changelog.mjs --limit 20 || echo "    (пропущено: git недоступен, используем прежний changelog.json)"
+node tools/gen_changelog.mjs --limit 60 || echo "    (пропущено: git недоступен, используем прежний changelog.json)"
 
 # maskable-иконка нужна Vite до сборки. PNG рендерятся позже в Docker.
 echo ">>> Обновление SVG-слоёв иконки"
@@ -139,6 +139,10 @@ node apps/web/scripts/generate-android-icons.mjs --svg-only
 
 BUILD_ID="$(date -u +%Y%m%d-%H%M)"
 echo ">>> Сборка веб-бандла (build ${BUILD_ID})"
+# APK от предыдущей сборки лежит в public и Vite копирует его в dist. Тогда следующая сборка
+# зашила бы старый APK внутрь нового (6 МБ → 13 МБ → 19 МБ). Убираем до сборки; свежий файл
+# кладём обратно после подписи, чтобы Pages отдавал ту же сборку.
+rm -f "${REPO_ROOT}/apps/web/public/svitlo-latest.apk"
 VITE_API_BASE_URL="${API_BASE}" SVITLO_BUILD_ID="${BUILD_ID}" \
   npx --yes pnpm@11 --filter @svitlo/web build
 
