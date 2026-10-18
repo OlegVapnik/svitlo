@@ -33,6 +33,7 @@
  *   node tools/sync-directory-to-d1.mjs --apply           # залить в продовую D1
  *   node tools/sync-directory-to-d1.mjs --apply --verify  # залить и проверить D1 и живой /sync
  *   node tools/sync-directory-to-d1.mjs --apply --local   # залить в локальную D1 (wrangler dev)
+ *   node tools/sync-directory-to-d1.mjs --hierarchy-json .cache/address-hierarchy/chernihiv.json
  *   node tools/sync-directory-to-d1.mjs --only settlements
  *
  * Переменные окружения: SVITLO_WRANGLER, SVITLO_D1_NAME, SVITLO_D1_DIR (куда писать SQL),
@@ -72,12 +73,13 @@ function fatal(message) {
 
 /** Разбор аргументов: только то, что реально нужно, без внешних зависимостей. */
 function parseArgs(argv) {
-  const options = { apply: false, local: false, verify: false, only: null };
+  const options = { apply: false, local: false, verify: false, only: null, hierarchyJson: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--apply') options.apply = true;
     else if (arg === '--local') options.local = true;
     else if (arg === '--verify') options.verify = true;
+    else if (arg === '--hierarchy-json') options.hierarchyJson = argv[++index] ?? null;
     else if (arg === '--only') {
       const values = (argv[index + 1] ?? '').split(',').map((item) => item.trim()).filter(Boolean);
       options.only = new Set(values);
@@ -455,8 +457,8 @@ function statementsForDirectory(rows) {
 }
 
 /**
- * `address_queues` — upsert с условием `source <> 'community'`: повторный прогон обновляет наши
- * привязки, но НИКОГДА не перетирает то, что люди или парсер воркера уже положили в облако.
+ * Обычные выгрузки не перетирают community-привязки. Официальная адресная строка ОСР имеет
+ * приоритет над голосами жителей, поэтому её источник может обновить совпавший community-адрес.
  */
 function statementsForBindings(rows) {
   const statements = [];
@@ -477,20 +479,58 @@ function statementsForBindings(rows) {
         '  queue = excluded.queue,\n' +
         '  source = excluded.source,\n' +
         '  updated_at = excluded.updated_at\n' +
-        "WHERE address_queues.source <> 'community';",
+        "WHERE address_queues.source <> 'community' OR excluded.source = 'chernihivoblenergo-pdf';",
     );
   }
   return statements;
 }
 
-function statementsForStreets(rows) {
-  const statements = [];
+function statementsForStreets(rows, replaceOperatorCatalog = false) {
+  const statements = replaceOperatorCatalog
+    ? ["DELETE FROM directory_streets WHERE source = 'chernihivoblenergo-pdf';"]
+    : [];
   for (const batch of chunks(rows, ROWS_PER_STATEMENT)) {
     const values = batch.map(
       (row) => `  (${[row.region, row.settlement_normalized, row.name, row.normalized, row.source].map(sqlLiteral).join(', ')})`,
     );
     statements.push(
       `INSERT OR IGNORE INTO directory_streets (region, settlement_normalized, name, normalized, source) VALUES\n${values.join(',\n')};`,
+    );
+  }
+  return statements;
+}
+
+function statementsForDirectoryHouses(rows) {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS directory_houses (
+      region TEXT NOT NULL,
+      settlement_normalized TEXT NOT NULL,
+      street_normalized TEXT NOT NULL,
+      house_number TEXT NOT NULL,
+      house_normalized TEXT NOT NULL,
+      queue TEXT,
+      source TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (region, settlement_normalized, street_normalized, house_normalized),
+      FOREIGN KEY (region, settlement_normalized)
+        REFERENCES directory_settlements (region, normalized) ON DELETE CASCADE,
+      FOREIGN KEY (region, settlement_normalized, street_normalized)
+        REFERENCES directory_streets (region, settlement_normalized, normalized) ON DELETE CASCADE
+    );`,
+    'CREATE INDEX IF NOT EXISTS idx_directory_houses_street ON directory_houses (region, settlement_normalized, street_normalized, house_number);',
+    "DELETE FROM directory_houses WHERE source = 'chernihivoblenergo-pdf';",
+    "DELETE FROM address_queues WHERE source = 'chernihivoblenergo-pdf';",
+  ];
+  for (const batch of chunks(rows, ROWS_PER_STATEMENT)) {
+    const values = batch.map((row) => `  (${[
+      row.region, row.settlement_normalized, row.street_normalized, row.house_number, row.house_normalized,
+      row.queue, row.source, row.updated_at,
+    ].map(sqlLiteral).join(', ')})`);
+    statements.push(
+      `INSERT INTO directory_houses (region, settlement_normalized, street_normalized, house_number, house_normalized, queue, source, updated_at) VALUES\n${values.join(',\n')}\n` +
+        'ON CONFLICT(region, settlement_normalized, street_normalized, house_normalized) DO UPDATE SET\n' +
+        '  queue = excluded.queue, source = excluded.source, updated_at = excluded.updated_at\n' +
+        "WHERE directory_houses.source <> 'community' OR excluded.source = 'chernihivoblenergo-pdf';",
     );
   }
   return statements;
@@ -616,7 +656,42 @@ async function main() {
   const katottg = loadKatottg(REGION_KATOTTG);
   const geonames = loadGeoNames();
   const db = loadLocalDatabase();
-
+  const hierarchy = options.hierarchyJson
+    ? readJson(path.resolve(REPO, options.hierarchyJson))
+    : null;
+  const hierarchyRows = hierarchy?.rows ?? [];
+  const hierarchyHouses = hierarchy?.houseRows ?? [];
+  if (hierarchy && (!Array.isArray(hierarchyRows) || hierarchy.region !== 'chernihivska-oblast')) {
+    fatal('JSON-иерархия должна содержать rows и region=chernihivska-oblast');
+  }
+  if (hierarchy && !Array.isArray(hierarchyHouses)) fatal('JSON-иерархия должна содержать houseRows');
+  const invalidHierarchyRow = hierarchyRows.find((row) =>
+    row.region !== 'chernihivska-oblast'
+    || !String(row.settlement ?? '').trim()
+    || !String(row.street ?? '').trim()
+    || !String(row.housePattern ?? '').trim()
+    || !String(row.houseNormalized ?? '').trim()
+    || !/^\d{1,2}\/\d{1,2}$/u.test(String(row.queue ?? ''))
+    || row.source !== 'chernihivoblenergo-pdf');
+  if (invalidHierarchyRow) fatal('JSON-иерархия содержит некорректную или неподдержанную строку');
+  const invalidHouseRow = hierarchyHouses.find((row) =>
+    row.region !== 'chernihivska-oblast'
+    || !String(row.settlement ?? '').trim()
+    || !String(row.street ?? '').trim()
+    || !String(row.housePattern ?? '').trim()
+    || (row.queue !== null && !/^\d{1,2}\/\d{1,2}$/u.test(String(row.queue)))
+    || row.source !== 'chernihivoblenergo-pdf');
+  if (invalidHouseRow) fatal('JSON-иерархия содержит некорректный номер дома или очередь');
+  const importedHouses = hierarchyHouses.map((row) => ({
+    region: row.region,
+    settlement_normalized: row.settlementNormalized,
+    street_normalized: row.streetNormalized,
+    house_number: row.housePattern,
+    house_normalized: row.houseNormalized,
+    queue: row.queue,
+    source: row.source,
+    updated_at: new Date().toISOString(),
+  }));
   const rows = buildRows({
     katottg: katottg.rows,
     geonames: geonames.rows,
@@ -626,10 +701,61 @@ async function main() {
     regionNames: db.regionNames,
   }, normalizeAddress);
 
+  if (hierarchy) {
+    const districtQualifiedBases = new Set(
+      hierarchyHouses.flatMap((house) => {
+        const separator = String(house.settlement ?? '').lastIndexOf(' · ');
+        if (separator < 0) return [];
+        const base = normalizeAddress(String(house.settlement).slice(separator + 3));
+        return base ? [`${house.region}\u0000${base}`] : [];
+      }),
+    );
+    // The operator's PDF splits same-named places by district (for example, two Bakhmachs).
+    // Keep those selectable labels and remove the plain KATOTTG/local alias, which has no streets.
+    rows.settlements = rows.settlements.filter(
+      (row) => !districtQualifiedBases.has(`${row.region}\u0000${row.normalized}`),
+    );
+    const settlementKeys = new Set(rows.settlements.map((row) => `${row.region}\u0000${row.normalized}`));
+    const streetKeys = new Set(rows.streets.map((row) => `${row.region}\u0000${row.settlement_normalized}\u0000${row.normalized}`));
+    const settlementNames = new Map();
+    const streetNames = new Map();
+    for (const house of hierarchyHouses) {
+      settlementNames.set(house.settlementNormalized, house.settlement);
+      streetNames.set(
+        `${house.settlementNormalized}\u0000${house.streetNormalized}`,
+        house.street,
+      );
+    }
+    for (const row of importedHouses) {
+      const settlementKey = `${row.region}\u0000${row.settlement_normalized}`;
+      if (!settlementKeys.has(settlementKey)) {
+        rows.settlements.push({
+          region: row.region,
+          name: settlementNames.get(row.settlement_normalized) ?? row.settlement_normalized,
+          normalized: row.settlement_normalized,
+          source: 'chernihivoblenergo-pdf',
+        });
+        settlementKeys.add(settlementKey);
+      }
+      const streetKey = `${row.region}\u0000${row.settlement_normalized}\u0000${row.street_normalized}`;
+      if (!streetKeys.has(streetKey)) {
+        rows.streets.push({
+          region: row.region,
+          settlement_normalized: row.settlement_normalized,
+          name: streetNames.get(`${row.settlement_normalized}\u0000${row.street_normalized}`) ?? row.street_normalized,
+          normalized: row.street_normalized,
+          source: 'chernihivoblenergo-pdf',
+        });
+        streetKeys.add(streetKey);
+      }
+    }
+  }
+
   // Стоп-кран до записи в D1: тестовая строка в справочнике выглядит как настоящий адрес,
   // поэтому не «предупреждаем и едем дальше», а падаем с понятной причиной.
   assertDirectoryNamesClean(
-    [...katottg.rows, ...geonames.rows, ...db.localSettlements, ...db.addressQueues],
+    [...katottg.rows, ...geonames.rows, ...db.localSettlements, ...db.addressQueues,
+      ...hierarchyHouses.map((row) => ({ region: row.region, settlement_name: row.settlement, street_name: row.street }))],
     'источники справочника',
   );
   assertDirectoryNamesClean(rows.settlements, 'directory_settlements');
@@ -643,6 +769,8 @@ async function main() {
   log(db.available
     ? `Локальная база: привязок ${db.addressQueues.length}, НП с чергами ${db.settlementQueues.length}, НП ${db.localSettlements.length}, улиц без НП ${db.streetQueues}`
     : `Локальная база недоступна (${db.reason}) — переношу только справочник из файлов репозитория`);
+  if (hierarchy) log(`PDF-иерархия: ${hierarchyRows.length} адресных строк из ${hierarchy.source ?? 'JSON'}`);
+  if (hierarchy) log(`Каталог домов: ${importedHouses.length}, конфликтных без очереди: ${hierarchy.conflicts?.length ?? 0}`);
 
   log('');
   log('В D1 уедет:');
@@ -665,16 +793,44 @@ async function main() {
   if (wantSettlements) {
     writeSqlFiles(
       'directory_settlements',
-      statementsForDirectory(rows.settlements),
+      [
+        ...(hierarchy ? ["DELETE FROM directory_settlements WHERE source = 'chernihivoblenergo-pdf';"] : []),
+        ...(hierarchy
+          ? [...new Set(hierarchyHouses.flatMap((house) => {
+              const separator = String(house.settlement ?? '').lastIndexOf(' · ');
+              if (separator < 0) return [];
+              const base = normalizeAddress(String(house.settlement).slice(separator + 3));
+              return base ? [`DELETE FROM directory_settlements WHERE region = ${sqlLiteral(house.region)} AND normalized = ${sqlLiteral(base)};`] : [];
+            }))]
+          : []),
+        ...statementsForDirectory(rows.settlements),
+      ],
       '-- Справочник НП для офлайн-поиска адреса. Источник: tools/sync-directory-to-d1.mjs',
     );
   }
   if (wantAddresses) {
     writeSqlFiles(
       'directory_streets',
-      statementsForStreets(rows.streets),
+      [
+        ...(hierarchy
+          ? [...new Set(hierarchyHouses.flatMap((house) => {
+              const separator = String(house.settlement ?? '').lastIndexOf(' · ');
+              if (separator < 0) return [];
+              const base = normalizeAddress(String(house.settlement).slice(separator + 3));
+              return base ? [`DELETE FROM directory_streets WHERE region = ${sqlLiteral(house.region)} AND settlement_normalized = ${sqlLiteral(base)};`] : [];
+            }))]
+          : []),
+        ...statementsForStreets(rows.streets, Boolean(hierarchy)),
+      ],
       '-- Улицы из подтверждённых привязок «адрес → черга». Источник: tools/sync-directory-to-d1.mjs',
     );
+    if (hierarchy) {
+      writeSqlFiles(
+        'directory_houses',
+        statementsForDirectoryHouses(importedHouses),
+        '-- Иерархический каталог домов из проверенного снимка оператора.',
+      );
+    }
     writeSqlFiles(
       'address_queues',
       statementsForBindings(rows.bindings),

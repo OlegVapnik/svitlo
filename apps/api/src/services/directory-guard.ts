@@ -1,9 +1,8 @@
 /**
  * Защита справочника от тестовых записей.
  *
- * Слова `тест/test/demo/xxx` в названии населённого пункта или улицы означают, что в прод
- * попали данные стенда. Один такой адрес выглядит как настоящий, поэтому синхронизация должна
- * остановиться ДО записи в D1, а не «предупредить и продолжить».
+ * Маркеры `тест/test` в начале названия и отдельные слова `демо/demo/xxx` означают,
+ * что в прод попали данные стенда. Совпадение проверяется до записи в D1.
  */
 export const FORBIDDEN_DIRECTORY_TOKENS = ['тест', 'test', 'демо', 'demo', 'xxx'] as const;
 
@@ -23,7 +22,10 @@ export interface ForbiddenDirectoryRow {
 export function directoryNameHasTestMarker(value: unknown): boolean {
   const text = String(value ?? '').trim().toLocaleLowerCase('uk-UA');
   if (!text) return false;
-  return FORBIDDEN_DIRECTORY_TOKENS.some((token) => text.includes(token));
+  // «Демократична» — реальное название улицы: совпадение «демо» внутри слова ложно блокирует
+  // импорт. «Тестова» остаётся маркером фикстуры, а «демо/demo/xxx» считаются только целыми словами.
+  if (text.includes('тест') || text.includes('test')) return true;
+  return /(?:^|[^а-яіїєґa-z0-9])(?:демо|demo|xxx)(?:$|[^а-яіїєґa-z0-9])/u.test(text);
 }
 
 export function findForbiddenDirectoryRows(rows: readonly DirectoryNameRow[]): ForbiddenDirectoryRow[] {

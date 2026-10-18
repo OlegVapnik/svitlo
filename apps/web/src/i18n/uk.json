@@ -614,6 +614,7 @@
     "quickCities": "Швидкий вибір міста",
     "quickStreets": "Вулиці цього населеного пункту",
     "quickHouses": "Оберіть свій будинок",
+    "houseQueueUnknown": "група уточнюється",
     "loadingStreets": "Шукаємо вулиці…",
     "loadingHouses": "Шукаємо будинки…",
     "wholeSettlementQueue": "На весь населений пункт діє черга {{queue}}",

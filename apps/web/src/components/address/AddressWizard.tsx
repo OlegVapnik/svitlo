@@ -73,7 +73,9 @@ function houseNumberValue(value: string): number | null {
 
 /** Одиночный номер дома, а не диапазон/список: только такие показываем чипами. */
 function isSingleHouse(value: string): boolean {
-  return /^\d{1,5}\s*(?:[/-]?\s*[a-zа-яіїє])?$/iu.test(String(value ?? '').trim());
+  return /^\d{1,5}(?:\s*[a-zа-яіїє])?(?:(?:\s*[\/\\]\s*\d{1,5}(?:[a-zа-яіїє])?)|(?:\s+к\.?\s*\d{1,5}))?$/iu.test(
+    String(value ?? '').trim(),
+  );
 }
 
 function sortQueues(left: string, right: string): number {
@@ -917,7 +919,9 @@ const HouseChips: React.FC<{
             className="min-h-9 rounded-full border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
           >
             {option.housePattern}
-            <span className="ml-1 text-[10px] font-bold text-primary">{option.queue}</span>
+            <span className={cn('ml-1 text-[10px] font-bold', option.queue ? 'text-primary' : 'text-muted-foreground')}>
+              {option.queue || t('addressWizard.houseQueueUnknown')}
+            </span>
           </button>
         ))}
       </div>

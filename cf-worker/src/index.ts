@@ -2833,6 +2833,26 @@ async function resolveAddress(
   // Без области искать негде: привязки размечены по областям, и запрос «по всей стране» вернул бы
   // чужой адрес. Раньше сюда подставлялся пустой `region = ''` — тот же «не найдено», но с запросом.
   if (filter.clause === '') return { queue: null, reason: 'not-found', source: null, options: [] };
+  const streetNormalized = normalizeAddress(input.street);
+  if (streetNormalized && input.house) {
+    const catalogHouses = await env.DB.prepare(
+      `SELECT house_number, queue, source FROM directory_houses
+       WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
+         AND house_normalized = ?
+       LIMIT 1`,
+    )
+      .bind(...filter.bindings, settlementNormalized, streetNormalized, normalizeHouseNumber(input.house))
+      .all<{ house_number: string; queue: string | null; source: string }>();
+    const exactCatalogHouse = catalogHouses.results?.[0];
+    if (exactCatalogHouse) {
+      return {
+        queue: exactCatalogHouse.queue ? normalizeQueue(exactCatalogHouse.queue) : null,
+        reason: exactCatalogHouse.queue ? 'exact-house' : 'not-found',
+        source: exactCatalogHouse.queue ? exactCatalogHouse.source : null,
+        options: [],
+      };
+    }
+  }
   const rows = await env.DB.prepare(
     `SELECT region, settlement_name, settlement_normalized, street_name, street_normalized,
             house_pattern, queue, source, updated_at
@@ -2844,7 +2864,6 @@ async function resolveAddress(
     return { queue: null, reason: 'not-found', source: null, options: [] };
   }
 
-  const streetNormalized = normalizeAddress(input.street);
   // `mirror` — это «в населённом пункте есть такие-то группы», а не «вся улица/село относится
   // к одной группе». Синхронизатор справочника когда-то схлопывал такие строки в одну и подставлял
   // первую группу; для Киева это давало ложное «1/1 на весь город». Такие подсказки не используем:
@@ -4064,7 +4083,16 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Результат живёт 10 минут: справочник меняется импортом, а не каждым нажатием чипа.
     const cacheKey = `address-houses:${filter.clause}:${filter.bindings.join(',')}:${settlementNormalized}:${streetNormalized}`;
     const result = await cached(cacheKey, async () => {
-      const rows = await env.DB.prepare(
+      const directoryRows = await env.DB.prepare(
+        `SELECT house_number AS house_pattern, queue FROM directory_houses
+         WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
+         ORDER BY house_number
+         LIMIT 200`,
+      )
+        .bind(...filter.bindings, settlementNormalized, streetNormalized)
+        .all<{ house_pattern: string; queue: string | null }>();
+      const knownHouseNumbers = new Set((directoryRows.results ?? []).map((row) => row.house_pattern));
+      const legacyRows = await env.DB.prepare(
         `SELECT house_pattern, queue FROM address_queues
          WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
          ORDER BY house_pattern
@@ -4073,15 +4101,20 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         .bind(...filter.bindings, settlementNormalized, streetNormalized)
         .all<{ house_pattern: string; queue: string }>();
 
-      const entries = rows.results ?? [];
-      const whole = entries.find((row) => row.house_pattern === '*' || row.house_pattern === '');
+      const entries = [
+        ...(directoryRows.results ?? []).map((row) => ({ ...row, source: 'directory' })),
+        ...(legacyRows.results ?? [])
+          .filter((row) => !knownHouseNumbers.has(row.house_pattern))
+          .map((row) => ({ ...row, source: 'legacy' })),
+      ];
+      const whole = entries.find((row) => (row.house_pattern === '*' || row.house_pattern === '') && row.queue);
       const houses = dedupeQueues(
         entries
           .filter((row) => row.house_pattern !== '*' && row.house_pattern !== '')
-          .map((row) => ({ housePattern: row.house_pattern, queue: normalizeQueue(row.queue) })),
+          .map((row) => ({ housePattern: row.house_pattern, queue: row.queue ? normalizeQueue(row.queue) : '' })),
       );
 
-      return { data: houses, wholeStreetQueue: whole ? normalizeQueue(whole.queue) : null };
+      return { data: houses, wholeStreetQueue: whole?.queue ? normalizeQueue(whole.queue) : null };
     }, AGGREGATE_CACHE_TTL_MS);
 
     return json(result);

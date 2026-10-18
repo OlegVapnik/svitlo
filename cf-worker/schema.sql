@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS directory_streets (
   PRIMARY KEY (region, settlement_normalized, normalized)
 );
 
+-- Точний каталог будинків ОСР. NULL queue означає, що PDF призначає адресу кільком підчергам;
+-- будинок лишається доступним у каскаді, але інтерфейс не обирає одну групу навмання.
+CREATE TABLE IF NOT EXISTS directory_houses (
+  region TEXT NOT NULL,
+  settlement_normalized TEXT NOT NULL,
+  street_normalized TEXT NOT NULL,
+  house_number TEXT NOT NULL,
+  house_normalized TEXT NOT NULL,
+  queue TEXT,
+  source TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (region, settlement_normalized, street_normalized, house_normalized),
+  FOREIGN KEY (region, settlement_normalized)
+    REFERENCES directory_settlements (region, normalized) ON DELETE CASCADE,
+  FOREIGN KEY (region, settlement_normalized, street_normalized)
+    REFERENCES directory_streets (region, settlement_normalized, normalized) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_directory_houses_street
+  ON directory_houses (region, settlement_normalized, street_normalized, house_number);
+
 -- Привязка адрес → очередь. Совпадает с таблицей в Node-бэкенде (миграция 0017).
 -- `house_pattern` = '*' — вся улица; иначе «12», «2, 4, 6А» или «1-19».
 CREATE TABLE IF NOT EXISTS address_queues (
