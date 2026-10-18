@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
+  BadgeCheck,
   Briefcase,
   CalendarDays,
   Check,
@@ -400,6 +401,12 @@ export const HomeHeroSection: React.FC = () => {
                     <BookmarkIcon className="h-4 w-4" strokeWidth={2.2} aria-hidden />
                   )}
                   <span className="max-w-40 truncate">{bm.label}</span>
+                  {bm.addressConfirmed && (
+                    <BadgeCheck
+                      className="h-3.5 w-3.5 text-primary"
+                      aria-label={t('addressWizard.confirmedByYou')}
+                    />
+                  )}
                   <span className="rounded-full bg-surface-container-highest px-2 py-0.5 text-[11px] font-bold text-on-surface-variant tabular">
                     {bm.queue}
                   </span>

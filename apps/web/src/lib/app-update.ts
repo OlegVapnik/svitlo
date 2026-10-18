@@ -9,6 +9,8 @@ import type { ChangelogRelease } from '@svitlo/shared';
  */
 
 export const LAST_SEEN_VERSION_KEY = 'svitlo_last_seen_version';
+/** Версия, для которой человек нажал «Пізніше»: окно для неё больше не показываем. */
+export const DISMISSED_VERSION_KEY = 'svitlo_dismissed_version';
 export const APK_FILE_NAME = 'svitlo-latest.apk';
 
 /** Публичный адрес Pages. APK лежит рядом с сайтом, поэтому ссылка не зависит от API-домена. */
@@ -121,7 +123,7 @@ export function markVersionSeen(version: string): void {
 }
 
 export interface NativeUpdateBridge {
-  downloadUpdate: (apkUrl: string) => boolean;
+  downloadUpdate: (apkUrl: string, sha256: string) => boolean;
 }
 
 function nativeBridge(): NativeUpdateBridge | null {
@@ -137,12 +139,14 @@ export function isNativeApp(): boolean {
 /**
  * Скачивание APK. В Android-обёртке — системный DownloadManager через мост; в браузере —
  * обычное открытие файла, потому что установить APK из PWA всё равно нельзя.
+ *
+ * SHA-256 передаём мосту обязательно: без него проверка файла перед установкой невозможна.
  */
-export function downloadAndroidUpdate(url = apkDownloadUrl()): boolean {
+export function downloadAndroidUpdate(url = apkDownloadUrl(), sha256 = ''): boolean {
   const bridge = nativeBridge();
   if (bridge) {
     try {
-      return bridge.downloadUpdate(url);
+      return bridge.downloadUpdate(url, sha256);
     } catch {
       return false;
     }
@@ -150,6 +154,26 @@ export function downloadAndroidUpdate(url = apkDownloadUrl()): boolean {
   if (typeof window === 'undefined') return false;
   window.open(url, '_blank', 'noopener,noreferrer');
   return true;
+}
+
+/** Запоминает версию, от которой человек отказался. */
+export function dismissVersion(version: string): void {
+  if (!parseVersion(version)) return;
+  try {
+    localStorage.setItem(DISMISSED_VERSION_KEY, version);
+  } catch {
+    // Приватный режим: окно может появиться снова — это допустимо.
+  }
+}
+
+/** Версия, для которой уже нажали «Пізніше». */
+export function readDismissedVersion(): string | null {
+  try {
+    const value = typeof localStorage === 'undefined' ? null : localStorage.getItem(DISMISSED_VERSION_KEY);
+    return parseVersion(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Удаляет кэши и регистрации Service Worker, чтобы после reload загрузился новый бандл. */
@@ -171,8 +195,31 @@ export async function clearWebCaches(): Promise<void> {
   }
 }
 
-/** Обновление веб-версии: сброс кэша и жёсткая перезагрузка на свежий бандл. */
+/**
+ * Просит активный Service Worker активировать новую версию и забрать открытые вкладки.
+ *
+ * `selfDestroying` в vite.config.ts оставляет SW, который сам себя удаляет, но старые установки
+ * PWA могли сохранить обычный Workbox-SW. Поэтому отправляем оба сигнала и не ждём ответа:
+ * страница сейчас перезагрузится, и ожидание ответа только растянуло бы обновление.
+ */
+async function activateServiceWorkerUpdate(): Promise<void> {
+  try {
+    const registrations = await navigator.serviceWorker?.getRegistrations?.();
+    for (const registration of registrations ?? []) {
+      registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+      registration.active?.postMessage({ type: 'CLIENTS_CLAIM' });
+    }
+    navigator.serviceWorker?.controller?.postMessage({ type: 'SKIP_WAITING' });
+    navigator.serviceWorker?.controller?.postMessage({ type: 'CLIENTS_CLAIM' });
+    await navigator.serviceWorker?.ready;
+  } catch {
+    // Нет Service Worker — PWA работает и без него, обновление всё равно возможно.
+  }
+}
+
+/** Обновление веб-версии: активируем новый SW, сбрасываем кэш и перезагружаем страницу. */
 export async function reloadWebApp(): Promise<void> {
+  await activateServiceWorkerUpdate();
   await clearWebCaches();
   window.location.reload();
 }

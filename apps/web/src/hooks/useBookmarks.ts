@@ -25,6 +25,11 @@ export interface Bookmark {
   queue: string;
   /** Головна закладка — та, що показується в герої на головній, якщо декілька. */
   isPrimary?: boolean;
+  /**
+   * Адресу підтвердив сам користувач кнопкою «Це моя група». Це не дані оператора, тому в
+   * закладці окрема помітка: не можна видавати локальне підтвердження за офіційну привʼязку.
+   */
+  addressConfirmed?: boolean;
 }
 
 interface StoredBookmarks {
@@ -120,7 +125,11 @@ export function useBookmarks() {
         // через що «Дім» і «Робота» на одній групі не могли існувати разом, а старе назва
         // зникало без запиту. Тепер існуючу закладку не чіпаємо: перейменувати її можна
         // явно (renameBookmark), додавання — не приховане редагування.
-        next = prev;
+        // Єдиний виняток — підтвердження адреси: якщо людина натиснула «Це моя група»,
+        // помітка має зʼявитися навіть у раніше збереженій закладці.
+        next = input.addressConfirmed
+          ? prev.map((bookmark) => (bookmark.id === existing.id ? { ...bookmark, addressConfirmed: true } : bookmark))
+          : prev;
         createdId = existing.id;
       } else {
         createdId = makeId();
@@ -132,6 +141,7 @@ export function useBookmarks() {
           streetName: input.streetName,
           queue,
           isPrimary: prev.length === 0 ? true : input.isPrimary,
+          ...(input.addressConfirmed ? { addressConfirmed: true } : {}),
         }];
       }
       persistBookmarks(next);

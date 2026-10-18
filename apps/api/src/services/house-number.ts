@@ -23,10 +23,37 @@ export function parseHouseNumber(raw: string): number | null {
 }
 
 /**
+ * Кириллические буквы, которые визуально совпадают с латинскими.
+ *
+ * Пользователь может набрать «100А» кириллицей или «100A» латиницей — с точки зрения дома это
+ * один адрес. Без приведения один и тот же номер искался бы только при точном совпадении
+ * раскладки, а человек видел бы «привʼязки немає».
+ */
+const HOUSE_HOMOGLYPHS: Record<string, string> = {
+  а: 'a', в: 'b', с: 'c', е: 'e', н: 'h', і: 'i', ї: 'i', к: 'k',
+  м: 'm', о: 'o', р: 'p', т: 't', х: 'x', у: 'y',
+};
+
+/**
+ * Канонический ключ дома: «100/А», «100а», «100 А», «100-А», «100A» → «100a».
+ *
+ * Разделитель перед буквенным суффиксом не важен, а буква-омоглиф приводится к латинице.
+ * Дробные корпуса («100/1») сохраняют косую черту: это отдельный дом, а не «1001».
+ */
+export function normalizeHouseNumber(raw: string): string {
+  let value = String(raw ?? '').normalize('NFKC').trim().toLowerCase();
+  value = value.replace(/[а-яіїє]/gu, (char) => HOUSE_HOMOGLYPHS[char] ?? char);
+  value = value.replace(/\s+/gu, '').replace(/[-–—]+/gu, '');
+  // «100/А» — буквенный суффикс: косую черту убираем. «100/1» — корпус: оставляем.
+  value = value.replace(/^(\d+)\/([a-z])$/u, '$1$2');
+  return value.replace(/[^0-9a-z/]/gu, '');
+}
+
+/**
  * Попадает ли номер дома под шаблон привязки.
  *
- * Регистр не учитывается: «12а» и «12А» — один и тот же дом, буквенный суффикс различает
- * корпуса одного адреса и для определения группы значения не имеет.
+ * Сравниваются канонические ключи, поэтому «12а» и «12А» — один дом, а «100А» и «100Б» —
+ * разные. Числовые диапазоны («1-19») по-прежнему сравниваются по числу.
  */
 export function matchHouseNumber(houseInput: string, pattern: string): boolean {
   const trimmedPattern = String(pattern ?? '').trim();
@@ -35,12 +62,13 @@ export function matchHouseNumber(houseInput: string, pattern: string): boolean {
 
   const house = parseHouseNumber(houseInput);
   if (house === null) return false;
+  const houseKey = normalizeHouseNumber(houseInput);
 
   for (const rawPart of trimmedPattern.split(',')) {
     const part = rawPart.trim();
     if (part === '' || part === '*') return true;
 
-    // Дилемеры всех трёх типов (короткое, длинное, тире) — в выгрузках встречаются разные.
+    // Разделители всех трёх типов (короткое, длинное, тире) — в выгрузках встречаются разные.
     const range = part.match(/^(\d{1,5})\s*[-–—]\s*(\d{1,5})$/u);
     if (range) {
       const first = Number.parseInt(range[1]!, 10);
@@ -52,8 +80,7 @@ export function matchHouseNumber(houseInput: string, pattern: string): boolean {
       continue;
     }
 
-    const exact = parseHouseNumber(part);
-    if (exact !== null && exact === house) return true;
+    if (normalizeHouseNumber(part) === houseKey) return true;
   }
   return false;
 }

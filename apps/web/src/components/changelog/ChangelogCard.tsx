@@ -104,7 +104,7 @@ export const ChangelogCard: React.FC = () => {
         <span className="text-[11px] font-semibold text-primary">{t('updates.openHistory')}</span>
       </button>
 
-      <UpdateSheet open={open} onClose={() => setOpen(false)} file={file} bundled={!serverFile} />
+      {open && <UpdateSheet open onClose={() => setOpen(false)} file={file} bundled={!serverFile} />}
     </>
   );
 };

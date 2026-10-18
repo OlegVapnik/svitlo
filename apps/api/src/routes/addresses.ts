@@ -5,12 +5,12 @@ import {
   importAddressQueuesBatch,
   isQueueCode,
   listAddressHouses,
-  liveLookupFromProvider,
   resolveQueueByAddress,
   suggestSettlements,
   suggestStreets,
   type ImportRow,
 } from '../services/address-lookup.service.js';
+import { lookupOpenAddressProviders } from '../services/address-queue-provider.js';
 import { getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
 import { isAllClear, mirrorDayCoverage, peekMirrorSnapshot } from '../services/mirror-schedule.service.js';
 import { readRegionParam } from '../services/regions.service.js';
@@ -101,7 +101,7 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
    * группа неизвестна, и это правда.
    */
   fastify.get<{
-    Querystring: { region?: string; settlement?: string; street?: string; house?: string; live?: string };
+    Querystring: { region?: string; settlement?: string; street?: string; house?: string };
   }>('/api/v1/addresses/resolve', async (request, reply) => {
     const settlement = (request.query.settlement ?? '').trim();
     if (settlement.length < 2) {
@@ -110,16 +110,26 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
     const region = readRegionParam(request.query.region);
     const street = (request.query.street ?? '').trim();
     const house = (request.query.house ?? '').trim();
-    const allowLive = request.query.live !== 'false';
 
     reply.header('Cache-Control', 'no-store');
 
     let resolved = await resolveQueueByAddress({ region, settlement, street, house });
 
-    // Не нашли и разрешена живая подкачка — спрашиваем провайдера ровно один раз.
-    if (resolved.queue === null && allowLive && street) {
-      const fetched = await liveLookupFromProvider({ region, settlement, street });
+    // Спрашиваем только ОТКРЫТЫЕ официальные источники. Закрытые (логин/капча/WAF) не трогаем:
+    // это не «недоработка», а сознательный отказ от обхода защиты.
+    if (resolved.queue === null && street) {
+      const fetched = await lookupOpenAddressProviders({ region, settlement, street, house });
       if (fetched.length > 0) {
+        await importAddressQueuesBatch(
+          fetched.map((row) => ({
+            region,
+            settlement,
+            street,
+            housePattern: row.housePattern,
+            queue: row.queue,
+          })),
+          'operator',
+        );
         resolved = await resolveQueueByAddress({ region, settlement, street, house });
       }
     }

@@ -258,6 +258,46 @@ if [[ "${BUILD_TYPE}" == release ]]; then
   mkdir -p "$(dirname "${PUBLIC_APK}")"
   install -m 644 "${APK}" "${PUBLIC_APK}"
   echo ">>> APK для OTA: ${PUBLIC_APK} ($(du -h "${PUBLIC_APK}" | cut -f1))"
+
+  # Публикуем метаданные ровно того файла, который только что подписан. SHA-256 и размер
+  # считаются здесь, а не руками: иначе клиент скачал бы APK, хеш которого не совпадает,
+  # и нативная обёртка справедливо отказалась бы устанавливать файл.
+  APK_URL="${SVITLO_APK_URL:-https://svitlo-ua-4ze.pages.dev/svitlo-latest.apk}"
+  python3 - "${REPO_ROOT}" "${PUBLIC_APK}" "${APP_VERSION}" "${APK_URL}" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+from datetime import datetime, timezone
+
+repo = pathlib.Path(sys.argv[1])
+apk = pathlib.Path(sys.argv[2])
+version = sys.argv[3]
+apk_url = sys.argv[4]
+changelog_path = repo / 'apps/web/src/data/changelog.json'
+try:
+    changelog = json.loads(changelog_path.read_text(encoding='utf-8'))
+    release = (changelog.get('releases') or [{}])[0]
+except Exception:
+    release = {}
+notes = []
+for key in ('features', 'fixes', 'optimizations'):
+    notes.extend(release.get(key) or [])
+payload = {
+    'version': version,
+    'apkUrl': apk_url,
+    'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+    'sizeBytes': apk.stat().st_size,
+    'releasedAt': datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
+    'notes': notes[:8],
+}
+text = json.dumps(payload, ensure_ascii=False, indent=2) + '\n'
+for relative in ('cf-worker/src/data/version.json', 'apps/api/src/data/version.json'):
+    target = repo / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding='utf-8')
+print(f">>> Версия {version}, SHA-256 {payload['sha256'][:12]}…, {payload['sizeBytes']} байт")
+PY
 fi
 
 echo ">>> Готово"

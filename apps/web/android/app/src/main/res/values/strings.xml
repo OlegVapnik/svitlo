@@ -14,4 +14,7 @@
     <string name="update_download_title">Оновлення Svitlo</string>
     <string name="update_download_description">Завантажуємо нову версію застосунку</string>
     <string name="update_download_started">Завантаження оновлення почалося</string>
+    <string name="update_download_corrupted">Файл оновлення пошкоджено (SHA-256 не збігається). Завантажте ще раз.</string>
+    <string name="update_download_failed">Не вдалося відкрити встановлення. Спробуйте ще раз.</string>
+    <string name="update_allow_install">Дозвольте встановлення з невідомих джерел для Svitlo і повторіть оновлення.</string>
 </resources>

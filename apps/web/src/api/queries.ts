@@ -16,6 +16,7 @@ import type {
   NewsListResponse,
   NewsSourcesResponse,
   ChangelogFile,
+  AppVersionInfo,
   AddressResolveInput,
   AddressHousesResponse,
   AddressStreetsResponse,
@@ -319,6 +320,21 @@ export const useChangelog = () =>
     staleTime: 10 * 60_000,
     refetchInterval: 30 * 60_000,
     retry: 1,
+  });
+
+/**
+ * Последняя серверная сборка. Опрашиваем при запуске и раз в 6 часов, пока приложение открыто.
+ * Ошибку сети наружу не показываем: отсутствие связи — не повод рисовать красную плашку, окно
+ * обновления просто появится при следующем успешном запуске.
+ */
+export const useAppVersion = () =>
+  useQuery<{ data: AppVersionInfo }>({
+    queryKey: ['appVersion'],
+    queryFn: ({ signal }) => api.fetchVersion(signal),
+    staleTime: 6 * 60 * 60_000,
+    refetchInterval: 6 * 60 * 60_000,
+    refetchOnWindowFocus: true,
+    retry: 0,
   });
 
 /** Джерела збору новин: скільки їх і чи не сиплються (lastError видно в UI). */

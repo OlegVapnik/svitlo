@@ -17,12 +17,29 @@ export function parseHouseNumber(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** Кириллические омоглифы латинских букв: «100А» и «100A» — один дом. */
+const HOUSE_HOMOGLYPHS: Record<string, string> = {
+  а: 'a', в: 'b', с: 'c', е: 'e', н: 'h', і: 'i', ї: 'i', к: 'k',
+  м: 'm', о: 'o', р: 'p', т: 't', х: 'x', у: 'y',
+};
+
+/**
+ * Канонический ключ дома: «100/А», «100а», «100 А», «100-А», «100A» → «100a».
+ * Дробные корпуса («100/1») сохраняют косую черту — это другой дом, не «1001».
+ */
+export function normalizeHouseNumber(raw: string): string {
+  let value = String(raw ?? '').normalize('NFKC').trim().toLowerCase();
+  value = value.replace(/[а-яіїє]/gu, (char) => HOUSE_HOMOGLYPHS[char] ?? char);
+  value = value.replace(/\s+/gu, '').replace(/[-–—]+/gu, '');
+  value = value.replace(/^(\d+)\/([a-z])$/u, '$1$2');
+  return value.replace(/[^0-9a-z/]/gu, '');
+}
+
 /**
  * Попадает ли номер дома под шаблон привязки.
  *
  * Шаблоны взяты из реальных выгрузок: `*` (вся улица), `12`, `2, 4, 6А`, `1-19`.
- * Чётность внутри диапазона не различается: достоверного источника для разбивки «нечётные до
- * 15» нет, а вводить её вручную опаснее, чем взять весь диапазон.
+ * Сравниваются канонические ключи, поэтому раскладка буквы и разделитель не важны.
  */
 export function matchHouseNumber(houseInput: string, pattern: string): boolean {
   const trimmedPattern = String(pattern ?? '').trim();
@@ -30,6 +47,7 @@ export function matchHouseNumber(houseInput: string, pattern: string): boolean {
 
   const house = parseHouseNumber(houseInput);
   if (house === null) return false;
+  const houseKey = normalizeHouseNumber(houseInput);
 
   for (const rawPart of trimmedPattern.split(',')) {
     const part = rawPart.trim();
@@ -47,8 +65,7 @@ export function matchHouseNumber(houseInput: string, pattern: string): boolean {
       continue;
     }
 
-    const exact = parseHouseNumber(part);
-    if (exact !== null && exact === house) return true;
+    if (normalizeHouseNumber(part) === houseKey) return true;
   }
   return false;
 }

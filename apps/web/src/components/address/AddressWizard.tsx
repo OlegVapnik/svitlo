@@ -1,6 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, Building2, Check, Home, MapPin, Search, Star, Zap, ZapOff } from 'lucide-react';
+import {
+  BadgeCheck,
+  Briefcase,
+  Building2,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Home,
+  ListFilter,
+  MapPin,
+  Search,
+  Star,
+  Zap,
+  ZapOff,
+} from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
 import {
@@ -8,7 +22,8 @@ import {
   useAddressLookup,
   useAddressSettlements,
   useAddressStreets,
-  useContributeAddress,
+  useQueues,
+  useQueueSchedule,
 } from '../../api/queries.js';
 import {
   offlineSettlementStats,
@@ -20,16 +35,9 @@ import { Button } from '../ui/Button.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { cn } from '../../lib/cn.js';
 import { formatKyivTime } from '../../lib/date.js';
-import type { AddressHouseOption, QueueScheduleData } from '@svitlo/shared';
-
-/** Что вернул бэкенд на поиск группы. */
-interface ResolveResponse {
-  queue: string | null;
-  options: AddressHouseOption[];
-  reason: 'exact-house' | 'whole-street' | 'whole-settlement' | 'not-found';
-  source: string | null;
-  schedule: QueueScheduleData | null;
-}
+import { formatQueueLabel } from '../../lib/queue-label.js';
+import { operatorLink } from '../../lib/operator-links.js';
+import type { AddressHouseOption, AddressResolveResult, QueueScheduleData } from '@svitlo/shared';
 
 /**
  * Главные города областей — только реальные названия, без рейтинга и «похожих» подстановок.
@@ -47,12 +55,35 @@ const MAIN_CITIES: Record<string, string[]> = {
   'zhytomyrska-oblast': ['Житомир'],
 };
 
+function kyivToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+}
+
+/** Числовая часть дома для сортировки «соседних» вариантов; буква и раскладка не важны. */
+function houseNumberValue(value: string): number | null {
+  const match = String(value ?? '').trim().match(/^(\d{1,5})/u);
+  if (!match) return null;
+  const parsed = Number.parseInt(match[1]!, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Одиночный номер дома, а не диапазон/список: только такие показываем чипами. */
+function isSingleHouse(value: string): boolean {
+  return /^\d{1,5}\s*(?:[/-]?\s*[a-zа-яіїє])?$/iu.test(String(value ?? '').trim());
+}
+
+function sortQueues(left: string, right: string): number {
+  const [aLow, aHigh] = left.split('/').map((part) => Number.parseInt(part, 10) || 0);
+  const [bLow, bHigh] = right.split('/').map((part) => Number.parseInt(part, 10) || 0);
+  return aLow - bLow || aHigh - bHigh;
+}
+
 /**
  * Пошаговый поиск своей группы ГПВ: область → населённый пункт → улица → дом.
  *
- * Ключевой принцип прежний: номер группы не угадывается. Если привязки нет, мастер говорит об
- * этом и предлагает либо назвать очередь самому, либо сохранить адрес локально. Все чипы городов,
- * улиц и домов — это реальные записи справочника, а не декоративные подсказки.
+ * Ключевой принцип: номер группы не угадывается. Если точного дома нет, мастер показывает
+ * соседние известные дома, ручной выбор из реального списка групп области и официальную ссылку
+ * оператора. Локально подтверждённая человеком группа сохраняется с отдельной пометкой.
  */
 export const AddressWizard: React.FC = () => {
   const { t } = useTranslation();
@@ -62,17 +93,33 @@ export const AddressWizard: React.FC = () => {
   const [settlement, setSettlement] = useState('');
   const [street, setStreet] = useState('');
   const [house, setHouse] = useState('');
-  const [result, setResult] = useState<ResolveResponse | null>(null);
+  const [result, setResult] = useState<AddressResolveResult | null>(null);
+  const [manualQueue, setManualQueue] = useState<string | null>(null);
+  const [groupDraft, setGroupDraft] = useState('');
+  const [confirmedQueue, setConfirmedQueue] = useState<string | null>(null);
   const [savedLabel, setSavedLabel] = useState<string | null>(null);
 
   const resolve = useAddressLookup();
   const streetsQuery = useAddressStreets(currentRegion, settlement, street);
   const housesQuery = useAddressHouses(currentRegion, settlement, street);
+  const queuesQuery = useQueues(currentRegion);
+  const today = kyivToday();
+  const manualScheduleQuery = useQueueSchedule(manualQueue ?? undefined, today, currentRegion);
+
+  const resetAddressResult = () => {
+    setResult(null);
+    setManualQueue(null);
+    setGroupDraft('');
+    setConfirmedQueue(null);
+    setSavedLabel(null);
+  };
 
   const submit = async (overrides: { settlement?: string; street?: string; house?: string } = {}) => {
     const nextSettlement = (overrides.settlement ?? settlement).trim();
     if (!nextSettlement) return;
     setSavedLabel(null);
+    setManualQueue(null);
+    setConfirmedQueue(null);
     const found = await resolve.mutateAsync({
       region: currentRegion,
       settlement: nextSettlement,
@@ -86,53 +133,110 @@ export const AddressWizard: React.FC = () => {
     setSettlement(name);
     setStreet('');
     setHouse('');
-    setResult(null);
-    setSavedLabel(null);
+    resetAddressResult();
   };
 
   const chooseStreet = (name: string) => {
     setStreet(name);
     setHouse('');
-    setSavedLabel(null);
+    resetAddressResult();
     void submit({ street: name, house: '' });
   };
 
   const chooseHouse = (value: string) => {
     setHouse(value);
+    setManualQueue(null);
+    setConfirmedQueue(null);
     setSavedLabel(null);
     void submit({ house: value });
   };
 
-  const saveAs = (label: 'Дім' | 'Робота', makePrimary = false) => {
-    if (!result?.queue) return;
-    const id = addBookmark({
-      label: `${t(label === 'Дім' ? 'addressWizard.labelHome' : 'addressWizard.labelWork')} · ${settlement}, ${street} ${house}`.trim(),
-      regionCpu: currentRegion,
-      settlementName: settlement.trim(),
-      streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
-      queue: result.queue,
-      allowDuplicate: true,
-    });
-    if (id && makePrimary) setPrimaryBookmark(id);
-    setSavedLabel(label);
-  };
+  const queueOptions = useMemo(
+    () => (queuesQuery.data?.data ?? []).map((item) => item.queue).sort(sortQueues),
+    [queuesQuery.data],
+  );
 
-  const queue = result?.queue ?? null;
-  const schedule = result?.schedule ?? null;
-  const source = result?.source ?? null;
-  const intervals = schedule?.intervals ?? [];
+  const activeQueue = manualQueue ?? result?.queue ?? null;
+  const activeSchedule: QueueScheduleData | null = manualQueue
+    ? manualScheduleQuery.data?.data ?? null
+    : result?.schedule ?? null;
+  const activeSource = manualQueue
+    ? t('addressWizard.sourceManual')
+    : result?.source ?? null;
+
+  const intervals = activeSchedule?.intervals ?? [];
   const nowMs = Date.now();
   const currentOff = intervals.find(
     (interval) => Date.parse(interval.startsAt) <= nowMs && nowMs < Date.parse(interval.endsAt),
   );
-  const hasScheduleData = intervals.length > 0 || schedule?.allClear === true;
-  const statusText = !queue
+  const hasScheduleData = intervals.length > 0 || activeSchedule?.allClear === true;
+  const statusText = !activeQueue
     ? null
     : !hasScheduleData
       ? t('addressWizard.statusUnknown')
       : currentOff
         ? t('addressWizard.offUntil', { time: formatKyivTime(currentOff.endsAt) })
         : t('addressWizard.lightOn');
+
+  /** Ближайшие известные дома улицы: до 4, по разнице номера. */
+  const nearbyHouses = useMemo(() => {
+    const known = (housesQuery.data?.data ?? []).filter((item) => isSingleHouse(item.housePattern));
+    if (known.length === 0) return [];
+    const wanted = houseNumberValue(house);
+    return [...known]
+      .sort((left, right) => {
+        if (wanted === null) {
+          return left.housePattern.localeCompare(right.housePattern, 'uk', { numeric: true });
+        }
+        const a = houseNumberValue(left.housePattern);
+        const b = houseNumberValue(right.housePattern);
+        return Math.abs((a ?? Number.MAX_SAFE_INTEGER) - wanted) -
+          Math.abs((b ?? Number.MAX_SAFE_INTEGER) - wanted);
+      })
+      .slice(0, 4);
+  }, [house, housesQuery.data]);
+
+  const saveAs = (label: 'Дім' | 'Робота', makePrimary = false) => {
+    if (!activeQueue) return;
+    const id = addBookmark({
+      label: `${t(label === 'Дім' ? 'addressWizard.labelHome' : 'addressWizard.labelWork')} · ${settlement}, ${street} ${house}`.trim(),
+      regionCpu: currentRegion,
+      settlementName: settlement.trim(),
+      streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
+      queue: activeQueue,
+      allowDuplicate: true,
+      addressConfirmed: confirmedQueue === activeQueue,
+    });
+    if (id && makePrimary) setPrimaryBookmark(id);
+    setSavedLabel(label);
+  };
+
+  /** «Це моя група»: сохраняем локально с пометкой, что группу подтвердил человек. */
+  const confirmNearbyGroup = (option: AddressHouseOption) => {
+    setManualQueue(option.queue);
+    setConfirmedQueue(option.queue);
+    const id = addBookmark({
+      label: `${t('addressWizard.labelHome')} · ${settlement}, ${street} ${house}`.trim(),
+      regionCpu: currentRegion,
+      settlementName: settlement.trim(),
+      streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
+      queue: option.queue,
+      allowDuplicate: true,
+      addressConfirmed: true,
+    });
+    if (id) setSavedLabel(t('addressWizard.confirmedLocal'));
+  };
+
+  const applyManualGroup = () => {
+    if (!groupDraft) return;
+    setManualQueue(groupDraft);
+    setConfirmedQueue(null);
+    setSavedLabel(null);
+  };
+
+  const operator = operatorLink(currentRegion);
+  const showNotFound = Boolean(result && !result.queue && !manualQueue);
+
 
   return (
     <div className="space-y-4">
@@ -149,8 +253,7 @@ export const AddressWizard: React.FC = () => {
               setSettlement('');
               setStreet('');
               setHouse('');
-              setResult(null);
-              setSavedLabel(null);
+              resetAddressResult();
             }}
             className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
           >
@@ -195,8 +298,7 @@ export const AddressWizard: React.FC = () => {
             onChange={(event) => {
               setStreet(event.target.value);
               setHouse('');
-              setResult(null);
-              setSavedLabel(null);
+              resetAddressResult();
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') void submit();
@@ -211,7 +313,9 @@ export const AddressWizard: React.FC = () => {
           />
           {streetsQuery.data?.wholeSettlementQueue && !street && (
             <p className="text-[11px] font-semibold text-success">
-              {t('addressWizard.wholeSettlementQueue', { queue: streetsQuery.data.wholeSettlementQueue })}
+              {t('addressWizard.wholeSettlementQueue', {
+                queue: formatQueueLabel(streetsQuery.data.wholeSettlementQueue, currentRegion),
+              })}
             </p>
           )}
 
@@ -228,6 +332,8 @@ export const AddressWizard: React.FC = () => {
             onChange={(event) => {
               setHouse(event.target.value);
               setResult(null);
+              setManualQueue(null);
+              setConfirmedQueue(null);
               setSavedLabel(null);
             }}
             onKeyDown={(event) => {
@@ -236,8 +342,10 @@ export const AddressWizard: React.FC = () => {
             className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
           />
           <HouseChips
+            key={`${settlement}|${street}`}
             options={housesQuery.data?.data ?? []}
             wholeStreetQueue={housesQuery.data?.wholeStreetQueue ?? null}
+            regionCpu={currentRegion}
             onPick={chooseHouse}
             loading={housesQuery.isFetching}
           />
@@ -257,7 +365,6 @@ export const AddressWizard: React.FC = () => {
         ) : null}
       </div>
 
-
       {resolve.isPending && <Skeleton className="h-28 w-full rounded-2xl" />}
 
       {resolve.isError && (
@@ -266,51 +373,95 @@ export const AddressWizard: React.FC = () => {
         </p>
       )}
 
-      {result && !queue && (
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-sm font-semibold text-foreground">{t('addressWizard.notFoundTitle')}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t('addressWizard.notFoundDesc')}</p>
-          {result.options.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              <p className="text-xs font-semibold text-foreground">{t('addressWizard.variants')}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {result.options.map((option) => (
-                  <span key={option.housePattern} className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold text-foreground">
-                    {option.housePattern} → {option.queue}
-                  </span>
+
+      {showNotFound && (
+        <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">{t('addressWizard.noExactHouse')}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t('addressWizard.noExactHouseDesc')}</p>
+          </div>
+
+          {nearbyHouses.length > 0 && (
+            <section className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                {t('addressWizard.nearbyTitle')}
+              </h3>
+              <div className="space-y-1.5">
+                {nearbyHouses.map((option) => (
+                  <div
+                    key={`${option.housePattern}-${option.queue}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2"
+                  >
+                    <span className="text-sm font-semibold text-foreground">
+                      №{option.housePattern} — {formatQueueLabel(option.queue, currentRegion)}
+                    </span>
+                    <Button size="sm" variant="outline" onClick={() => confirmNearbyGroup(option)}>
+                      {t('addressWizard.thisIsMyGroup')}
+                    </Button>
+                  </div>
                 ))}
               </div>
-            </div>
+              <p className="text-[11px] leading-snug text-warning">{t('addressWizard.nearbyConfirmedHint')}</p>
+            </section>
           )}
 
-          <ContributeBlock
-            region={currentRegion}
-            settlement={settlement.trim()}
-            street={street.trim()}
-            house={house.trim()}
-            onContributed={(contributedQueue) => {
-              addBookmark({
-                label: [settlement, street, house].filter(Boolean).join(', '),
-                regionCpu: currentRegion,
-                settlementName: settlement.trim(),
-                streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
-                queue: contributedQueue,
-                allowDuplicate: true,
-              });
-              void submit();
-            }}
-          />
+          <section className="space-y-2 border-t border-hairline pt-3">
+            <h3 className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              <ListFilter className="h-3.5 w-3.5" aria-hidden />
+              {t('addressWizard.manualTitle')}
+            </h3>
+            <p className="text-xs text-muted-foreground">{t('addressWizard.manualDesc')}</p>
+            {queueOptions.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <label htmlFor="address-manual-group" className="sr-only">
+                  {t('addressWizard.manualSelect')}
+                </label>
+                <select
+                  id="address-manual-group"
+                  value={groupDraft}
+                  onChange={(event) => setGroupDraft(event.target.value)}
+                  className="h-10 min-w-48 rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">{t('addressWizard.manualSelect')}</option>
+                  {queueOptions.map((queue) => (
+                    <option key={queue} value={queue}>
+                      {formatQueueLabel(queue, currentRegion)}
+                    </option>
+                  ))}
+                </select>
+                <Button size="sm" onClick={applyManualGroup} disabled={!groupDraft}>
+                  {t('addressWizard.manualShow')}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t('addressWizard.noRegionQueues')}</p>
+            )}
+          </section>
+
+          <a
+            href={operator.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary underline-offset-4 hover:underline"
+          >
+            {operator.isRegistry ? t('addressWizard.registryLink') : t('addressWizard.howToFind')}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          </a>
         </div>
       )}
 
-      {queue && (
+
+      {activeQueue && (
         <section className="overflow-hidden rounded-3xl border border-success/30 bg-card shadow-xs">
           <div className="flex items-start gap-3 border-b border-success/20 bg-success/8 p-4">
             <span className="inline-flex min-h-12 min-w-16 items-center justify-center rounded-2xl bg-success px-3 font-display text-xl font-bold text-success-foreground">
-              {queue}
+              {activeQueue}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-success">{t('addressWizard.yourQueue')}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-success">
+                {t('addressWizard.yourQueue')}
+              </p>
+              <p className="text-sm font-bold text-foreground">{formatQueueLabel(activeQueue, currentRegion)}</p>
               <p className="truncate text-sm font-semibold text-foreground">
                 {[settlement, street, house].filter(Boolean).join(', ')}
               </p>
@@ -318,13 +469,21 @@ export const AddressWizard: React.FC = () => {
                 {currentOff ? <ZapOff className="h-3.5 w-3.5" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
                 {statusText}
               </p>
+              {confirmedQueue === activeQueue && (
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                  <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                  {t('addressWizard.confirmedByYou')}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="space-y-3 p-4">
-            {schedule && intervals.length > 0 ? (
-              <QueueScheduleBar intervals={intervals} date={schedule.date} showSummary={false} />
-            ) : schedule?.allClear ? (
+            {manualQueue && manualScheduleQuery.isLoading ? (
+              <Skeleton className="h-12 w-full rounded-xl" />
+            ) : activeSchedule && intervals.length > 0 ? (
+              <QueueScheduleBar intervals={intervals} date={activeSchedule.date} showSummary={false} />
+            ) : activeSchedule?.allClear ? (
               <p className="text-xs font-medium text-success">{t('schedule.allClearTitle')}</p>
             ) : (
               <p className="text-xs text-muted-foreground">{t('addressWizard.noScheduleToday')}</p>
@@ -347,10 +506,16 @@ export const AddressWizard: React.FC = () => {
             {savedLabel && (
               <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
                 <Check className="h-4 w-4" aria-hidden />
-                {t('addressWizard.savedAs', { label: savedLabel })}
+                {savedLabel === 'Дім' || savedLabel === 'Робота'
+                  ? t('addressWizard.savedAs', { label: savedLabel })
+                  : savedLabel}
               </p>
             )}
-            {source && <p className="text-[11px] text-muted-foreground/80">{t('addressWizard.source', { source })}</p>}
+            {activeSource && (
+              <p className="text-[11px] text-muted-foreground/80">
+                {t('addressWizard.source', { source: activeSource })}
+              </p>
+            )}
           </div>
         </section>
       )}
@@ -393,7 +558,10 @@ const SettlementSuggestions: React.FC<{
   const names = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
-    for (const item of [...offline.map((entry) => entry.name), ...(server.data?.data ?? []).map((entry) => entry.name)]) {
+    for (const item of [
+      ...offline.map((entry) => entry.name),
+      ...(server.data?.data ?? []).map((entry) => entry.name),
+    ]) {
       const key = item.toLocaleLowerCase('uk-UA');
       if (key === query.trim().toLocaleLowerCase('uk-UA') || seen.has(key)) continue;
       seen.add(key);
@@ -505,30 +673,39 @@ const StreetChips: React.FC<{
   );
 };
 
-/** Дома выбранной улицы: «12 → 2/2». Если домов нет — чипов нет, и это честно. */
+/** Дома выбранной улицы: 24 чипа + «показати ще». Ручной ввод остаётся всегда доступным. */
 const HouseChips: React.FC<{
   options: AddressHouseOption[];
   wholeStreetQueue: string | null;
+  regionCpu: string;
   onPick: (house: string) => void;
   loading: boolean;
-}> = ({ options, wholeStreetQueue, onPick, loading }) => {
+}> = ({ options, wholeStreetQueue, regionCpu, onPick, loading }) => {
   const { t } = useTranslation();
-  if (loading && options.length === 0) {
+  const [showAll, setShowAll] = useState(false);
+  const houses = useMemo(
+    () => options.filter((option) => isSingleHouse(option.housePattern)),
+    [options],
+  );
+
+  if (loading && houses.length === 0) {
     return <p className="text-[11px] text-muted-foreground">{t('addressWizard.loadingHouses')}</p>;
   }
-  if (options.length === 0) {
+  if (houses.length === 0) {
     return wholeStreetQueue ? (
       <p className="text-[11px] font-semibold text-success">
-        {t('addressWizard.wholeStreetQueue', { queue: wholeStreetQueue })}
+        {t('addressWizard.wholeStreetQueue', { queue: formatQueueLabel(wholeStreetQueue, regionCpu) })}
       </p>
     ) : null;
   }
 
+  const visible = showAll ? houses : houses.slice(0, 24);
+
   return (
     <div className="space-y-1.5">
       <p className="text-[11px] font-semibold text-muted-foreground">{t('addressWizard.quickHouses')}</p>
-      <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
-        {options.slice(0, 40).map((option) => (
+      <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
+        {visible.map((option) => (
           <button
             key={`${option.housePattern}-${option.queue}`}
             type="button"
@@ -540,9 +717,19 @@ const HouseChips: React.FC<{
           </button>
         ))}
       </div>
+      {houses.length > 24 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          className="inline-flex min-h-9 items-center gap-1 rounded-full px-2 text-[11px] font-bold text-primary"
+        >
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showAll && 'rotate-180')} aria-hidden />
+          {showAll ? t('addressWizard.showLessHouses') : t('addressWizard.showMoreHouses')}
+        </button>
+      )}
       {wholeStreetQueue && (
         <p className="text-[11px] text-muted-foreground">
-          {t('addressWizard.wholeStreetQueue', { queue: wholeStreetQueue })}
+          {t('addressWizard.wholeStreetQueue', { queue: formatQueueLabel(wholeStreetQueue, regionCpu) })}
         </p>
       )}
     </div>
@@ -564,88 +751,3 @@ function highlight(name: string, query: string) {
   );
 }
 
-
-/** Групи, які воркер/бекенд приймають до запису. Рівно ті, що трапляються в графіку ДТЕК. */
-const CONTRIBUTE_QUEUES = ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2', '4/1', '4/2', '5/1', '5/2', '6/1', '6/2'];
-
-/**
- * Народна прив'язка: якщо своєї черги в базі немає, людина може назвати її сама.
- *
- * Прив'язки «адреса → черга» неможливо вивести з графіка оператора: у ньому є групи, але немає
- * того, яка вулиця до якої належить. Номер групи написаний у квитанції та застосунку оператора,
- * тому найчесніше джерело цих даних — сама людина. Ім'я й телефон не питаємо: для прив'язки
- * вони не потрібні.
- *
- * Якщо мережі немає, кнопка «Зберегти лише на пристрої» кладе адресу в закладки локально:
- * пошук продовжить працювати для цієї людини, навіть коли сервер недоступний.
- */
-const ContributeBlock: React.FC<{
-  region: string;
-  settlement: string;
-  street: string;
-  house: string;
-  onContributed: (queue: string) => void;
-}> = ({ region, settlement, street, house, onContributed }) => {
-  const { t } = useTranslation();
-  const [queue, setQueue] = useState('');
-  const [localSaved, setLocalSaved] = useState(false);
-  const contribute = useContributeAddress();
-
-  return (
-    <div className="mt-4 space-y-2 rounded-xl border border-border bg-muted/30 p-3">
-      <p className="text-xs text-muted-foreground">{t('addressWizard.contributeHint')}</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="address-contribute-queue" className="sr-only">
-          {t('addressWizard.contributeQueueLabel')}
-        </label>
-        <select
-          id="address-contribute-queue"
-          value={queue}
-          onChange={(event) => setQueue(event.target.value)}
-          className="h-10 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <option value="">{t('addressWizard.contributeQueuePlaceholder')}</option>
-          {CONTRIBUTE_QUEUES.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <Button
-          size="sm"
-          disabled={!queue || contribute.isPending}
-          onClick={() => {
-            void contribute
-              .mutateAsync({ region, settlement, street: street || undefined, house: house || undefined, queue })
-              .then((saved) => {
-                if (saved) onContributed(saved);
-              });
-          }}
-        >
-          {contribute.isPending ? t('addressWizard.contributing') : t('addressWizard.contributeSubmit')}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!queue}
-          onClick={() => {
-            onContributed(queue);
-            setLocalSaved(true);
-          }}
-        >
-          {t('addressWizard.contributeLocal')}
-        </Button>
-      </div>
-      {contribute.isError && (
-        <p role="alert" className="text-xs text-destructive">
-          {t('addressWizard.contributeFailed')}
-        </p>
-      )}
-      {(contribute.isSuccess || localSaved) && (
-        <p className="text-xs font-semibold text-success">
-          {localSaved ? t('addressWizard.contributeLocalDone') : t('addressWizard.contributeDone')}
-        </p>
-      )}
-    </div>
-  );
-};

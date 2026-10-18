@@ -561,4 +561,24 @@
     opacity: 1;
     transform: translate3d(0, 0, 0);
   }
+
+  /* Розкриття релізу в історії оновлень. Анімуємо grid-template-rows 0fr → 1fr: браузер сам
+     рахує висоту, без читань offsetHeight у JS і без примусового layout на кожному кадрі.
+     Уміст при цьому монтується лише для відкритого релізу (React.memo у компоненті). */
+  .release-reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    animation: release-reveal 220ms var(--ease-m3-standard) forwards;
+  }
+
+  .release-reveal > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @keyframes release-reveal {
+    to {
+      grid-template-rows: 1fr;
+    }
+  }
 }

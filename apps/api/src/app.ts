@@ -23,6 +23,7 @@ import settlementRoutes from './routes/settlements.js';
 import newsRoutes from './routes/news.js';
 import syncRoutes from './routes/sync.js';
 import changelogRoutes from './routes/changelog.js';
+import versionRoutes from './routes/version.js';
 import adminProviderRoutes from './routes/admin-providers.js';
 
 /**
@@ -84,6 +85,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await server.register(syncRoutes);
   // Чейджлог по сети: серверный фикс виден в уже установленном приложении без пересборки APK.
   await server.register(changelogRoutes);
+  // Версия и SHA-256 последней сборки: по ним приложение решает, показывать ли окно OTA.
+  await server.register(versionRoutes);
   await server.register(adminProviderRoutes);
   await server.register(adminRoutes);
 

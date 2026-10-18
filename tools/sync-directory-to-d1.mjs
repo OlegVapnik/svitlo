@@ -107,7 +107,12 @@ async function loadNormalizer() {
   requireTypeStrippingNode();
   const address = await import(path.join(REPO, 'cf-worker/src/address.ts'));
   const directory = await import(path.join(REPO, 'apps/api/src/providers/settlement-directory.ts'));
-  return { normalizeAddress: address.normalizeAddress, REGION_KATOTTG: directory.REGION_KATOTTG };
+  const guard = await import(path.join(REPO, 'apps/api/src/services/directory-guard.ts'));
+  return {
+    normalizeAddress: address.normalizeAddress,
+    REGION_KATOTTG: directory.REGION_KATOTTG,
+    assertDirectoryNamesClean: guard.assertDirectoryNamesClean,
+  };
 }
 
 /** Значение как SQL-литерал: кавычки удваиваются, управляющие символы вырезаются. */
@@ -606,7 +611,7 @@ async function main() {
   const wantAddresses = !options.only || options.only.has('addresses');
 
   log('Справочник адресов → Cloudflare D1');
-  const { normalizeAddress, REGION_KATOTTG } = await loadNormalizer();
+  const { normalizeAddress, REGION_KATOTTG, assertDirectoryNamesClean } = await loadNormalizer();
 
   const katottg = loadKatottg(REGION_KATOTTG);
   const geonames = loadGeoNames();
@@ -620,6 +625,16 @@ async function main() {
     addressQueues: db.addressQueues,
     regionNames: db.regionNames,
   }, normalizeAddress);
+
+  // Стоп-кран до записи в D1: тестовая строка в справочнике выглядит как настоящий адрес,
+  // поэтому не «предупреждаем и едем дальше», а падаем с понятной причиной.
+  assertDirectoryNamesClean(
+    [...katottg.rows, ...geonames.rows, ...db.localSettlements, ...db.addressQueues],
+    'источники справочника',
+  );
+  assertDirectoryNamesClean(rows.settlements, 'directory_settlements');
+  assertDirectoryNamesClean(rows.streets, 'directory_streets');
+  assertDirectoryNamesClean(rows.bindings, 'address_queues');
 
   log('');
   log(`Реестр КОАТУУ: ${katottg.rows.length} записей (${Object.keys(REGION_KATOTTG).join(', ')})`);
@@ -709,7 +724,9 @@ async function main() {
   return 0;
 }
 
-await main();
+main().catch((error) => {
+  fatal(error instanceof Error ? error.message : String(error));
+});
 
 
 

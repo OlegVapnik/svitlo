@@ -89,7 +89,11 @@ export async function resolveQueueByAddress(input: {
   }
 
   // Уровень 3: группа на весь НП целиком (пустые street_normalized).
-  const wholeSettlement = settlementEntries.find((row) => row.streetNormalized === '');
+  // `source = 'mirror'` — это перечень групп населённого пункта, а не привязка адреса. Иначе
+  // Киев получал бы ложное «1/1 на всё село» из первой строки списка.
+  const wholeSettlement = settlementEntries.find(
+    (row) => row.streetNormalized === '' && row.source !== 'mirror',
+  );
   if (wholeSettlement) {
     return {
       queue: canonicalQueue(wholeSettlement.queue),
@@ -101,20 +105,22 @@ export async function resolveQueueByAddress(input: {
 
   const street = (input.street ?? '').trim();
   if (!street) {
-    // Название НП есть, а улица не указана: если на НП ровно одна группа — это и есть ответ.
-    const queues = new Set(settlementEntries.map((row) => canonicalQueue(row.queue)));
-    if (settlementEntries.length > 0 && queues.size === 1) {
+    // Название НП есть, а улица не указана: если на НП ровно одна ПОДТВЕРЖДЁННАЯ группа —
+    // это и есть ответ. Список «у населённого пункта есть такие группы» за привязку не считаем.
+    const addressable = settlementEntries.filter((row) => row.source !== 'mirror');
+    const queues = new Set(addressable.map((row) => canonicalQueue(row.queue)));
+    if (addressable.length > 0 && queues.size === 1) {
       return {
         queue: [...queues][0]!,
         options: [],
         reason: 'whole-settlement',
-        source: settlementEntries[0]!.source,
+        source: addressable[0]!.source,
       };
     }
     // Иначе показать варианты по улицам — что увидит человек на шаге «улица».
     return {
       queue: null,
-      options: settlementEntries.map((row) => ({
+      options: addressable.map((row) => ({
         housePattern: `${row.streetName}${row.housePattern === '*' ? '' : ` (${row.housePattern})`}`,
         queue: canonicalQueue(row.queue),
       })),
@@ -221,6 +227,7 @@ export async function suggestStreets(
         eq(addressQueues.region, region),
         eq(addressQueues.settlementNormalized, settlementNormalized),
         eq(addressQueues.streetNormalized, ''),
+        sql`${addressQueues.source} <> 'mirror'`,
       ),
     )
     .limit(1);

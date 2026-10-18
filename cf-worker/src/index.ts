@@ -27,6 +27,7 @@ import {
 // Чейнджлог генерирует tools/gen_changelog.mjs из истории git — воркер получает ту же копию,
 // что и Node-бэкенд, поэтому список «Що нового» одинаков на обоих серверах.
 import changelog from './data/changelog.json';
+import versionInfo from './data/version.json';
 import {
   ALL_CLEAR_QUEUE,
   extractCoverage,
@@ -3576,6 +3577,16 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     });
   }
 
+  if (path === '/version') {
+    // Данные пишет tools/build-android-apk.sh вместе с APK: версия и SHA-256 относятся ровно
+    // к тому файлу, который лежит на Pages. Без совпадения хеша Android-обёртка установку
+    // остановит — поэтому здесь не должно быть «красивой», но вымышленной версии.
+    return json({ data: versionInfo }, 200, {
+      'cache-control': 'public, max-age=300',
+      etag: `W/"version-${versionInfo.version}-${versionInfo.sha256.slice(0, 12)}"`,
+    });
+  }
+
   await ensureSchedule(env);
 
   if (path === '/regions') {
@@ -3824,26 +3835,33 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const filter = regionIn(readRegions.length > 0 ? readRegions : ['']);
     if (filter.clause === '') return json({ data: [], wholeStreetQueue: null });
 
-    const rows = await env.DB.prepare(
-      `SELECT house_pattern, queue FROM address_queues
-       WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
-       LIMIT 400`,
-    )
-      .bind(...filter.bindings, normalizeAddress(settlement), normalizeAddress(street))
-      .all<{ house_pattern: string; queue: string }>();
+    const settlementNormalized = normalizeAddress(settlement);
+    const streetNormalized = normalizeAddress(street);
+    // Ключи — ровно те, по которым ищет индекс address_queues (region + settlement + street).
+    // Результат живёт 10 минут: справочник меняется импортом, а не каждым нажатием чипа.
+    const cacheKey = `address-houses:${filter.clause}:${filter.bindings.join(',')}:${settlementNormalized}:${streetNormalized}`;
+    const result = await cached(cacheKey, async () => {
+      const rows = await env.DB.prepare(
+        `SELECT house_pattern, queue FROM address_queues
+         WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
+         ORDER BY house_pattern
+         LIMIT 200`,
+      )
+        .bind(...filter.bindings, settlementNormalized, streetNormalized)
+        .all<{ house_pattern: string; queue: string }>();
 
-    const entries = rows.results ?? [];
-    const whole = entries.find((row) => row.house_pattern === '*' || row.house_pattern === '');
-    const houses = dedupeQueues(
-      entries
-        .filter((row) => row.house_pattern !== '*' && row.house_pattern !== '')
-        .map((row) => ({ housePattern: row.house_pattern, queue: normalizeQueue(row.queue) })),
-    ).slice(0, 200);
+      const entries = rows.results ?? [];
+      const whole = entries.find((row) => row.house_pattern === '*' || row.house_pattern === '');
+      const houses = dedupeQueues(
+        entries
+          .filter((row) => row.house_pattern !== '*' && row.house_pattern !== '')
+          .map((row) => ({ housePattern: row.house_pattern, queue: normalizeQueue(row.queue) })),
+      );
 
-    return json({
-      data: houses,
-      wholeStreetQueue: whole ? normalizeQueue(whole.queue) : null,
-    });
+      return { data: houses, wholeStreetQueue: whole ? normalizeQueue(whole.queue) : null };
+    }, AGGREGATE_CACHE_TTL_MS);
+
+    return json(result);
   }
 
   if (path === '/addresses/resolve') {

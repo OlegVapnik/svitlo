@@ -1,4 +1,4 @@
-import type { AddressHousesResponse, AddressResolveResult, AddressStreetsResponse } from '@svitlo/shared';
+import type { AddressHousesResponse, AddressResolveResult, AddressStreetsResponse, AppVersionInfo } from '@svitlo/shared';
 import { noteServedFromCache, noteServedOnline, readCache, writeCache } from './offline-cache.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] || '/api/v1';
@@ -239,6 +239,9 @@ export const api = {
   /** Джерела новин і стан збору (GET /api/v1/news/sources) — щоб було видно, кого саме читаємо. */
   /** Чейджлог с сервера: серверный фикс виден без пересборки приложения. */
   fetchChangelog: (signal?: AbortSignal) => fetcher('/changelog', { signal }),
+  /** Последняя опубликованная сборка: версия, SHA-256 и ссылка на APK. */
+  fetchVersion: (signal?: AbortSignal) =>
+    fetcher('/version', { signal }) as Promise<{ data: AppVersionInfo }>,
   fetchNewsSources: (signal?: AbortSignal) => fetcher('/news/sources', { signal }),
   /**
    * Перевірка за особовим рахунком: повертає вулицю та чергу з довідника (GET /places/:account).

@@ -595,6 +595,22 @@ export interface AddressResolveInput {
   house?: string;
 }
 
+/** Обновление приложения: данные публикует сборка APK (GET /api/v1/version). */
+export interface AppVersionInfo {
+  /** Семантическая версия серверной/последней сборки, например «2.15.1». */
+  version: string;
+  /** Прямая ссылка на APK. */
+  apkUrl: string;
+  /** SHA-256 APK в hex: клиент обязан сверить файл перед установкой. */
+  sha256: string;
+  /** Размер APK в байтах. */
+  sizeBytes: number;
+  /** Когда сборка опубликована (ISO). */
+  releasedAt: string;
+  /** Короткий список изменений для окна обновления. */
+  notes: string[];
+}
+
 /** Строка массового импорта привязок (POST /api/v1/admin/addresses/import). */
 export interface AddressQueueImportRow {
   region: string;

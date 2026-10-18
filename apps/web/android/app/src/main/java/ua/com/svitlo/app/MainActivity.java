@@ -24,6 +24,7 @@ import com.getcapacitor.BridgeActivity;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.ref.WeakReference;
+import java.util.Locale;
 
 /**
  * Оболочка приложения (Capacitor): безопасные зоны телефона для веб-части и запрет зума.
@@ -355,15 +356,19 @@ public class MainActivity extends BridgeActivity {
          * UpdateDownloadReceiver после завершения открывает системный установщик.
          */
         @JavascriptInterface
-        public boolean downloadUpdate(String apkUrl) {
+        public boolean downloadUpdate(String apkUrl, String sha256) {
             MainActivity current = activity.get();
-            return current != null && current.enqueueApkDownload(apkUrl);
+            return current != null && current.enqueueApkDownload(apkUrl, sha256);
         }
     }
 
-    /** Ставит APK в очередь загрузки и запоминает id для приёмника завершения. */
-    private boolean enqueueApkDownload(String apkUrl) {
+    /** Ставит APK в очередь загрузки и запоминает id, хеш и имя файла для приёмника завершения. */
+    private boolean enqueueApkDownload(String apkUrl, String sha256) {
         if (apkUrl == null || apkUrl.trim().isEmpty()) return false;
+        String expectedHash = sha256 == null ? "" : sha256.trim().toLowerCase(Locale.ROOT);
+        // Без валидного SHA-256 установку не начинаем: проверить файл будет нечем, а обещать
+        // «безопасное обновление» без проверки нельзя.
+        if (!expectedHash.matches("[a-f0-9]{64}")) return false;
         Uri uri;
         try {
             uri = Uri.parse(apkUrl.trim());
@@ -373,6 +378,7 @@ public class MainActivity extends BridgeActivity {
         String scheme = uri.getScheme();
         if (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme)) return false;
 
+        String fileName = "svitlo-update-" + System.currentTimeMillis() + ".apk";
         try {
             DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
             if (manager == null) return false;
@@ -381,11 +387,7 @@ public class MainActivity extends BridgeActivity {
                 .setDescription(getString(R.string.update_download_description))
                 .setMimeType("application/vnd.android.package-archive")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalFilesDir(
-                    this,
-                    Environment.DIRECTORY_DOWNLOADS,
-                    "svitlo-update-" + System.currentTimeMillis() + ".apk"
-                )
+                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, fileName)
                 .setAllowedOverMetered(true)
                 .setAllowedOverRoaming(false);
             long id = manager.enqueue(request);
@@ -393,6 +395,8 @@ public class MainActivity extends BridgeActivity {
             getSharedPreferences(UpdateDownloadReceiver.PREFS, MODE_PRIVATE)
                 .edit()
                 .putLong(UpdateDownloadReceiver.KEY_DOWNLOAD_ID, id)
+                .putString(UpdateDownloadReceiver.KEY_SHA256, expectedHash)
+                .putString(UpdateDownloadReceiver.KEY_FILE_NAME, fileName)
                 .apply();
             Toast.makeText(this, getString(R.string.update_download_started), Toast.LENGTH_LONG).show();
             return true;

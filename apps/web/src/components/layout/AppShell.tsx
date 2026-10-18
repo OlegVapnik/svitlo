@@ -6,6 +6,8 @@ import { usePowerState } from '../../hooks/usePowerState.js';
 import { useSafeAreaInsets } from '../../hooks/useSafeAreaInsets.js';
 import { useSwipeTabs } from '../../hooks/useSwipeTabs.js';
 import { useTabTransition } from '../../hooks/useTabTransition.js';
+import { useAppVersion } from '../../api/queries.js';
+import { UpdateGate } from '../changelog/UpdateModal.js';
 import { cn } from '../../lib/cn.js';
 import { Header } from './Header.js';
 import { BottomNav } from './BottomNav.js';
@@ -39,6 +41,9 @@ export const AppShell = () => {
   usePowerState();
   // Безопасные зоны для нативной обёртки: в WebView env(safe-area-inset-*) нет.
   useSafeAreaInsets();
+  // OTA: при запуске и раз в 6 часов проверяем, не опубликована ли новая сборка. Ошибка сети
+  // здесь не показывается — окно просто не появится до следующей успешной проверки.
+  const appVersion = useAppVersion();
   // Горизонтальный свайп переключает нижние табы — на телефоне это быстрее, чем целиться в иконку.
   const swipe = useSwipeTabs();
   // Мягкий приход контента при смене таба: направление берём из порядка табов, а не из жеста,
@@ -69,6 +74,7 @@ export const AppShell = () => {
       </main>
     </div>
     <BottomNav />
+    <UpdateGate info={appVersion.data?.data ?? null} />
   </div>
   );
 };
