@@ -187,7 +187,8 @@ echo "    Worker доступен по адресу: $WORKER_URL"
 # VITE_API_BASE_URL вшивается в бандл на этапе сборки, поэтому фронтенд собираем ПОСЛЕ деплоя
 # воркера и с его фактическим адресом.
 echo "==> 4/5. Собираю фронтенд на $WORKER_URL"
-VITE_API_BASE_URL="$WORKER_URL/api/v1" build_frontend
+BUILD_ID="$(date -u +%Y%m%d-%H%M)"
+VITE_API_BASE_URL="$WORKER_URL/api/v1" SVITLO_BUILD_ID="$BUILD_ID" build_frontend
 
 if [ ! -d apps/web/dist ]; then
   echo "ОШИБКА: сборка не дала apps/web/dist" >&2
