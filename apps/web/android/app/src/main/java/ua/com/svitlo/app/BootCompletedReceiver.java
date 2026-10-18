@@ -43,5 +43,8 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         // теми же requestCode — дублей не будет.
         OutageAlarmReceiver.schedule(context, json);
         SvitloWidgetProvider.refresh(context);
+        // Флаг «уже запланировано» пережил перезагрузку, а AlarmManager — нет: сбрасываем флаг и
+        // ставим периодическое обновление заново, иначе виджет остался бы без фоновой сети.
+        WidgetRefreshReceiver.restorePeriodic(context);
     }
 }

@@ -25,8 +25,8 @@
 
         </activity>
 
-        <!-- Виджет рабочего стола 4×1: система шлёт APPWIDGET_UPDATE, а данные приходят из
-             WebView через window.SvitloNative.syncState (SharedPreferences). -->
+        <!-- Виджет рабочего стола: система шлёт APPWIDGET_UPDATE по изменению размера, а данные
+             приходят из WebView через window.SvitloNative.syncState (SharedPreferences). -->
         <receiver
             android:name=".SvitloWidgetProvider"
             android:exported="true">
@@ -37,6 +37,12 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/svitlo_widget_info" />
         </receiver>
+
+        <!-- Фоновое обновление виджета раз в 30 минут и кнопка «Оновити» на самой плашке.
+             Будильник шлёт явный broadcast, поэтому exported=false: снаружи его не вызвать. -->
+        <receiver
+            android:name=".WidgetRefreshReceiver"
+            android:exported="false" />
 
         <!-- Фоновые уведомления: будильники AlarmManager бьют в этот receiver, даже когда
              приложение выгружено из памяти. exported=false — снаружи его не вызвать. -->

@@ -34,6 +34,7 @@ import { useTheme } from '../../hooks/useTheme.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { useNativeWidgetSync, type NativeWidgetState } from '../../hooks/useNativeWidgetSync.js';
+import { API_BASE_URL } from '../../api/client.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
 import {
   formatMinutesUk,
@@ -311,6 +312,8 @@ export const HomeHeroSection: React.FC = () => {
 
     return {
       regionName: currentRegionData.nameUa,
+      regionCpu: currentRegionData.cpu,
+      apiBaseUrl: API_BASE_URL,
       queue: selectedQueue,
       isOff: isOffNow,
       statusText,
@@ -318,10 +321,23 @@ export const HomeHeroSection: React.FC = () => {
       nextChangeLabel,
       todayOutageHours: Math.round((todayOffMinutes / 60) * 10) / 10,
       upcomingIntervals,
+      // Сегодняшние окна целиком (включая уже прошедшие): панель 4×2 показывает их списком, а
+      // сумма часов без света за сутки должна совпадать с графиком, а не с «остатком».
+      todayIntervals: todayIntervals
+        .filter((interval) => interval.stateCode === OFF_STATE_CODE)
+        .map((interval) => ({
+          startEpochMs: Date.parse(interval.startsAt),
+          endEpochMs: Date.parse(interval.endsAt),
+        }))
+        .filter(
+          (interval) =>
+            Number.isFinite(interval.startEpochMs) && Number.isFinite(interval.endEpochMs),
+        ),
     };
   }, [
     selectedQueue,
     currentRegionData.nameUa,
+    currentRegionData.cpu,
     upcomingGroupOutages,
     now,
     windowSummary,

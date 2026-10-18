@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Виджет 4×1: область + черга, статус света, ближайшее переключение и часы без света.
-     Только представления, которые поддерживает RemoteViews (LinearLayout/TextView/ImageView):
-     иначе AppWidgetManager молча нарисует пустую плашку на части прошивок. -->
+<!-- Виджет 4×1: область + черга, статус света, ближайшее переключение, часы без света и кнопка
+     ручного обновления. Только представления, которые поддерживает RemoteViews
+     (LinearLayout/TextView/ImageView): иначе AppWidgetManager молча нарисует пустую плашку на
+     части прошивок. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -43,6 +44,17 @@
             android:text="@string/widget_default_queue"
             android:textColor="@color/svitlo_widget_primary"
             android:textSize="11sp" />
+
+        <ImageView
+            android:id="@+id/widget_refresh"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="4dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/widget_refresh"
+            android:padding="4dp"
+            android:src="@drawable/ic_widget_refresh"
+            android:tint="@color/svitlo_widget_muted" />
     </LinearLayout>
 
     <LinearLayout
@@ -94,3 +106,4 @@
         android:textColor="@color/svitlo_widget_muted"
         android:textSize="11sp" />
 </LinearLayout>
+

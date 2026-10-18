@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 4×1, растягивается по горизонтали и вертикали. updatePeriodMillis=0: система не будит
-     приложение по расписанию — виджет обновляется из syncState() WebView, когда приходит
-     свежий график. Так батарея не тратится на пустые обновления ночью. -->
+<!-- Адаптивный виджет: компактная капсула 2×1, полоса 4×1 и панель 4×2. Размер выбирает
+     SvitloWidgetProvider по OPTION_APPWIDGET_MIN_WIDTH/MIN_HEIGHT и рисует свой layout.
+     updatePeriodMillis=0: система не будит приложение по расписанию — с v2.17.0 это делает
+     WidgetRefreshReceiver раз в 30 минут, а кнопка на виджете обновляет вручную. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:description="@string/widget_description"
     android:initialLayout="@layout/widget_svitlo"
     android:minHeight="70dp"
-    android:minWidth="250dp"
+    android:minWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:minResizeWidth="110dp"
     android:previewLayout="@layout/widget_svitlo"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="1"
@@ -15,3 +18,4 @@
     android:updatePeriodMillis="0"
     android:widgetCategory="home_screen"
     tools:targetApi="31" />
+

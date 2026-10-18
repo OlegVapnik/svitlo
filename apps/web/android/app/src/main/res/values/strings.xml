@@ -7,8 +7,12 @@
     <string name="widget_description">Стан вашої черги на головному екрані</string>
     <string name="widget_default_region">Світло</string>
     <string name="widget_default_queue">Черга —</string>
+    <string name="widget_default_queue_short">—</string>
     <string name="widget_default_status">Відкрийте застосунок, щоб обрати область</string>
     <string name="widget_default_next">Графік ще не завантажено</string>
+    <string name="widget_schedule_title">Сьогодні без світла</string>
+    <string name="widget_schedule_empty">Відключень на сьогодні немає</string>
+    <string name="widget_refresh">Оновити графік</string>
     <string name="notification_channel_outages">Відключення та повернення світла</string>
     <string name="notification_channel_outages_desc">Попередження за 15 хвилин до відключення і коли світло повертається</string>
     <string name="update_download_title">Оновлення Svitlo</string>
