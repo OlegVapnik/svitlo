@@ -107,6 +107,19 @@ def build(rows, regions: dict[str, str]) -> dict:
                     "hromada": resolve((row.get("hromada_code") or "").strip(), "громада"),
                 }
             )
+        elif category == "місто зі спеціальним статусом":
+            # Київ у КАТОТТГ стоїть на рівні області, але для адресного каскаду це єдиний НП
+            # продуктового регіону `kyiv-city`.
+            bucket["settlements"].append(
+                {
+                    "koatuu": koatuu,
+                    "name": name,
+                    "kind": "місто",
+                    "priority": 1,
+                    "raion": None,
+                    "hromada": None,
+                }
+            )
         elif category == "район у місті":
             city = resolve((row.get("parent_code") or "").strip(), "місто")
             bucket["cityDistricts"].append({"koatuu": koatuu, "name": name, "city": city})
@@ -123,13 +136,28 @@ def main() -> int:
     parser.add_argument("--source", default=UA_DEFAULT_SOURCE, help="URL реєстру КОАТТГ (CSV)")
     parser.add_argument("--out", required=True, type=pathlib.Path, help="куда писать JSON")
     parser.add_argument("--cache", type=pathlib.Path, default=pathlib.Path("/tmp/katottg.csv"))
+    parser.add_argument(
+        "--all-regions",
+        action="store_true",
+        help="включить 24 области и Киев; Крым и Севастополь не входят в каталог приложения",
+    )
     args = parser.parse_args()
 
     csv_path = download(args.source, args.cache)
     with csv_path.open(encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
 
-    regions = build(rows, DEFAULT_REGIONS)
+    selected_regions = DEFAULT_REGIONS
+    if args.all_regions:
+        excluded = {"Автономна Республіка Крим", "Севастополь"}
+        selected_regions = {
+            row["code"]: row["name"]
+            for row in rows
+            if row.get("level") == "1"
+            and row.get("category_name") in {"область", "місто зі спеціальним статусом"}
+            and row.get("name") not in excluded
+        }
+    regions = build(rows, selected_regions)
     if not regions:
         print("Реєстр порожній або немає очікуваних областей", file=sys.stderr)
         return 1

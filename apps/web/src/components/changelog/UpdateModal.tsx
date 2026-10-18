@@ -164,17 +164,18 @@ const Counter: React.FC<{ Icon: typeof Sparkles; value: number; label: string }>
 export const UpdateGate: React.FC<{ info: AppVersionInfo | null }> = ({ info }) => {
   const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(readDismissedVersion);
+  const native = isNativeApp();
 
   useEffect(() => {
-    if (!info) {
+    if (!native || !info) {
       setOpen(false);
       return;
     }
     const shouldShow = isNewerVersion(info.version, APP_VERSION) && dismissed !== info.version;
     setOpen(shouldShow);
-  }, [dismissed, info]);
+  }, [dismissed, info, native]);
 
-  if (!info || !isNewerVersion(info.version, APP_VERSION) || !open) return null;
+  if (!native || !info || !isNewerVersion(info.version, APP_VERSION) || !open) return null;
 
   return (
     <UpdateModal

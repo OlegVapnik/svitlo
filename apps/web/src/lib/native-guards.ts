@@ -16,6 +16,12 @@ function isNativeShell(): boolean {
   return Boolean((window as Window & { SvitloNative?: unknown }).SvitloNative);
 }
 
+/** Нативный класс задаёт отдельную область стилей для Android-оболочки. */
+export function markNativeShell(): void {
+  if (typeof document === 'undefined' || !isNativeShell()) return;
+  document.documentElement.classList.add('native-app');
+}
+
 export function installNativeGuards(): void {
   if (!isNativeShell()) return;
 

@@ -13,7 +13,7 @@ describe('directory guard', () => {
     },
   );
 
-  test.each(['Шевченка', 'Деснянське', 'Тернопіль', ''])('«%s» — нормальное название', (name) => {
+  test.each(['Шевченка', 'Деснянське', 'Тернопіль', 'Алтестове', ''])('«%s» — нормальное название', (name) => {
     expect(directoryNameHasTestMarker(name)).toBe(false);
   });
 

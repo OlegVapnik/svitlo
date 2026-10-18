@@ -129,7 +129,7 @@ export function normalizeQueue(value: string): string {
     .replace(/\/{2,}/gu, '/');
 }
 
-/** Годится ли строка как код группы (1/1…6/2). Мусор в базу не пускаем. */
+/** Годится ли строка как код группы (1/1…6/2, а в Киеве — группа 1…60). Мусор в базу не пускаем. */
 export function isQueueCode(value: string): boolean {
   return /^\d{1,2}(?:\/\d{1,2})?$/u.test(String(value ?? '').trim());
 }

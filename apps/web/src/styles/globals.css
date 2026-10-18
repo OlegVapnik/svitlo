@@ -588,16 +588,12 @@
   }
 }
 
-/* --- Нативний відгук: інтерфейс не повинен поводитись як сторінка браузера ---
-   Довге натискання на таймері, чипах, картках чи табах викликало виділення тексту й системне
-   меню «Копіювати» — застосунок у WebView видавав себе з головою. Виділення вимкнене для
-   оболонки, але НЕ для полів вводу й тексту новин: останній можна скопіювати свідомо.
-   `overscroll-behavior-y: none` прибирає «гумовий» відскок сторінки й pull-to-refresh,
-   які в нативному застосунку читаються як дефект. */
+/* Native Android interaction styles are scoped to the shell; browser selection stays enabled. */
 @layer base {
-  html,
-  body,
-  #root {
+  /* Browser site keeps normal text selection and browser gestures. */
+  .native-app,
+  .native-app body,
+  .native-app #root {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -605,19 +601,18 @@
     overscroll-behavior-y: none;
   }
 
-  img,
-  svg,
-  a,
-  button {
+  .native-app img,
+  .native-app svg,
+  .native-app a,
+  .native-app button {
     -webkit-user-drag: none;
     user-select: none;
   }
 
-  /* Єдині місця, де виділення лишається: ввід і явно позначений текст (новини, адреси). */
-  input,
-  textarea,
-  [contenteditable='true'],
-  .selectable-text {
+  .native-app input,
+  .native-app textarea,
+  .native-app [contenteditable='true'],
+  .native-app .selectable-text {
     -webkit-user-select: text;
     user-select: text;
   }

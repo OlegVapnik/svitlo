@@ -11,7 +11,6 @@
  */
 
 import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeHouseNumber, normalizeQueue } from './address.js';
-import { searchSettlements } from './settlements.js';
 import { collectChernihivOutages, fetchCityIds, type ChernihivOutage } from './chernihiv.js';
 // Разбор ГПВ из открытых Telegram-каналов операторов. Модуль — копия проверенного
 // `apps/api/src/services/telegram-schedule.service.ts`, чтобы оба сервера читали один пост одинаково.
@@ -353,27 +352,35 @@ async function networkDataOn(
 ): Promise<Map<string, { slots: number; queueSlots: number; coverage: number }>> {
   const filter = regionIn(keys);
   const stats = new Map<string, { slots: number; queueSlots: number; coverage: number }>();
+  const statKey = (region: string, source: string) => `${region}\u0000${source}`;
+  const ensure = (region: string, source: string) => {
+    const key = statKey(region, source);
+    const current = stats.get(key) ?? { slots: 0, queueSlots: 0, coverage: 0 };
+    stats.set(key, current);
+    return current;
+  };
   const [slots, coverage] = await Promise.all([
     env.DB.prepare(
-      `SELECT region, COUNT(*) AS slots,
+      `SELECT region, source, COUNT(*) AS slots,
               SUM(CASE WHEN queue = ? THEN 1 ELSE 0 END) AS queueSlots
-       FROM schedule_slots WHERE ${filter.clause} AND date = ? GROUP BY region`,
+       FROM schedule_slots WHERE ${filter.clause} AND date = ? GROUP BY region, source`,
     )
       .bind(queue ?? '', ...filter.bindings, date)
-      .all<{ region: string; slots: number; queueSlots: number }>(),
+      .all<{ region: string; source: string; slots: number; queueSlots: number }>(),
     env.DB.prepare(
-      `SELECT region, COUNT(*) AS n FROM schedule_coverage WHERE ${filter.clause} AND date = ? GROUP BY region`,
+      `SELECT region, source, COUNT(*) AS n FROM schedule_coverage
+       WHERE ${filter.clause} AND date = ? GROUP BY region, source`,
     )
       .bind(...filter.bindings, date)
-      .all<{ region: string; n: number }>(),
+      .all<{ region: string; source: string; n: number }>(),
   ]);
   for (const row of slots.results ?? []) {
-    stats.set(row.region, { slots: row.slots ?? 0, queueSlots: row.queueSlots ?? 0, coverage: 0 });
+    const current = ensure(row.region, row.source);
+    current.slots = row.slots ?? 0;
+    current.queueSlots = row.queueSlots ?? 0;
   }
   for (const row of coverage.results ?? []) {
-    const current = stats.get(row.region) ?? { slots: 0, queueSlots: 0, coverage: 0 };
-    current.coverage = row.n ?? 0;
-    stats.set(row.region, current);
+    ensure(row.region, row.source).coverage = row.n ?? 0;
   }
   return stats;
 }
@@ -404,11 +411,24 @@ async function resolveReadRegions(
   if (feedKeys.length <= 1) return keys;
   const candidates = keys.filter((key) => feedKeys.includes(key));
   const stats = await networkDataOn(env, candidates.length > 0 ? candidates : keys, date, queue);
+  const pool = candidates.length > 0 ? candidates : keys;
+  const statOf = (key: string, source: string) => stats.get(`${key}\u0000${source}`);
+  // Источник выбираем так же, как в каталоге: живой `energy-ua` важнее зеркала. Иначе для Києва
+  // запрос группы `2/2` (есть и там, и там) читал историческое зеркало вместо сегодняшнего графика
+  // города; после перехода города на группы `1…60` это ещё и оставляло без данных группы 7…60.
+  const source = ['energy-ua', 'mirror'].find((candidate) =>
+    pool.some((key) => {
+      const stat = statOf(key, candidate);
+      return (stat?.queueSlots ?? 0) > 0 || (stat?.slots ?? 0) > 0 || (stat?.coverage ?? 0) > 0;
+    }),
+  );
+  const sourcePool = source ? pool.filter((key) => statOf(key, source)) : pool;
   const pick =
-    candidates.find((key) => (stats.get(key)?.queueSlots ?? 0) > 0) ??
-    candidates.find((key) => (stats.get(key)?.slots ?? 0) > 0) ??
-    candidates.find((key) => (stats.get(key)?.coverage ?? 0) > 0) ??
-    candidates[0];
+    sourcePool.find((key) => (statOf(key, source ?? '')?.queueSlots ?? 0) > 0) ??
+    sourcePool.find((key) => (statOf(key, source ?? '')?.slots ?? 0) > 0) ??
+    sourcePool.find((key) => (statOf(key, source ?? '')?.coverage ?? 0) > 0) ??
+    sourcePool[0] ??
+    pool[0];
   return pick ? [pick] : keys;
 }
 
@@ -421,7 +441,14 @@ async function resolveReadRegions(
  */
 function regionFeedKeysOf(cpu: string): string[] {
   // То же правило, что и в каталоге (`./regions.js`): одна реализация вместо двух копий.
-  return regionFeedKeys(cpu);
+  const keys = regionFeedKeys(cpu);
+  const canonical = canonicalRegionCpu(cpu);
+  // Явно названная сеть многомережной области читается только по себе: чужие часы показывать нельзя.
+  if (cpu.trim() !== canonical) return keys.includes(cpu) && keys.length > 1 ? [cpu] : keys;
+  // Канонический `cpu` может быть не ключом фида (`kyiv-city` ↔ `kyiv`, `kyivska-oblast` ↔
+  // `kiivska-oblast`), но именно под ним лежит живой график Energy-UA. Без него `/queues` и
+  // `/schedules` читали только зеркало и показывали 60 исторических групп Києва.
+  return keys.includes(canonical) ? keys : [...keys, canonical];
 }
 
 /** Название области по-украински: из встроенного списка, дальше — по её ключу фида. */
@@ -1749,68 +1776,7 @@ interface AddressQueueRow {
  * поэтому ответы складываются в Cache API на сутки, а адреса из D1 всегда спрашиваются первыми.
  *
  * User-Agent обязателен по правилам Nominatim, поэтому передаём свой, а не браузерный.
- */
-async function nominatim(
-  params: Record<string, string>,
-  allowedAddressTypes: string[],
-): Promise<unknown[]> {
-  const url = new URL('https://nominatim.openstreetmap.org/search');
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('countrycodes', 'ua');
-  url.searchParams.set('Accept-Language', 'uk');
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
 
-  try {
-    const response = await fetch(url.toString(), {
-      headers: { 'user-agent': 'SvitloUA/2.2', accept: 'application/json' },
-    });
-    if (!response.ok) return [];
-    const parsed: unknown = await response.json();
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item) => {
-      if (typeof item !== 'object' || item === null) return false;
-      const kind = (item as Record<string, unknown>)['addresstype'];
-      return typeof kind === 'string' && allowedAddressTypes.includes(kind);
-    });
-  } catch {
-    // Справочник недоступен — возвращаем то, что есть в D1, а не ошибку: поиск по адресу
-    // не должен ломаться из-за внешнего сервиса.
-    return [];
-  }
-}
-
-/**
- * `addresstype` объектов OSM, которые считаем населённым пунктом. Всё остальное (музеи, больницы,
- * магазины) отбрасываем: в подсказке населённых пунктов «Центральна районна лікарня» — это шум.
- */
-const SETTLEMENT_ADDRESS_TYPES = [
-  'city', 'town', 'village', 'hamlet', 'municipality', 'suburb', 'county', 'state', 'region', 'borough',
-];
-
-/** Типы OSM, которые считаем улицей. */
-const STREET_ADDRESS_TYPES = ['street', 'road', 'residential', 'pedestrian', 'primary', 'secondary', 'tertiary'];
-
-/** Приводит объект Nominatim к `{ name, normalized, lat, lon, source }`. */
-function nominatimToPlace(item: unknown, source: 'osm'): {
-  name: string;
-  normalized: string;
-  lat: number | null;
-  lon: number | null;
-  source: 'osm';
-} | null {
-  if (typeof item !== 'object' || item === null) return null;
-  const record = item as Record<string, unknown>;
-  const name = typeof record['name'] === 'string' ? record['name'] : String(record['display_name'] ?? '').split(',')[0] ?? '';
-  const trimmed = name.trim();
-  if (!trimmed) return null;
-  return {
-    name: trimmed,
-    normalized: normalizeAddress(trimmed),
-    lat: typeof record['lat'] === 'string' ? Number(record['lat']) : null,
-    lon: typeof record['lon'] === 'string' ? Number(record['lon']) : null,
-    source,
-  };
-}
 
 /** Убирает дубли по нормализованному имени, сохраняя порядок (сначала наши данные). */
 function dedupePlaces<T extends { normalized: string }>(places: T[]): T[] {
@@ -1918,9 +1884,19 @@ async function loadMirrorRegionNames(env: Env): Promise<Record<string, string>> 
  */
 function toIntervals(rows: SlotRow[], queue: string, date: string) {
   const wanted = normalizeQueue(queue);
+  // Два ключа области (канонический и легаси) могут принести один и тот же слот из разных
+  // источников. Дедупликация по времени не даёт графику удвоиться, когда источник поменялся,
+  // а старые строки ещё лежат в D1.
+  const seen = new Set<string>();
   return rows
     .filter((row) => normalizeQueue(row.queue) === wanted)
     .sort((a, b) => a.time_from.localeCompare(b.time_from))
+    .filter((row) => {
+      const key = `${row.time_from}|${row.time_to}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .map((row) => ({
       startsAt: localSlotToUtc(date, row.time_from, false),
       endsAt: localSlotToUtc(date, row.time_to, true),
@@ -2578,68 +2554,104 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
     // бы лишнего раунда к D1, а CPU-бюджет воркера — 10 мс на запрос. `*` — служебный код «день
     // опубликован целиком», а не группа, поэтому исключаем его здесь же.
     env.DB.prepare(
-      `SELECT region AS cpu, queue, COUNT(*) AS slots, MAX(date) AS lastDate
-       FROM schedule_slots GROUP BY region, queue
+      `SELECT region AS cpu, source, queue, COUNT(*) AS slots, MAX(date) AS lastDate
+       FROM schedule_slots WHERE date >= ? AND date <= ?
+       GROUP BY region, source, queue
        UNION ALL
-       SELECT region AS cpu, queue, 0 AS slots, NULL AS lastDate
-       FROM schedule_coverage WHERE queue <> ? GROUP BY region, queue`,
-    ).bind(ALL_CLEAR_QUEUE).all<{ cpu: string; queue: string; slots: number; lastDate: string | null }>(),
+       SELECT region AS cpu, source, queue, 0 AS slots, NULL AS lastDate
+       FROM schedule_coverage WHERE date = ? AND queue <> ?
+       GROUP BY region, source, queue`,
+    )
+      .bind(today, addDays(today, 1), today, ALL_CLEAR_QUEUE)
+      .all<{ cpu: string; source: string; queue: string; slots: number; lastDate: string | null }>(),
     loadMirrorRegionNames(env),
     // Покрытие за сегодня: «график опубликован, отключений в нём нет» — это не «нет данных».
     // Раньше область с опубликованным ГПВ без отключений выглядела ровно как неотданная зеркалом.
-    env.DB.prepare(`SELECT region, queue, has_outages FROM schedule_coverage WHERE date = ?`)
+    env.DB.prepare(`SELECT region, source, queue, has_outages FROM schedule_coverage WHERE date = ?`)
       .bind(today)
-      .all<{ region: string; queue: string; has_outages: number }>(),
+      .all<{ region: string; source: string; queue: string; has_outages: number }>(),
     // Слоты ТОЛЬКО на сегодня и завтра. Без этого бейдж области показывал «6 сл.», хотя эти
     // полчаса лежали в БД с 1 июля: человек читал «N сл.» как «график на сегодня загружен» и не
-    // понимал, почему на экране пусто. Считаем отдельным групповым запросом (одно чтение D1),
-    // а `slots` оставляем как общее число загруженных слотов — по нему видно историю.
+    // понимал, почему на экране пусто. Считаем отдельным групповым запросом (одно чтение D1).
     env.DB.prepare(
-      `SELECT region AS cpu, COUNT(*) AS n FROM schedule_slots WHERE date >= ? AND date <= ? GROUP BY region`,
+      `SELECT region AS cpu, source, COUNT(*) AS n FROM schedule_slots
+       WHERE date >= ? AND date <= ? GROUP BY region, source`,
     )
       .bind(today, addDays(today, 1))
-      .all<{ cpu: string; n: number }>(),
+      .all<{ cpu: string; source: string; n: number }>(),
   ]);
 
   const todaySlotsByRegion = new Map<string, number>();
-  for (const row of todayRows.results ?? []) todaySlotsByRegion.set(row.cpu, row.n ?? 0);
+  for (const row of todayRows.results ?? []) {
+    todaySlotsByRegion.set(`${row.cpu}\u0000${row.source}`, row.n ?? 0);
+  }
 
-  const byRegion = new Map<string, { queues: Set<string>; slots: number; lastDate: string | null }>();
+  type RegionFacts = { queues: Set<string>; slots: number; lastDate: string | null };
+  const byRegion = new Map<string, RegionFacts>();
+  const sourceKey = (cpu: string, source: string) => `${cpu}\u0000${source}`;
   for (const row of result.results ?? []) {
     const queue = normalizeQueue(row.queue);
     // Мусорные коды в список кнопок не пускаем: там попадаются «черга» из чужих источников.
     if (!isQueueCode(queue)) continue;
-    const entry = byRegion.get(row.cpu) ?? { queues: new Set<string>(), slots: 0, lastDate: null };
+    const key = sourceKey(row.cpu, row.source);
+    const entry = byRegion.get(key) ?? { queues: new Set<string>(), slots: 0, lastDate: null };
     entry.queues.add(queue);
     entry.slots += row.slots ?? 0;
     if (row.lastDate && (!entry.lastDate || row.lastDate > entry.lastDate)) entry.lastDate = row.lastDate;
-    byRegion.set(row.cpu, entry);
+    byRegion.set(key, entry);
   }
 
   const coverageByRegion = new Map<string, { covered: Set<string>; off: Set<string> }>();
   for (const row of coverageRows.results ?? []) {
-    const entry = coverageByRegion.get(row.region) ?? { covered: new Set<string>(), off: new Set<string>() };
+    const key = sourceKey(row.region, row.source);
+    const entry = coverageByRegion.get(key) ?? { covered: new Set<string>(), off: new Set<string>() };
     entry.covered.add(normalizeQueue(row.queue));
     if (row.has_outages) entry.off.add(normalizeQueue(row.queue));
-    coverageByRegion.set(row.region, entry);
+    coverageByRegion.set(key, entry);
   }
+
+  // Источники нельзя смешивать: у зеркала для Києва лежат исторические 60 групп `35/1`, а живой
+  // график города — шесть групп `1…6`. Слияние давало 66 кнопок, среди которых человек выбирал
+  // группу, которой у оператора нет. Для набора ключей одной области берём ОДИН источник: свежий
+  // `energy-ua`, если он опубликовал сегодняшний день, иначе зеркало.
+  const hasFacts = (cpu: string, source: string) =>
+    (byRegion.get(sourceKey(cpu, source))?.queues.size ?? 0) > 0 ||
+    (coverageByRegion.get(sourceKey(cpu, source))?.covered.size ?? 0) > 0;
+  const preferredSourceFor = (cpus: string[]): string | null => {
+    if (cpus.some((cpu) => hasFacts(cpu, 'energy-ua'))) return 'energy-ua';
+    if (cpus.some((cpu) => hasFacts(cpu, 'mirror'))) return 'mirror';
+    // Незнакомый источник (старые импорты) не выбрасываем: показываем как есть.
+    const other = [...byRegion.keys(), ...coverageByRegion.keys()]
+      .map((key) => key.split('\u0000'))
+      .find(([cpu]) => Boolean(cpu) && cpus.includes(cpu as string));
+    return other?.[1] ?? null;
+  };
 
   // Строки каталога. Каноническая область — одна строка (её `cpu` человек и видит), а данные для
   // неё берутся из ключей фида: у Киевской области это `kiivska-oblast`, у Киева — `kyiv`.
   const consumed = new Set<string>();
   const rows: Array<Record<string, unknown>> = [];
 
-  /** Факты по ключу фида: слоты и черги из БД. Пустая запись законна — область не импортирована. */
-  const factsOf = (cpu: string) => byRegion.get(cpu) ?? { queues: new Set<string>(), slots: 0, lastDate: null };
+  /** Факты по ключу фида и выбранному источнику. Пустая запись законна — область не импортирована. */
+  const factsOf = (cpu: string, source: string | null): RegionFacts =>
+    (source ? byRegion.get(sourceKey(cpu, source)) : undefined) ??
+    { queues: new Set<string>(), slots: 0, lastDate: null };
 
   for (const entry of REGION_CATALOG) {
     // Ключ каталога может быть ещё и ключом фида (зеркало когда-то отдавало `dnipropetrovska-oblast`
     // отдельно от ЦЕК/ДнЕМ): данные под ним не выбрасываем, а складываем в ту же строку.
     const ownKey = entry.cpu;
-    const ownData = !entry.feedKeys.includes(ownKey) && (byRegion.has(ownKey) || coverageByRegion.has(ownKey)) ? [ownKey] : [];
+    const ownData = !entry.feedKeys.includes(ownKey) &&
+      [...byRegion.keys(), ...coverageByRegion.keys()].some((key) => key.startsWith(`${ownKey}\u0000`))
+      ? [ownKey]
+      : [];
     const dataKeys = [...entry.feedKeys, ...ownData];
-    const facts = dataKeys.map(factsOf);
-    const coverages = dataKeys.map((key) => coverageByRegion.get(key));
+    const source = preferredSourceFor(dataKeys);
+    const facts = dataKeys.map((key) => factsOf(key, source));
+    // Ключи-синонимы (у Києва `kyiv` — зеркало, `kyiv-city` — живой источник) не должны мешать
+    // покрытию: молчит только та сеть, у которой в выбранном источнике вообще есть данные.
+    const activeKeys = dataKeys.filter((key) => hasFacts(key, source ?? ''));
+    const coverages = activeKeys.map((key) => coverageByRegion.get(sourceKey(key, source ?? '')));
     for (const key of dataKeys) consumed.add(key);
     // Канонический `cpu` тоже считаем «разобранным»: иначе он вернулся бы второй строкой из списка
     // встроенных имён (`REGION_NAMES`) — дубль «Одеської області» рядом с самой собой.
@@ -2654,11 +2666,13 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
       slots += fact.slots;
       if (fact.lastDate && (!lastDate || fact.lastDate > lastDate)) lastDate = fact.lastDate;
     }
-    for (const key of dataKeys) todaySlots += todaySlotsByRegion.get(key) ?? 0;
+    for (const key of dataKeys) {
+      todaySlots += source ? todaySlotsByRegion.get(sourceKey(key, source)) ?? 0 : 0;
+    }
     const coveredNetworks = coverages.filter((coverage) => (coverage?.covered.size ?? 0) > 0).length;
     // Область считаем покрытой, только когда день опубликовали ВСЕ её источники (у области с одной
     // сетью — она сама): молчащая сеть — это «не знаем», а не «график есть».
-    const covered = dataKeys.length > 0 && coveredNetworks === dataKeys.length;
+    const covered = activeKeys.length > 0 && coveredNetworks === activeKeys.length;
     rows.push({
       cpu: entry.cpu,
       nameUa: canonicalRegionName(entry.cpu, mirrorNames),
@@ -2686,8 +2700,9 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
     // разные графики, поэтому человек выбирает сеть, а не «область целиком».
     if (entry.feedKeys.length > 1) {
       for (const key of entry.feedKeys) {
-        const fact = factsOf(key);
-        const coverage = coverageByRegion.get(key);
+        const keySource = preferredSourceFor([key]);
+        const fact = factsOf(key, keySource);
+        const coverage = keySource ? coverageByRegion.get(sourceKey(key, keySource)) : undefined;
         const coveredNetwork = (coverage?.covered.size ?? 0) > 0;
         rows.push({
           cpu: key,
@@ -2695,7 +2710,7 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
           nameEn: null,
           queues: [...fact.queues].sort(compareQueueCodes),
           slots: fact.slots,
-          todaySlots: todaySlotsByRegion.get(key) ?? 0,
+          todaySlots: keySource ? todaySlotsByRegion.get(sourceKey(key, keySource)) ?? 0 : 0,
           lastDate: fact.lastDate,
           feedKeys: [key],
           parentCpu: entry.cpu,
@@ -2709,10 +2724,16 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
 
   // Ключи фида вне каталога (легасі-области, «мережі» Чернігівщини, имена из зеркала): отдаём как
   // есть с человеческой подписью — придумывать им область-родителя нельзя.
-  for (const cpu of new Set([...Object.keys(REGION_NAMES), ...Object.keys(mirrorNames), ...byRegion.keys()])) {
+  const feedCpus = new Set<string>();
+  for (const key of [...byRegion.keys(), ...coverageByRegion.keys()]) {
+    const [cpu] = key.split('\u0000');
+    if (cpu) feedCpus.add(cpu);
+  }
+  for (const cpu of new Set([...Object.keys(REGION_NAMES), ...Object.keys(mirrorNames), ...feedCpus])) {
     if (consumed.has(cpu)) continue;
-    const fact = factsOf(cpu);
-    const coverage = coverageByRegion.get(cpu);
+    const cpuSource = preferredSourceFor([cpu]);
+    const fact = factsOf(cpu, cpuSource);
+    const coverage = cpuSource ? coverageByRegion.get(sourceKey(cpu, cpuSource)) : undefined;
     const coveredToday = (coverage?.covered.size ?? 0) > 0;
     rows.push({
       cpu,
@@ -2720,7 +2741,7 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
       nameEn: null,
       queues: [...fact.queues].sort(compareQueueCodes),
       slots: fact.slots,
-      todaySlots: todaySlotsByRegion.get(cpu) ?? 0,
+      todaySlots: cpuSource ? todaySlotsByRegion.get(sourceKey(cpu, cpuSource)) ?? 0 : 0,
       lastDate: fact.lastDate,
       feedKeys: [cpu],
       isActive: cpu in REGION_NAMES || cpu in mirrorNames,
@@ -2834,12 +2855,83 @@ async function ensureSchedule(env: Env): Promise<void> {
 
 
 
-/** Похоже ли название на улицу: OSM в ответе на запрос «улица, село» отдаёт и дома с номерами. */
-function isStreetLike(name: string): boolean {
-  const value = name.trim();
-  if (!value) return false;
-  if (/\d+/u.test(value)) return false;
-  return /^(вул\.|вулиця|просп\.|проспект|пров\.|провулок|переулок|пер\.|шосе|бульвар|б\.|пл\.|площа|узв\.|ім\.|наб\.|набережна)/iu.test(value);
+
+
+/**
+ * Карта домов улицы из компактного JSON ОСР: `{"1":"2/1","61-71":"5/1"}`.
+ *
+ * Пустая/битая строка — не ошибка: улица может быть без домов, и тогда очередь берётся
+ * с уровня улицы или населённого пункта. Значения нормализуем здесь же, чтобы сравнение
+ * с вводом человека шло каноническими кодами.
+ */
+function parseStringArray(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string').map((item) => normalizeQueue(item))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function housesFromJson(raw: string | null | undefined): Array<{ housePattern: string; queue: string }> {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return [];
+    return Object.entries(parsed as Record<string, unknown>)
+      .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].trim() !== '')
+      .map(([pattern, queue]) => ({ housePattern: pattern, queue: normalizeQueue(queue) }))
+      .filter((entry) => isQueueCode(entry.queue));
+  } catch {
+    return [];
+  }
+}
+
+/** Список групп населённого пункта из `queues_json`; битый JSON — пустой список, а не 500. */
+function queuesFromJson(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => normalizeQueue(value))
+      .filter((value) => isQueueCode(value)))];
+  } catch {
+    return [];
+  }
+}
+
+interface DirectoryStreetRow {
+  name: string;
+  default_queue: string | null;
+  houses_json: string | null;
+  source: string | null;
+}
+
+/**
+ * Улица из нового компактного справочника ОСР (одна строка на улицу с картой домов).
+ *
+ * Читаем отдельным запросом без JOIN: D1 на бесплатном тарифе считает прочитанные строки,
+ * а улица и её дома нужны только когда человек уже выбрал улицу.
+ */
+async function loadDirectoryStreet(
+  env: Env,
+  filter: { clause: string; bindings: string[] },
+  settlementNormalized: string,
+  streetNormalized: string,
+): Promise<DirectoryStreetRow | null> {
+  if (!streetNormalized) return null;
+  return env.DB.prepare(
+    `SELECT name, default_queue, houses_json, source FROM directory_streets
+     WHERE ${filter.clause} AND settlement_normalized = ? AND normalized = ?
+     LIMIT 1`,
+  )
+    .bind(...filter.bindings, settlementNormalized, streetNormalized)
+    .first<DirectoryStreetRow>();
 }
 
 /**
@@ -2864,6 +2956,13 @@ async function resolveAddress(
   // чужой адрес. Раньше сюда подставлялся пустой `region = ''` — тот же «не найдено», но с запросом.
   if (filter.clause === '') return { queue: null, reason: 'not-found', source: null, options: [] };
   const streetNormalized = normalizeAddress(input.street);
+
+  // Компактный справочник ОСР: одна строка на улицу и карта домов внутри неё. Читаем до
+  // `address_queues`, потому что это самая свежая выгрузка оператора и она точнее ручных привязок.
+  const directoryStreet = await loadDirectoryStreet(env, filter, settlementNormalized, streetNormalized);
+  const streetHouses = housesFromJson(directoryStreet?.houses_json);
+
+  // Уровень 1: конкретный дом на конкретной улице.
   if (streetNormalized && input.house) {
     const catalogHouses = await env.DB.prepare(
       `SELECT house_number, queue, source FROM directory_houses
@@ -2874,15 +2973,31 @@ async function resolveAddress(
       .bind(...filter.bindings, settlementNormalized, streetNormalized, normalizeHouseNumber(input.house))
       .all<{ house_number: string; queue: string | null; source: string }>();
     const exactCatalogHouse = catalogHouses.results?.[0];
-    if (exactCatalogHouse) {
+    if (exactCatalogHouse?.queue && isQueueCode(normalizeQueue(exactCatalogHouse.queue))) {
       return {
-        queue: exactCatalogHouse.queue ? normalizeQueue(exactCatalogHouse.queue) : null,
-        reason: exactCatalogHouse.queue ? 'exact-house' : 'not-found',
-        source: exactCatalogHouse.queue ? exactCatalogHouse.source : null,
+        queue: normalizeQueue(exactCatalogHouse.queue),
+        reason: 'exact-house',
+        source: exactCatalogHouse.source,
+        options: [],
+      };
+    }
+    // Строка с `queue = NULL` означает «дом обслуживают несколько подгрупп», а не «дом без
+    // группы»: нельзя обрывать поиск, ниже может быть точная карта `houses_json` или одна
+    // группа на всю улицу.
+
+    // Дом из `houses_json`: номер ищем по шаблону, поэтому «12» находится и в диапазоне «1-19».
+    // Диапазоны схлопнуты синхронизатором, и разворачивать их в отдельные строки не нужно.
+    const exactStreetHouse = streetHouses.find((entry) => matchHouseNumber(input.house, entry.housePattern));
+    if (exactStreetHouse) {
+      return {
+        queue: exactStreetHouse.queue,
+        reason: 'exact-house',
+        source: directoryStreet?.source ?? 'energy-ua',
         options: [],
       };
     }
   }
+
   const rows = await env.DB.prepare(
     `SELECT region, settlement_name, settlement_normalized, street_name, street_normalized,
             house_pattern, queue, source, updated_at
@@ -2890,9 +3005,6 @@ async function resolveAddress(
      LIMIT 2000`,
   ).bind(...filter.bindings, settlementNormalized).all<AddressQueueRow>();
   const entries = rows.results ?? [];
-  if (entries.length === 0) {
-    return { queue: null, reason: 'not-found', source: null, options: [] };
-  }
 
   // `mirror` — это «в населённом пункте есть такие-то группы», а не «вся улица/село относится
   // к одной группе». Синхронизатор справочника когда-то схлопывал такие строки в одну и подставлял
@@ -2900,7 +3012,8 @@ async function resolveAddress(
   // номер группы нельзя угадывать, его подтверждают только адресные привязки.
   const wholeSettlement = entries.filter((row) => !row.street_normalized && row.source !== 'mirror');
 
-  // Уровень 1: конкретный дом на конкретной улице.
+  // Старые точечные привязки дома проверяем после нового справочника: если дом есть в обеих
+  // выгрузках, свежая карта ОСР уже ответила выше, а здесь остаются только дома, которых в ней нет.
   const streetEntries = streetNormalized
     ? entries.filter((row) => row.street_normalized === streetNormalized)
     : [];
@@ -2912,6 +3025,27 @@ async function resolveAddress(
   }
 
   // Уровень 2: вся улица одним номером группы.
+  if (directoryStreet?.default_queue && isQueueCode(normalizeQueue(directoryStreet.default_queue))) {
+    return {
+      queue: normalizeQueue(directoryStreet.default_queue),
+      reason: 'whole-street',
+      source: directoryStreet.source ?? 'energy-ua',
+      options: [],
+    };
+  }
+  if (streetHouses.length > 0) {
+    const distinct = [...new Set(streetHouses.map((entry) => entry.queue))];
+    if (distinct.length === 1) {
+      return { queue: distinct[0]!, reason: 'whole-street', source: directoryStreet?.source ?? 'energy-ua', options: [] };
+    }
+    // Дом не указан или не попал в карту — показываем диапазоны, не выбирая группу наугад.
+    return {
+      queue: null,
+      reason: 'not-found',
+      source: null,
+      options: dedupeQueues(streetHouses),
+    };
+  }
   if (streetEntries.length > 0) {
     const distinct = [...new Set(streetEntries.map((row) => normalizeQueue(row.queue)))];
     if (distinct.length === 1) {
@@ -2930,6 +3064,29 @@ async function resolveAddress(
   }
 
   // Уровень 3: весь населённый пункт.
+  const settlementDirectory = await env.DB.prepare(
+    `SELECT default_queue, queues_json, source FROM directory_settlements
+     WHERE ${filter.clause} AND normalized = ? LIMIT 1`,
+  )
+    .bind(...filter.bindings, settlementNormalized)
+    .first<{ default_queue: string | null; queues_json: string | null; source: string | null }>();
+  if (settlementDirectory?.default_queue && isQueueCode(normalizeQueue(settlementDirectory.default_queue))) {
+    return {
+      queue: normalizeQueue(settlementDirectory.default_queue),
+      reason: 'whole-settlement',
+      source: settlementDirectory.source ?? 'energy-ua',
+      options: [],
+    };
+  }
+  const settlementQueues = queuesFromJson(settlementDirectory?.queues_json);
+  if (settlementQueues.length > 0) {
+    return {
+      queue: null,
+      reason: 'not-found',
+      source: null,
+      options: settlementQueues.map((queue) => ({ housePattern: input.settlement, queue })),
+    };
+  }
   const distinctSettlement = [...new Set(wholeSettlement.map((row) => normalizeQueue(row.queue)))];
   if (distinctSettlement.length === 1) {
     return {
@@ -3351,32 +3508,57 @@ async function queueSummariesUncached(env: Env, regions: string[]): Promise<Arra
   const keys = [...new Set(regions.filter((region) => region))];
   if (keys.length === 0) return [];
   const placeholders = keys.map(() => '?').join(', ');
-  const [rows, coverages] = await Promise.all([
+  const [slotRows, coverageRows] = await Promise.all([
     env.DB.prepare(
-      `SELECT queue, COUNT(*) AS slots, MAX(date) AS lastDate
-       FROM schedule_slots WHERE region IN (${placeholders}) GROUP BY queue ORDER BY queue`,
-    ).bind(...keys).all<{ queue: string; slots: number; lastDate: string | null }>(),
+      `SELECT source, queue, COUNT(*) AS slots, MAX(date) AS lastDate
+       FROM schedule_slots WHERE region IN (${placeholders}) AND date >= ?
+       GROUP BY source, queue ORDER BY queue`,
+    )
+      .bind(...keys, kyivToday())
+      .all<{ source: string; queue: string; slots: number; lastDate: string | null }>(),
     // Опубликованные на сегодня очереди. В области, где график вышел без отключений, `schedule_slots`
     // пуст (мы храним только «тёмные» часы), и без этого списка экран выбора группы писал
     // «графік не імпортовано» про существующий график.
-    Promise.all(keys.map((key) => coverageOfDay(env, [key], kyivToday()))),
+    env.DB.prepare(
+      `SELECT source, queue, has_outages FROM schedule_coverage
+       WHERE region IN (${placeholders}) AND date = ?`,
+    )
+      .bind(...keys, kyivToday())
+      .all<{ source: string; queue: string; has_outages: number }>(),
   ]);
-  // Очереди без слотов, но с публикацией. `offQueues` исключаем: там пустые слоты значат отставший
-  // импорт, а не «світло за графіком». Пересечение по сетям: группа остаётся «без отключений», только
-  // если так её опубликовала КАЖДАЯ сеть, а сеть, которая на эту дату вообще ничего не опубликовала,
-  // лишает флага все группы — это «не знаем», а не «светло».
-  const published = coverages.map(
-    (coverage) =>
-      new Set([...coverage.queues].filter((queue) => queue !== ALL_CLEAR_QUEUE && !coverage.offQueues.has(queue))),
+
+  // Источники нельзя смешивать: у зеркала для Києва лежат исторические 60 групп `35/1`, а живой
+  // график города — тоже 60 групп, но простыми числами `1…60`. Слияние давало 120 пунктов в списке
+  // выбора, и человек выбирал код, которого у оператора нет. Поэтому для области берём ОДИН источник:
+  // свежий `energy-ua`, а если его на сегодня нет — зеркало. Внутри одного источника коды уже совместимы.
+  const presentSources = new Set([
+    ...(slotRows.results ?? []).map((row) => row.source),
+    ...(coverageRows.results ?? []).map((row) => row.source),
+  ]);
+  const preferredSource = presentSources.has('energy-ua')
+    ? 'energy-ua'
+    : presentSources.has('mirror')
+      ? 'mirror'
+      : null;
+  const rows = (slotRows.results ?? []).filter((row) => !preferredSource || row.source === preferredSource);
+  const coverages = (coverageRows.results ?? []).filter(
+    (row) => !preferredSource || row.source === preferredSource,
   );
-  const cleared =
-    published.length === 0 || coverages.some((coverage) => coverage.queues.size === 0)
-      ? new Set<string>()
-      : published.reduce((acc, here) => new Set([...acc].filter((queue) => here.has(queue))));
+
+  // Очереди без слотов, но с публикацией. Строки с отключениями исключаем: там пустые слоты значат
+  // отставший импорт, а не «світло за графіком». Если источник на сегодня ничего не опубликовал,
+  // флага «без отключений» нет ни у одной группы — это «не знаем», а не «светло».
+  const cleared = coverages.length === 0
+    ? new Set<string>()
+    : new Set(
+        coverages
+          .filter((row) => row.queue !== ALL_CLEAR_QUEUE && !row.has_outages)
+          .map((row) => normalizeQueue(row.queue)),
+      );
   // Порядок «1, 1/2, 2, 2/2, 10» — как в Node-бекенде (`compareQueueCodes`): строковая сортировка
   // ставила «10» перед «2», и список групп в двух сборках выглядел по-разному.
   const sums = new Map<string, { queue: string; slots: number; lastDate: string | null }>();
-  for (const row of rows.results ?? []) {
+  for (const row of rows) {
     const queue = normalizeQueue(row.queue);
     sums.set(queue, { queue, slots: row.slots ?? 0, lastDate: row.lastDate ?? null });
   }
@@ -3586,10 +3768,13 @@ async function upcomingGroupBucketsUncached(
       const intervals = toIntervals(queueRows, queue, date);
       if (intervals.length === 0) continue;
       const nowMs = Date.now();
+      // Не подписываем слоты зеркалом по привычке: в D1 всё чаще лежит живой источник
+      // `energy-ua`, и подпись должна совпадать с тем, что отдаёт `/schedules`.
+      const sources = [...new Set(queueRows.map((row) => row.source ?? 'mirror'))];
       buckets.push({
         queue,
         date,
-        source: 'mirror',
+        source: sources.length === 1 ? sources[0]! : 'mixed',
         intervals,
         isActiveNow: intervals.some(
           (interval) => Date.parse(interval.startsAt) <= nowMs && nowMs < Date.parse(interval.endsAt),
@@ -3956,86 +4141,32 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
   if (path === '/addresses/settlements') {
     const query = (url.searchParams.get('q') ?? '').trim();
-    if (query.length < 2) return json({ data: [] });
     const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 10) || 10));
     const needle = normalizeAddress(query);
-
-    // Сначала наши данные: они проверены и размечены своим источником.
     const settlementsFilter = regionIn(readRegions.length > 0 ? readRegions : [''], 'd.region');
-    const ours = await env.DB.prepare(
-      `SELECT d.name AS name, d.normalized AS normalized, 'curated' AS source
-       FROM directory_settlements d WHERE ${settlementsFilter.clause} AND d.normalized LIKE ?`,
-    ).bind(...settlementsFilter.bindings, `%${needle}%`).all<{ name: string; normalized: string; source: 'curated' }>();
-    // Если каталог ОСР уточняет одноимённый населённый пункт районом, не предлагаем рядом
-    // неразличимый вариант из OSM/статического реестра. Он не имеет связанных улиц и приводил
-    // к пустому списку после выбора, хотя районный вариант содержит полный адресный каталог.
-    const districtQualifiedBases = new Set(
-      (ours.results ?? []).flatMap((row) => {
-        const separator = row.name.lastIndexOf(' · ');
-        if (separator < 0) return [];
-        const base = normalizeAddress(row.name.slice(separator + 3));
-        return base ? [base] : [];
-      }),
-    );
-
-    // Тип аннотирован явно: без него TypeScript сужает `source` до литерала 'curated'
-    // и не даёт потом положить рядом подсказки из OSM.
-    let places: Array<{ name: string; normalized: string; lat: number | null; lon: number | null; source: PlaceSource }> =
-      (ours.results ?? []).filter((row) => !districtQualifiedBases.has(row.normalized)).map((row) => ({
+    const rows = await env.DB.prepare(
+      `SELECT d.name, d.normalized, d.default_queue, d.queues_json, d.streets_count
+       FROM directory_settlements d WHERE ${settlementsFilter.clause} AND d.normalized LIKE ?
+       ORDER BY d.name COLLATE NOCASE LIMIT ${limit}`,
+    )
+      .bind(...settlementsFilter.bindings, needle ? `%${needle}%` : '%')
+      .all<{
+        name: string;
+        normalized: string;
+        default_queue: string | null;
+        queues_json: string | null;
+        streets_count: number;
+      }>();
+    return json({
+      data: (rows.results ?? []).map((row) => ({
         name: row.name,
         normalized: row.normalized,
-        lat: null,
-        lon: null,
-        source: 'curated',
-      }));
-
-    // Статический справочник: города и центры громад ищутся по префиксу в памяти, мгновенно
-    // и без сети. Nominatim для них не годится: он требует полное слово, поэтому «Черніг»
-    // не находил «Чернігів», а человек именно так и набирает название.
-    const fromDirectory = searchSettlements(query, region || undefined, limit);
-    for (const hit of fromDirectory) {
-      const normalized = normalizeAddress(hit.name);
-      if (districtQualifiedBases.has(normalized)) continue;
-      places.push({
-        name: hit.name,
-        normalized,
-        lat: hit.lat,
-        lon: hit.lon,
-        source: 'directory',
-      });
-    }
-    places = dedupePlaces(places).slice(0, limit);
-
-    // Хутора и посёлки справочник не покрывает (их десятки тысяч) — их ищем в OSM.
-    //
-    // Условие обращения к OSM намеренно мягче, чем «справочник пуст»: как только человек
-    // дописал хотя бы 4 символа, но совпадений всё ещё мало, мы спрашиваем и OSM. Иначе
-    // запрос «Чорн» показывал бы только Чернігів и молчал про село Чорна, а это ровно тот
-    // случай, когда человеку нужна подсказка больше всего.
-    //
-    // Короткие запросы («Че», «Біл») в OSM не спрашиваем: они дают шум и десятки посторонних
-    // объектов, а по справочнику ответ и так мгновенный.
-    if (places.length === 0 || (query.length >= 4 && places.length < 5)) {
-      const osm = await nominatim(
-        {
-          featuretype: 'settlement',
-          // Область в запрос НЕ подставляем: проверено на живых ответах Nominatim, что
-          // «Чернігівська область» в запросе ломает поиск («Чернігів, Чернігівська область» —
-          // 0 результатов, а «Чернігів» — город). Ограничение страны делает countrycodes=ua,
-          // а область сужаем уже фильтром по каталогу регионов на фронтенде.
-          q: query,
-          // Запас ×3: часть строк отсеется по addresstype (реки, парки, магазины с тем же
-          // именем), и без запаса подсказка выходила бы пустой при непустом ответе OSM.
-          limit: String(limit * 3),
-        },
-        SETTLEMENT_ADDRESS_TYPES,
-      );
-      for (const item of osm) {
-        const place = nominatimToPlace(item, 'osm');
-        if (place && !districtQualifiedBases.has(place.normalized)) places.push(place);
-      }
-    }
-    return json({ data: dedupePlaces(places).slice(0, limit) });
+        defaultQueue: row.default_queue ? normalizeQueue(row.default_queue) : null,
+        queues: parseStringArray(row.queues_json),
+        streetsCount: row.streets_count ?? 0,
+      })),
+      region,
+    });
   }
 
   if (path === '/addresses/streets') {
@@ -4047,8 +4178,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const settlementNormalized = normalizeAddress(settlement);
     const needle = normalizeAddress(query);
 
-    // Улицы берём из двух мест: справочник (знаем улицу, но не её очередь) и привязки
-    // (знаем и улицу, и очередь). Показываем оба — очереди может ещё не быть, и это честно.
+    // Улицы берём из каталога и публичных привязок. Геокодер не подмешивает похожие улицы
+    // из соседних населённых пунктов; перечень mirror/community не считается адресным каталогом.
     const streetRegions = regionIn(readRegions.length > 0 ? readRegions : ['']);
     const known = await env.DB.prepare(
       `SELECT name, normalized, source FROM directory_streets
@@ -4060,6 +4191,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const bound = await env.DB.prepare(
       `SELECT DISTINCT street_name AS name, street_normalized AS normalized FROM address_queues
        WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized <> '' AND street_normalized LIKE ?
+         AND source NOT IN ('community', 'mirror')
        LIMIT ${STREETS_ROW_LIMIT}`,
     ).bind(...streetRegions.bindings, settlementNormalized, `%${needle}%`)
       .all<{ name: string; normalized: string }>();
@@ -4075,38 +4207,37 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
     let places: Array<{ name: string; normalized: string; source: PlaceSource }> = dedupePlaces(streets);
 
-    // Если в нашем справочнике ничего нет (а это большинство сёл) — берём улицы из OSM.
-    if (places.length === 0 && query.length >= 2) {
-      const osm = await nominatim(
-        { q: `${query}, ${settlement}`, limit: String(limit * 3) },
-        STREET_ADDRESS_TYPES,
-      );
-      const mapped: Array<{ name: string; normalized: string; source: PlaceSource }> = [];
-      for (const item of osm) {
-        const place = nominatimToPlace(item, 'osm');
-        // OSM отдаёт и дома, и проезды — оставляем только то, что похоже на улицу.
-        if (place && isStreetLike(place.name)) {
-          mapped.push({ name: place.name, normalized: place.normalized, source: 'osm' });
-        }
-      }
-      places = dedupePlaces(mapped).slice(0, limit);
-    }
-
     // Если на всё село известна одна очередь — отдаём её, чтобы мастер сразу показал ответ.
     // `source = 'mirror'` исключаем: это перечень групп населённого пункта, а не привязка адреса.
     const whole = await env.DB.prepare(
       `SELECT DISTINCT queue FROM address_queues
        WHERE ${streetRegions.clause} AND settlement_normalized = ? AND street_normalized = ''
-         AND source <> 'mirror'
+         AND source NOT IN ('mirror', 'community')
        LIMIT 100`,
     ).bind(...streetRegions.bindings, settlementNormalized).all<{ queue: string }>();
     const queues = [...new Set((whole.results ?? []).map((row) => normalizeQueue(row.queue)))];
+    // Новый компактный справочник хранит вывод «одна группа на весь НП» отдельно: если улицы
+    // ещё не импортированы в address_queues, подсказка всё равно должна появиться.
+    const settlementDirectory = await env.DB.prepare(
+      `SELECT default_queue FROM directory_settlements
+       WHERE ${streetRegions.clause} AND normalized = ? LIMIT 1`,
+    )
+      .bind(...streetRegions.bindings, settlementNormalized)
+      .first<{ default_queue: string | null }>();
+    const directoryQueue = settlementDirectory?.default_queue
+      ? normalizeQueue(settlementDirectory.default_queue)
+      : null;
+    const wholeSettlementQueue = queues.length === 1
+      ? queues[0]!
+      : directoryQueue && isQueueCode(directoryQueue)
+        ? directoryQueue
+        : null;
 
     return json({
       // Ограничение обязательно: при пустом запросе SQL возвращает все улицы НП, а панель
       // чипов рассчитана на два десятка. Без slice ответ раздувался бы до тысяч строк.
       data: places.slice(0, limit),
-      wholeSettlementQueue: queues.length === 1 ? queues[0] : null,
+      wholeSettlementQueue,
       region,
     });
   }
@@ -4129,6 +4260,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Результат живёт 10 минут: справочник меняется импортом, а не каждым нажатием чипа.
     const cacheKey = `address-houses:${filter.clause}:${filter.bindings.join(',')}:${settlementNormalized}:${streetNormalized}`;
     const result = await cached(cacheKey, async () => {
+      // Компактный справочник ОСР хранит все дома улицы одной строкой. Он основной источник
+      // чипов: именно эти данные приходят из живого графика, а `directory_houses` — старый импорт.
+      const streetDirectory = await loadDirectoryStreet(env, filter, settlementNormalized, streetNormalized);
+      const streetHouses = housesFromJson(streetDirectory?.houses_json);
       const directoryRows = await env.DB.prepare(
         `SELECT house_number AS house_pattern, queue FROM directory_houses
          WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
@@ -4137,7 +4272,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       )
         .bind(...filter.bindings, settlementNormalized, streetNormalized)
         .all<{ house_pattern: string; queue: string | null }>();
-      const knownHouseNumbers = new Set((directoryRows.results ?? []).map((row) => row.house_pattern));
+      const knownHouseNumbers = new Set([
+        ...streetHouses.map((row) => row.housePattern),
+        ...(directoryRows.results ?? []).map((row) => row.house_pattern),
+      ]);
       const legacyRows = await env.DB.prepare(
         `SELECT house_pattern, queue FROM address_queues
          WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
@@ -4148,19 +4286,34 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         .all<{ house_pattern: string; queue: string }>();
 
       const entries = [
-        ...(directoryRows.results ?? []).map((row) => ({ ...row, source: 'directory' })),
+        ...streetHouses.map((row) => ({ ...row, source: 'directory' })),
+        ...(directoryRows.results ?? []).map((row) => ({
+          housePattern: row.house_pattern,
+          queue: row.queue,
+          source: 'directory',
+        })),
         ...(legacyRows.results ?? [])
           .filter((row) => !knownHouseNumbers.has(row.house_pattern))
-          .map((row) => ({ ...row, source: 'legacy' })),
+          .map((row) => ({ housePattern: row.house_pattern, queue: row.queue, source: 'legacy' })),
       ];
-      const whole = entries.find((row) => (row.house_pattern === '*' || row.house_pattern === '') && row.queue);
+      const wholeQueue = streetDirectory?.default_queue
+        ? normalizeQueue(streetDirectory.default_queue)
+        : null;
+      const whole = entries.find((row) => (row.housePattern === '*' || row.housePattern === '') && row.queue);
       const houses = dedupeQueues(
         entries
-          .filter((row) => row.house_pattern !== '*' && row.house_pattern !== '')
-          .map((row) => ({ housePattern: row.house_pattern, queue: row.queue ? normalizeQueue(row.queue) : '' })),
+          .filter((row) => row.housePattern !== '*' && row.housePattern !== '')
+          .map((row) => ({ housePattern: row.housePattern, queue: row.queue ? normalizeQueue(row.queue) : '' })),
       );
 
-      return { data: houses, wholeStreetQueue: whole?.queue ? normalizeQueue(whole.queue) : null };
+      return {
+        data: houses,
+        wholeStreetQueue: wholeQueue && isQueueCode(wholeQueue)
+          ? wholeQueue
+          : whole?.queue
+            ? normalizeQueue(whole.queue)
+            : null,
+      };
     }, AGGREGATE_CACHE_TTL_MS);
 
     return json(result);

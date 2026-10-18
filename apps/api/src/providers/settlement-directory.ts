@@ -53,6 +53,30 @@ interface DirectoryFile {
  * находить НП, которые находит Node-бэкенд.
  */
 export const REGION_KATOTTG: Record<string, string> = {
+  'kyiv-city': 'UA80000000000093317',
+  'vinnytska-oblast': 'UA05000000000010236',
+  'volynska-oblast': 'UA07000000000024379',
+  'dnipropetrovska-oblast': 'UA12000000000090473',
+  'donetska-oblast': 'UA14000000000091971',
+  'zhytomyrska-oblast': 'UA18000000000041385',
+  'zakarpatska-oblast': 'UA21000000000011690',
+  'zaporizka-oblast': 'UA23000000000064947',
+  'ivano-frankivska-oblast': 'UA26000000000069363',
+  'kyivska-oblast': 'UA32000000000030281',
+  'kirovohradska-oblast': 'UA35000000000016081',
+  'luhanska-oblast': 'UA44000000000018893',
+  'lvivska-oblast': 'UA46000000000026241',
+  'mykolaivska-oblast': 'UA48000000000039575',
+  'odeska-oblast': 'UA51000000000030770',
+  'poltavska-oblast': 'UA53000000000028050',
+  'rivnenska-oblast': 'UA56000000000066151',
+  'sumska-oblast': 'UA59000000000057109',
+  'ternopilska-oblast': 'UA61000000000060328',
+  'kharkivska-oblast': 'UA63000000000041885',
+  'khersonska-oblast': 'UA65000000000030969',
+  'khmelnytska-oblast': 'UA68000000000099709',
+  'cherkaska-oblast': 'UA71000000000010357',
+  'chernivetska-oblast': 'UA73000000000044923',
   'chernihivska-oblast': 'UA74000000000025378',
 };
 

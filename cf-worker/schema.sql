@@ -93,6 +93,12 @@ CREATE TABLE IF NOT EXISTS directory_settlements (
   name TEXT NOT NULL,
   normalized TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'curated',
+  -- Очередь на весь населённый пункт, если все его улицы относятся к одной группе.
+  -- NULL означает «группы разные»: угадывать номер нельзя.
+  default_queue TEXT,
+  -- Все группы населённого пункта (JSON-массив), чтобы UI показал «тут є 2/1, 2/2».
+  queues_json TEXT,
+  streets_count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (region, normalized)
 );
 
@@ -102,6 +108,11 @@ CREATE TABLE IF NOT EXISTS directory_streets (
   name TEXT NOT NULL,
   normalized TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'curated',
+  -- Имя НП как его отдал ОСР: нужно для карточки улицы без второго запроса.
+  settlement_name TEXT,
+  default_queue TEXT,
+  -- Компактная карта «номер дома (или диапазон) → очередь»: {"1":"2/1","61-71":"5/1"}.
+  houses_json TEXT,
   PRIMARY KEY (region, settlement_normalized, normalized)
 );
 

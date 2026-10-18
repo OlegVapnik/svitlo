@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-18T05:00:50.765Z",
- "version": "2.19.1",
+ "generatedAt": "2026-10-18T14:38:44.385Z",
+ "version": "2.20.0",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "totalReleases": 16,
  "totalFeatures": 33,
@@ -8,9 +8,9 @@
  "totalOptimizations": 2,
  "releases": [
   {
-   "version": "2.19.1",
+   "version": "2.20.0",
    "date": "2026-10-18",
-   "tag": "Update",
+   "tag": "Release",
    "features": [
     "Діліться графіком, перейменовуйте закладки та швидше знаходьте свою адресу."
    ],
@@ -212,7 +212,7 @@
  ],
  "entries": [
   {
-   "hash": "3cf2227",
+   "hash": "f58066e",
    "date": "2026-10-18",
    "kind": "fix",
    "label": "Виправлено",

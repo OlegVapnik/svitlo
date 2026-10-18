@@ -22,10 +22,9 @@ export interface ForbiddenDirectoryRow {
 export function directoryNameHasTestMarker(value: unknown): boolean {
   const text = String(value ?? '').trim().toLocaleLowerCase('uk-UA');
   if (!text) return false;
-  // «Демократична» — реальное название улицы: совпадение «демо» внутри слова ложно блокирует
-  // импорт. «Тестова» остаётся маркером фикстуры, а «демо/demo/xxx» считаются только целыми словами.
-  if (text.includes('тест') || text.includes('test')) return true;
-  return /(?:^|[^а-яіїєґa-z0-9])(?:демо|demo|xxx)(?:$|[^а-яіїєґa-z0-9])/u.test(text);
+  // Маркеры должны идти отдельным словом/префиксом: «Алтестове» — настоящее название села,
+  // а «Тестова» и «вул. test street» остаются явными фикстурами.
+  return /(?:^|[^\p{L}\p{N}])(?:тест|test)\p{L}*(?=$|[^\p{L}\p{N}])|(?:^|[^\p{L}\p{N}])(?:демо|demo|xxx)(?:$|[^\p{L}\p{N}])/u.test(text);
 }
 
 export function findForbiddenDirectoryRows(rows: readonly DirectoryNameRow[]): ForbiddenDirectoryRow[] {

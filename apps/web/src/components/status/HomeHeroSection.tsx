@@ -501,12 +501,12 @@ export const HomeHeroSection: React.FC = () => {
           disabled={scheduleLoading}
         />
 
-        <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:justify-end">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5 rounded-lg"
+            className="col-span-2 w-full gap-1.5 rounded-lg px-2 text-xs sm:col-span-1 sm:w-auto sm:px-3 sm:text-sm"
             disabled={!selectedQueue}
             onClick={saveCurrentAsBookmark}
             aria-label={t('home.addToBookmarks')}
@@ -523,7 +523,7 @@ export const HomeHeroSection: React.FC = () => {
             today={t('outages.today')}
             tomorrow={t('outages.tomorrow')}
             onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
-            className="shrink-0"
+            className="col-span-2 w-full sm:col-span-1 sm:w-auto"
           />
         </div>
       </div>

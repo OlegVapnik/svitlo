@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BadgeCheck,
@@ -25,11 +25,6 @@ import {
   useQueues,
   useQueueSchedule,
 } from '../../api/queries.js';
-import {
-  offlineSettlementStats,
-  searchOfflineSettlements,
-  topOfflineSettlements,
-} from '../../api/offline-sync.js';
 import { QueueScheduleBar } from '../schedule/QueueScheduleBar.js';
 import { PlaceNameEditor } from '../places/PlaceNameEditor.js';
 import { Button } from '../ui/Button.js';
@@ -48,15 +43,31 @@ import type { AddressHouseOption, AddressResolveResult, QueueScheduleData } from
  * Это быстрый вход для тех, кто ищет адрес в областном центре или крупном городе.
  */
 const MAIN_CITIES: Record<string, string[]> = {
+  'vinnytska-oblast': ['Вінниця'],
+  'volynska-oblast': ['Луцьк'],
   'chernihivska-oblast': ['Чернігів', 'Ніжин', 'Прилуки', 'Бахмач'],
   'kyiv-city': ['Київ'],
-  'kyivska-oblast': ['Біла Церква', 'Бровари', 'Ірпінь'],
-  'dnipropetrovska-oblast': ['Дніпро'],
+  'kyivska-oblast': ['Біла Церква', 'Бровари', 'Бориспіль', 'Ірпінь'],
+  'dnipropetrovska-oblast': ['Дніпро', 'Кривий Ріг', 'Камʼянське'],
+  'donetska-oblast': ['Краматорськ', 'Словʼянськ'],
+  'zhytomyrska-oblast': ['Житомир'],
+  'zakarpatska-oblast': ['Ужгород', 'Мукачево'],
+  'zaporizka-oblast': ['Запоріжжя', 'Мелітополь'],
+  'ivano-frankivska-oblast': ['Івано-Франківськ', 'Коломия'],
+  'kirovohradska-oblast': ['Кропивницький', 'Олександрія'],
+  'luhanska-oblast': ['Сєвєродонецьк', 'Лисичанськ'],
   'lvivska-oblast': ['Львів'],
+  'mykolaivska-oblast': ['Миколаїв'],
+  'odeska-oblast': ['Одеса', 'Ізмаїл'],
   'poltavska-oblast': ['Полтава'],
   'cherkaska-oblast': ['Черкаси'],
   'kharkivska-oblast': ['Харків'],
-  'zhytomyrska-oblast': ['Житомир'],
+  'khersonska-oblast': ['Херсон'],
+  'khmelnytska-oblast': ['Хмельницький', 'Камʼянець-Подільський'],
+  'rivnenska-oblast': ['Рівне'],
+  'sumska-oblast': ['Суми', 'Конотоп'],
+  'ternopilska-oblast': ['Тернопіль', 'Чортків'],
+  'chernivetska-oblast': ['Чернівці'],
 };
 
 function kyivToday(): string {
@@ -114,8 +125,11 @@ export const AddressWizard: React.FC = () => {
   const { addPlace, setPrimaryBookmark } = useBookmarks();
 
   const [settlement, setSettlement] = useState('');
+  const [selectedSettlement, setSelectedSettlement] = useState<string | null>(null);
   const [street, setStreet] = useState('');
+  const [selectedStreet, setSelectedStreet] = useState<string | null>(null);
   const [house, setHouse] = useState('');
+  const [selectedHouse, setSelectedHouse] = useState<string | null>(null);
   const [result, setResult] = useState<AddressResolveResult | null>(null);
   const [manualQueue, setManualQueue] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState('');
@@ -145,9 +159,32 @@ export const AddressWizard: React.FC = () => {
     setVoteFeedback(null);
   };
 
+  // Київ — єдиний НП регіону kyiv-city, тому вибір фіксується без введення назви.
+  useEffect(() => {
+    setSettlement(currentRegion === 'kyiv-city' ? 'Київ' : '');
+    setSelectedSettlement(currentRegion === 'kyiv-city' ? 'Київ' : null);
+    setStreet('');
+    setSelectedStreet(null);
+    setHouse('');
+    setSelectedHouse(null);
+    resetAddressResult();
+  }, [currentRegion]);
+
   const submit = async (overrides: { settlement?: string; street?: string; house?: string } = {}) => {
     const nextSettlement = (overrides.settlement ?? settlement).trim();
-    if (!nextSettlement) return;
+    const nextStreet = (overrides.street ?? street).trim();
+    const nextHouse = (overrides.house ?? house).trim();
+    if (!nextSettlement || selectedSettlement !== nextSettlement) return;
+    if (nextStreet && selectedStreet !== nextStreet) return;
+    if (nextHouse && selectedHouse !== nextHouse) {
+      const knownHouse = (housesQuery.data?.data ?? []).some((item) => {
+        const range = item.housePattern.match(/^(\d{1,5})\s*[-–—]\s*(\d{1,5})$/u);
+        return range
+          ? nextHouse === range[1]
+          : item.housePattern.toLocaleLowerCase('uk-UA') === nextHouse.toLocaleLowerCase('uk-UA');
+      });
+      if (!knownHouse) return;
+    }
     setSaveFeedback(null);
     setSaveOpen(false);
     setManualQueue(null);
@@ -155,32 +192,39 @@ export const AddressWizard: React.FC = () => {
     const found = await resolve.mutateAsync({
       region: currentRegion,
       settlement: nextSettlement,
-      street: (overrides.street ?? street).trim() || undefined,
-      house: (overrides.house ?? house).trim() || undefined,
+      street: nextStreet || undefined,
+      house: nextHouse || undefined,
     });
     setResult(found);
   };
 
   const chooseSettlement = (name: string) => {
     setSettlement(name);
+    setSelectedSettlement(name);
     setStreet('');
+    setSelectedStreet(null);
     setHouse('');
+    setSelectedHouse(null);
     resetAddressResult();
   };
 
   const chooseStreet = (name: string) => {
     setStreet(name);
+    setSelectedStreet(name);
     setHouse('');
+    setSelectedHouse(null);
     resetAddressResult();
-    void submit({ street: name, house: '' });
   };
 
   const chooseHouse = (value: string) => {
-    setHouse(value);
+    const rangeStart = value.match(/^(\d{1,5})\s*[-–—]\s*\d{1,5}$/u)?.[1];
+    const selected = rangeStart ?? value;
+    setHouse(selected);
+    setSelectedHouse(selected);
     setManualQueue(null);
     setConfirmedQueue(null);
     setSaveFeedback(null);
-    void submit({ house: value });
+    void submit({ house: selected });
   };
 
   const queueOptions = useMemo(
@@ -374,7 +418,16 @@ export const AddressWizard: React.FC = () => {
             value={settlement}
             placeholder={t('addressWizard.settlementPlaceholder')}
             autoComplete="off"
-            onChange={(event) => chooseSettlement(event.target.value)}
+            readOnly={currentRegion === 'kyiv-city'}
+            onChange={(event) => {
+              setSettlement(event.target.value);
+              setSelectedSettlement(null);
+              setStreet('');
+              setSelectedStreet(null);
+              setHouse('');
+              setSelectedHouse(null);
+              resetAddressResult();
+            }}
             className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
           />
           <SettlementSuggestions region={currentRegion} query={settlement} onPick={chooseSettlement} />
@@ -396,7 +449,9 @@ export const AddressWizard: React.FC = () => {
             disabled={!settlement.trim()}
             onChange={(event) => {
               setStreet(event.target.value);
+              setSelectedStreet(null);
               setHouse('');
+              setSelectedHouse(null);
               resetAddressResult();
             }}
             onKeyDown={(event) => {
@@ -430,6 +485,7 @@ export const AddressWizard: React.FC = () => {
             disabled={!street.trim()}
             onChange={(event) => {
               setHouse(event.target.value);
+              setSelectedHouse(null);
               setResult(null);
               setManualQueue(null);
               setConfirmedQueue(null);
@@ -443,6 +499,7 @@ export const AddressWizard: React.FC = () => {
           <HouseChips
             key={`${settlement}|${street}`}
             options={housesQuery.data?.data ?? []}
+            query={house}
             wholeStreetQueue={housesQuery.data?.wholeStreetQueue ?? null}
             regionCpu={currentRegion}
             onPick={chooseHouse}
@@ -452,7 +509,16 @@ export const AddressWizard: React.FC = () => {
       </StepCard>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => void submit()} disabled={!settlement.trim() || resolve.isPending} className="gap-2">
+        <Button
+          onClick={() => void submit()}
+          disabled={
+            selectedSettlement !== settlement.trim() ||
+            (Boolean(street.trim()) && selectedStreet !== street.trim()) ||
+            (Boolean(house.trim()) && selectedHouse !== house.trim()) ||
+            resolve.isPending
+          }
+          className="gap-2"
+        >
           <Search className="h-4 w-4" aria-hidden />
           {resolve.isPending ? t('addressWizard.searching') : t('addressWizard.find')}
         </Button>
@@ -758,9 +824,6 @@ const SettlementSuggestions: React.FC<{
 }> = ({ region, query, onPick }) => {
   const { t } = useTranslation();
   const server = useAddressSettlements(region, query);
-  const offline = useMemo(() => searchOfflineSettlements(region, query, 6), [region, query]);
-  const stats = useMemo(() => offlineSettlementStats(region), [region]);
-
   const names = useMemo(() => {
     const serverNames = (server.data?.data ?? []).map((entry) => entry.name);
     const baseName = (value: string) => {
@@ -776,7 +839,7 @@ const SettlementSuggestions: React.FC<{
 
     const seen = new Set<string>();
     const result: Array<{ label: string; value: string }> = [];
-    for (const item of [...offline.map((entry) => entry.name), ...serverNames]) {
+    for (const item of serverNames) {
       const base = baseName(item);
       const key = base.toLocaleLowerCase('uk-UA');
       const isQualified = item.includes(' · ');
@@ -793,7 +856,7 @@ const SettlementSuggestions: React.FC<{
       if (result.length >= 6) break;
     }
     return result;
-  }, [offline, query, server.data]);
+  }, [query, server.data]);
 
   if (query.trim().length < 2 || names.length === 0) return null;
 
@@ -811,11 +874,6 @@ const SettlementSuggestions: React.FC<{
           </button>
         ))}
       </div>
-      {stats && stats.total > stats.shown && (
-        <p className="text-[11px] text-muted-foreground">
-          {t('offline.suggestionsPartial', { shown: stats.shown, total: stats.total })}
-        </p>
-      )}
     </div>
   );
 };
@@ -828,9 +886,7 @@ const CityChips: React.FC<{ region: string; current: string; onPick: (name: stri
 }) => {
   const { t } = useTranslation();
   const cities = useMemo(() => {
-    const curated = MAIN_CITIES[region] ?? [];
-    if (curated.length > 0) return curated;
-    return topOfflineSettlements(region, 5).map((item) => item.name);
+    return MAIN_CITIES[region] ?? [];
   }, [region]);
 
   if (cities.length === 0) return null;
@@ -900,22 +956,34 @@ const StreetChips: React.FC<{
 /** Дома выбранной улицы: 24 чипа + «показати ще». Ручной ввод остаётся всегда доступным. */
 const HouseChips: React.FC<{
   options: AddressHouseOption[];
+  query: string;
   wholeStreetQueue: string | null;
   regionCpu: string;
   onPick: (house: string) => void;
   loading: boolean;
-}> = ({ options, wholeStreetQueue, regionCpu, onPick, loading }) => {
+}> = ({ options, query, wholeStreetQueue, regionCpu, onPick, loading }) => {
   const { t } = useTranslation();
   const [showAll, setShowAll] = useState(false);
-  const houses = useMemo(
-    () => options.filter((option) => isSingleHouse(option.housePattern)),
-    [options],
-  );
+  const houses = useMemo(() => options.filter((option) =>
+    isSingleHouse(option.housePattern) || /^\d{1,5}\s*[-–—]\s*\d{1,5}$/u.test(option.housePattern),
+  ), [options]);
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase('uk-UA');
+    if (!needle) return houses;
+    return houses.filter((option) => {
+      if (option.housePattern.toLocaleLowerCase('uk-UA').includes(needle)) return true;
+      const range = option.housePattern.match(/^(\d{1,5})\s*[-–—]\s*(\d{1,5})$/u);
+      const numericQuery = Number.parseInt(needle, 10);
+      if (!range || !Number.isFinite(numericQuery) || String(numericQuery) !== needle) return false;
+      const [start, end] = range.slice(1).map((value) => Number.parseInt(value!, 10));
+      return numericQuery >= Math.min(start!, end!) && numericQuery <= Math.max(start!, end!);
+    });
+  }, [houses, query]);
 
   if (loading && houses.length === 0) {
     return <p className="text-[11px] text-muted-foreground">{t('addressWizard.loadingHouses')}</p>;
   }
-  if (houses.length === 0) {
+  if (filtered.length === 0) {
     return wholeStreetQueue ? (
       <p className="text-[11px] font-semibold text-success">
         {t('addressWizard.wholeStreetQueue', { queue: formatQueueLabel(wholeStreetQueue, regionCpu) })}
@@ -923,7 +991,7 @@ const HouseChips: React.FC<{
     ) : null;
   }
 
-  const visible = showAll ? houses : houses.slice(0, 24);
+  const visible = showAll ? filtered : filtered.slice(0, 24);
 
   return (
     <div className="space-y-1.5">
@@ -933,7 +1001,16 @@ const HouseChips: React.FC<{
           <button
             key={`${option.housePattern}-${option.queue}`}
             type="button"
-            onClick={() => onPick(option.housePattern)}
+            onClick={() => {
+              const range = option.housePattern.match(/^(\d{1,5})\s*[-–—]\s*(\d{1,5})$/u);
+              const needle = query.trim();
+              const numericQuery = Number.parseInt(needle, 10);
+              if (range && Number.isFinite(numericQuery) && String(numericQuery) === needle) {
+                onPick(String(numericQuery));
+              } else {
+                onPick(range?.[1] ?? option.housePattern);
+              }
+            }}
             className="min-h-9 rounded-full border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
           >
             {option.housePattern}
@@ -943,7 +1020,7 @@ const HouseChips: React.FC<{
           </button>
         ))}
       </div>
-      {houses.length > 24 && (
+      {filtered.length > 24 && (
         <button
           type="button"
           onClick={() => setShowAll((value) => !value)}
