@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Pencil,
   FileQuestion,
   PhoneCall,
   RefreshCw,
@@ -68,9 +69,11 @@ export const HomeHeroSection: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, currentRegionData, setRegion, isLoading: regionLoading } = useRegion();
   const { address } = useMyAddress();
-  const { bookmarks, primaryBookmark, addBookmark, removeBookmark, setPrimaryBookmark } =
+  const { bookmarks, primaryBookmark, addBookmark, removeBookmark, setPrimaryBookmark, renameBookmark } =
     useBookmarks();
   const [showAllPlaces, setShowAllPlaces] = useState(false);
+  const [editingBookmarkId, setEditingBookmarkId] = useState<string | null>(null);
+  const [bookmarkDraft, setBookmarkDraft] = useState('');
 
   // Вибір дати: сьогодні (0) або завтра (1) у київському часі
   const [selectedDayOffset, setSelectedDayOffset] = useState<0 | 1>(0);
@@ -420,6 +423,17 @@ export const HomeHeroSection: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    setEditingBookmarkId(bm.id);
+                    setBookmarkDraft(bm.label);
+                  }}
+                  aria-label={t('home.renameBookmark', { label: bm.label })}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-primary"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                </button>
+                <button
+                  type="button"
                   onClick={() => removeBookmark(bm.id)}
                   aria-label={`${t('common.delete')} ${bm.label}`}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-destructive"
@@ -448,6 +462,31 @@ export const HomeHeroSection: React.FC = () => {
                 ? t('places.hideMoreChips')
                 : t('places.moreChips', { count: bookmarks.length - PLACE_CHIP_LIMIT })}
             </button>
+          )}
+          {editingBookmarkId && (
+            <form
+              className="flex min-w-56 shrink-0 snap-start items-center gap-1.5 rounded-full border border-primary/40 bg-surface-container px-2 py-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                renameBookmark(editingBookmarkId, bookmarkDraft);
+                setEditingBookmarkId(null);
+              }}
+            >
+              <input
+                autoFocus
+                maxLength={24}
+                value={bookmarkDraft}
+                onChange={(event) => setBookmarkDraft(event.target.value)}
+                aria-label={t('home.bookmarkName')}
+                className="h-9 min-w-0 flex-1 bg-transparent px-2 text-sm text-on-surface outline-hidden"
+              />
+              <button type="submit" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-on-primary" aria-label={t('common.save')}>
+                <Check className="h-4 w-4" aria-hidden />
+              </button>
+              <button type="button" onClick={() => setEditingBookmarkId(null)} className="inline-flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant" aria-label={t('common.cancel')}>
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </form>
           )}
         </div>
       )}
@@ -626,19 +665,19 @@ export const HomeHeroSection: React.FC = () => {
 
           {/* 24-годинний горизонтальний таймлайн із півгодинними комірками */}
           <div className="pt-1">
-            <Timeline24h intervals={intervals} date={selectedDate} />
-
-            {/* Поділитися графіком: PNG-картка у системне меню, а на десктопі — файл. */}
-            {selectedQueue && (
-              <div className="flex justify-end pt-2">
+            <Timeline24h
+              intervals={intervals}
+              date={selectedDate}
+              action={selectedQueue ? (
                 <ShareScheduleButton
                   queue={selectedQueue}
                   regionName={currentRegionData.nameUa ?? currentRegion}
                   date={selectedDate}
                   intervals={intervals}
+                  className="w-full sm:w-auto"
                 />
-              </div>
-            )}
+              ) : undefined}
+            />
 
             {/* Компактні інструменти: планувальник приладів і порівняння черг за пігулками.
                 Під таймлайном і кнопкою «Поділитися» — там, де людина вже побачила вікна зі
@@ -653,6 +692,7 @@ export const HomeHeroSection: React.FC = () => {
                 className="mt-3"
               />
             )}
+
 
           </div>
 

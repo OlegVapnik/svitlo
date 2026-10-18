@@ -1,13 +1,9 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock, Info } from 'lucide-react';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import {
-  clampHour,
-  formatHour,
   generateTimelineSlots,
-  getCurrentTimeMarker,
-  getHourSummary,
 } from '../../lib/timeline.js';
 import { cn } from '../../lib/cn.js';
 
@@ -16,7 +12,7 @@ interface Timeline24hProps {
   date: string;
   now?: Date;
   className?: string;
-  onHourSelect?: (hour: number) => void;
+  action?: ReactNode;
 }
 
 /**
@@ -38,11 +34,9 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   date,
   now = new Date(),
   className,
-  onHourSelect,
+  action,
 }) => {
   const { t } = useTranslation();
-  const timelineId = useId();
-  const liveRegionId = useId();
   // Идентификатор SVG-паттерна штриховки: url(#…) не принимает символы «:» из useId().
   const hatchId = `hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
@@ -52,69 +46,11 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
     [intervals, date, now],
   );
 
-  // Маркер поточного часу (тільки для сьогодні)
-  const timeMarker = useMemo(
-    () => getCurrentTimeMarker(date, now),
-    [date, now],
-  );
-
-  // Поточна сфокусована або наведена година (0..23)
-  const currentHourOfNow = timeMarker ? Math.floor(timeMarker.nowMinutes / 60) : 12;
-  const [selectedHour, setSelectedHour] = useState<number>(currentHourOfNow);
-  const [liveAnnouncement, setLiveAnnouncement] = useState<string>('');
-
-  const hourButtonsRef = useRef<(HTMLButtonElement | null)[]>([]);
-
-  const hourSummary = useMemo(
-    () => getHourSummary(slots, selectedHour, t),
-    [slots, selectedHour, t],
-  );
-
-  const handleHourFocus = (hour: number) => {
-    const clamped = clampHour(hour);
-    setSelectedHour(clamped);
-    const summary = getHourSummary(slots, clamped, t);
-    setLiveAnnouncement(summary.ariaAnnouncement);
-    onHourSelect?.(clamped);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent, currentH: number) => {
-    let nextH = currentH;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      nextH = clampHour(currentH + 1);
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      nextH = clampHour(currentH - 1);
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      nextH = 0;
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      nextH = 23;
-    } else {
-      return;
-    }
-
-    handleHourFocus(nextH);
-    hourButtonsRef.current[nextH]?.focus();
-  };
-
   // Позначки годин для шкали часу
   const hourTicks = [0, 4, 8, 12, 16, 20, 24];
 
   return (
     <div className={cn('w-full max-w-full space-y-3', className)}>
-      {/* Прихований aria-live регіон для екранних читачів */}
-      <div
-        id={liveRegionId}
-        aria-live="polite"
-        aria-atomic="true"
-        className="sr-only"
-      >
-        {liveAnnouncement}
-      </div>
-
       {/* Верхня шкала часу з мітками */}
       <div
         className="relative flex justify-between px-0.5 text-[11px] font-semibold text-muted-foreground tabular"
@@ -182,7 +118,6 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
                   'relative h-full overflow-hidden rounded-sm border transition-opacity duration-200',
                   capsuleTone,
                   slot.isPast && 'opacity-55',
-                  slot.isCurrent && 'ring-1 ring-inset ring-white/40',
                 )}
                 title={`${slot.rangeLabel}: ${slot.stateName}`}
               >
@@ -199,82 +134,10 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               ровно на шкале и закрывала сегменты: на телефоне это выглядело как дыра в графике.
               Теперь время стоит текстом в строке легенды под шкалой, а на самой шкале остаётся
               тонкая белая риска — видно, где сейчас, и ничего не перекрыто. */}
-          {timeMarker && (
-            <span
-              className="pointer-events-none absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-white/85"
-              style={{ left: `${timeMarker.percent}%` }}
-              aria-hidden
-            />
-          )}
-        </div>
-
-        {/* Шар інтерактивних 24 годинних кнопок для клавіатурної та тач-навігації */}
-        <div
-          role="group"
-          aria-label={t('timeline.hoursGroupLabel')}
-          className="absolute inset-0 grid grid-cols-24"
-        >
-          {Array.from({ length: 24 }, (_, h) => {
-            const isSelected = selectedHour === h;
-            return (
-              <button
-                key={h}
-                ref={(el) => {
-                  hourButtonsRef.current[h] = el;
-                }}
-                type="button"
-                tabIndex={isSelected ? 0 : -1}
-                aria-label={t('timeline.hourAriaLabel', { hour: formatHour(h) })}
-                onClick={() => handleHourFocus(h)}
-                onFocus={() => handleHourFocus(h)}
-                onMouseEnter={() => handleHourFocus(h)}
-                onKeyDown={(e) => handleKeyDown(e, h)}
-                className={cn(
-                  'relative h-full w-full rounded-xl transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-                  isSelected && 'bg-primary/5 ring-1 ring-inset ring-primary/40',
-                )}
-              />
-            );
-          })}
         </div>
 
         {/* Маркер поточного часу «Зараз» переехал внутрь шкалы (см. выше): снаружи он
             выходил за полосу и перекрывал подписи часов. */}
-      </div>
-
-      {/* Інформаційна картка обраної години */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-hairline bg-surface-container-high/50 px-3.5 py-2.5 text-xs">
-        <div className="flex items-center gap-2">
-          <Clock className="h-3.5 w-3.5 text-primary" strokeWidth={2.3} aria-hidden />
-          <span className="font-bold text-on-surface">
-            {hourSummary.label}
-          </span>
-          {hourSummary.isCurrent && (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-on-primary">
-              {t('schedule.now')} ({timeMarker?.timeFormatted})
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {hourSummary.allOff ? (
-            <span className="font-semibold text-destructive">
-              {t('timeline.fullOff')}
-            </span>
-          ) : hourSummary.hasOff ? (
-            <span className="font-semibold text-destructive">
-              {hourSummary.slots[0].stateCode === 3 ? hourSummary.slots[0].timeLabel : hourSummary.slots[1].timeLabel} — {t('timeline.partialOff')}
-            </span>
-          ) : hourSummary.slots[0].stateCode === 1 ? (
-            <span className="font-semibold text-success">
-              {t('timeline.fullOn')}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              {t('common.noData')}
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Легенда станів: у відключення — та сама штриховка, що в шкалі, щоб не вигадувати
@@ -297,20 +160,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             {t('timeline.noScheduleShort')}
           </span>
         </div>
-
-        {timeMarker && (
-          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-on-surface">
-              <span className="h-3.5 w-0.5 rounded-full bg-white/85" aria-hidden />
-              <Clock className="h-3 w-3" strokeWidth={2.4} aria-hidden />
-              {t('schedule.now')} {timeMarker.timeFormatted}
-            </span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-on-surface-variant">
-              <Info className="h-3 w-3" strokeWidth={2.3} aria-hidden />
-              {t('timeline.useArrowsHint')}
-            </span>
-          </span>
-        )}
+        {action}
       </div>
     </div>
   );

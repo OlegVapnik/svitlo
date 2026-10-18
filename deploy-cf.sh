@@ -7,7 +7,7 @@
 # загрузка статики в Pages происходят прямо отсюда, локально.
 #
 # Что делает по шагам:
-#   1) переносит справочник адресов (населённые пункты, черги, привязки) в D1;
+#   1) переносит справочник адресов и PDF-иерархию Черниговщины в D1;
 #   2) пересобирает чейнджлог из истории git;
 #   3) деплоит Worker (API + крон) через wrangler;
 #   4) собирает фронтенд с VITE_API_BASE_URL, указывающим на воркер;
@@ -118,11 +118,18 @@ echo "    Схема актуальна."
 # локальная база не поднята или у wrangler кончилась квота — о неудаче сообщаем и идём дальше,
 # а перенос можно повторить одной командой.
 echo "==> 1/5. Переношу справочник адресов в D1 (НП, черги, привязки)"
-if node tools/sync-directory-to-d1.mjs --apply --verify; then
+HIERARCHY_JSON=".cache/address-hierarchy/chernihiv.json"
+if [ ! -s "$HIERARCHY_JSON" ]; then
+  echo "ОШИБКА: отсутствует PDF-иерархия $HIERARCHY_JSON; адресный деплой остановлен." >&2
+  echo "    Сначала сформируйте snapshot: python3 tools/import-address-hierarchy.py" >&2
+  exit 1
+fi
+if node tools/sync-directory-to-d1.mjs --apply --verify --hierarchy-json "$HIERARCHY_JSON"; then
   :
 else
-  echo "    ПРЕДУПРЕЖДЕНИЕ: перенос справочника не удался, продолжаю деплой без него." >&2
-  echo "    Повторить только перенос: node tools/sync-directory-to-d1.mjs --apply --verify" >&2
+  echo "ОШИБКА: перенос справочника/иерархии не удался; деплой остановлен." >&2
+  echo "    Повторить перенос: node tools/sync-directory-to-d1.mjs --apply --verify --hierarchy-json $HIERARCHY_JSON" >&2
+  exit 1
 fi
 
 # ── Шаг 2: чейнджлог ────────────────────────────────────────────────────────
