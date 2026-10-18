@@ -17,6 +17,8 @@ import type {
   NewsSourcesResponse,
   ChangelogFile,
   AddressResolveInput,
+  AddressHousesResponse,
+  AddressStreetsResponse,
 } from '@svitlo/shared';
 import type { RegionListResponse } from '../lib/region.js';
 import { api } from './client';
@@ -325,6 +327,38 @@ export const useNewsSources = () =>
     queryKey: ['newsSources'],
     staleTime: NEWS_STALE_MS,
     queryFn: () => api.fetchNewsSources(),
+  });
+
+/** Подсказки НП области: серверный справочник, когда офлайн-пакет ещё не загружен. */
+export const useAddressSettlements = (region: string, query: string) =>
+  useQuery<{ data: Array<{ name: string; normalized?: string }> }>({
+    queryKey: ['addressSettlements', region, query],
+    queryFn: ({ signal }) => api.fetchAddressSettlements({ region, q: query }, signal),
+    enabled: region.length > 0 && query.trim().length >= 2,
+    staleTime: 10 * 60_000,
+  });
+
+/**
+ * Улицы выбранного НП: быстрые чипы под полем поиска.
+ *
+ * Это query, а не part of resolve: улицы нужны ещё до ввода дома, и один запрос покрывает
+ * весь экран. Кэш 5 минут — справочник меняется при импорте, а не каждую минуту.
+ */
+export const useAddressStreets = (region: string, settlement: string, query: string) =>
+  useQuery<AddressStreetsResponse>({
+    queryKey: ['addressStreets', region, settlement, query],
+    queryFn: ({ signal }) => api.fetchAddressStreets({ region, settlement, q: query }, signal),
+    enabled: region.length > 0 && settlement.trim().length >= 2,
+    staleTime: 5 * 60_000,
+  });
+
+/** Дома выбранной улицы с группами — чипы номеров и их очередь. */
+export const useAddressHouses = (region: string, settlement: string, street: string) =>
+  useQuery<AddressHousesResponse>({
+    queryKey: ['addressHouses', region, settlement, street],
+    queryFn: ({ signal }) => api.fetchAddressHouses({ region, settlement, street }, signal),
+    enabled: region.length > 0 && settlement.trim().length >= 2 && street.trim().length >= 2,
+    staleTime: 5 * 60_000,
   });
 
 /**

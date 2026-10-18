@@ -1,18 +1,28 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MapPin, Search, Star } from 'lucide-react';
+import { Briefcase, Building2, Check, Home, MapPin, Search, Star, Zap, ZapOff } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useBookmarks } from '../../hooks/useBookmarks.js';
-import { useAddressLookup, useContributeAddress } from '../../api/queries.js';
-import { offlineSettlementStats, searchOfflineSettlements } from '../../api/offline-sync.js';
+import {
+  useAddressHouses,
+  useAddressLookup,
+  useAddressSettlements,
+  useAddressStreets,
+  useContributeAddress,
+} from '../../api/queries.js';
+import {
+  offlineSettlementStats,
+  searchOfflineSettlements,
+  topOfflineSettlements,
+} from '../../api/offline-sync.js';
 import { QueueScheduleBar } from '../schedule/QueueScheduleBar.js';
 import { Button } from '../ui/Button.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { cn } from '../../lib/cn.js';
+import { formatKyivTime } from '../../lib/date.js';
 import type { AddressHouseOption, QueueScheduleData } from '@svitlo/shared';
 
-/** Что вернул бэкенд на поиск группы. Формально это `AddressResolveResult` из @svitlo/shared —
- *  здесь повторяем только потому, что мастер держит ответ в состоянии до отрисовки. */
+/** Что вернул бэкенд на поиск группы. */
 interface ResolveResponse {
   queue: string | null;
   options: AddressHouseOption[];
@@ -22,161 +32,219 @@ interface ResolveResponse {
 }
 
 /**
+ * Главные города областей — только реальные названия, без рейтинга и «похожих» подстановок.
+ * Это быстрый вход для тех, кто ищет адрес в областном центре или крупном городе.
+ */
+const MAIN_CITIES: Record<string, string[]> = {
+  'chernihivska-oblast': ['Чернігів', 'Ніжин', 'Прилуки', 'Бахмач'],
+  'kyiv-city': ['Київ'],
+  'kyivska-oblast': ['Біла Церква', 'Бровари', 'Ірпінь'],
+  'dnipropetrovska-oblast': ['Дніпро'],
+  'lvivska-oblast': ['Львів'],
+  'poltavska-oblast': ['Полтава'],
+  'cherkaska-oblast': ['Черкаси'],
+  'kharkivska-oblast': ['Харків'],
+  'zhytomyrska-oblast': ['Житомир'],
+};
+
+/**
  * Пошаговый поиск своей группы ГПВ: область → населённый пункт → улица → дом.
  *
- * Смысл формы: человек не знает номер своей группы, но знает адрес. Мастер задаёт четыре
- * вопроса, каждый следующий опираясь на предыдущий, и в конце показывает группу вместе с
- * графиком на сегодня — то есть закрывает задачу «выключили ли мне» за один визит.
- *
- * Важное: если привязки адреса в базе нет, мастер так и говорит об этом. Номер группы не
- * угадывается по похожей улице — человек сверялся бы с отключением не своей группы.
+ * Ключевой принцип прежний: номер группы не угадывается. Если привязки нет, мастер говорит об
+ * этом и предлагает либо назвать очередь самому, либо сохранить адрес локально. Все чипы городов,
+ * улиц и домов — это реальные записи справочника, а не декоративные подсказки.
  */
 export const AddressWizard: React.FC = () => {
   const { t } = useTranslation();
-  const { currentRegion, currentRegionData, setRegion, regions } = useRegion();
-  const { addBookmark } = useBookmarks();
+  const { currentRegion, setRegion, regions } = useRegion();
+  const { addBookmark, setPrimaryBookmark } = useBookmarks();
 
   const [settlement, setSettlement] = useState('');
   const [street, setStreet] = useState('');
   const [house, setHouse] = useState('');
   const [result, setResult] = useState<ResolveResponse | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [savedLabel, setSavedLabel] = useState<string | null>(null);
 
   const resolve = useAddressLookup();
+  const streetsQuery = useAddressStreets(currentRegion, settlement, street);
+  const housesQuery = useAddressHouses(currentRegion, settlement, street);
 
-  const submit = async () => {
-    if (!settlement.trim()) return;
-    setSaved(false);
+  const submit = async (overrides: { settlement?: string; street?: string; house?: string } = {}) => {
+    const nextSettlement = (overrides.settlement ?? settlement).trim();
+    if (!nextSettlement) return;
+    setSavedLabel(null);
     const found = await resolve.mutateAsync({
       region: currentRegion,
-      settlement: settlement.trim(),
-      street: street.trim() || undefined,
-      house: house.trim() || undefined,
+      settlement: nextSettlement,
+      street: (overrides.street ?? street).trim() || undefined,
+      house: (overrides.house ?? house).trim() || undefined,
     });
     setResult(found);
   };
 
-  const save = () => {
+  const chooseSettlement = (name: string) => {
+    setSettlement(name);
+    setStreet('');
+    setHouse('');
+    setResult(null);
+    setSavedLabel(null);
+  };
+
+  const chooseStreet = (name: string) => {
+    setStreet(name);
+    setHouse('');
+    setSavedLabel(null);
+    void submit({ street: name, house: '' });
+  };
+
+  const chooseHouse = (value: string) => {
+    setHouse(value);
+    setSavedLabel(null);
+    void submit({ house: value });
+  };
+
+  const saveAs = (label: 'Дім' | 'Робота', makePrimary = false) => {
     if (!result?.queue) return;
-    addBookmark({
-      label: [settlement, street, house].filter(Boolean).join(', '),
+    const id = addBookmark({
+      label: `${t(label === 'Дім' ? 'addressWizard.labelHome' : 'addressWizard.labelWork')} · ${settlement}, ${street} ${house}`.trim(),
       regionCpu: currentRegion,
       settlementName: settlement.trim(),
       streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
       queue: result.queue,
+      allowDuplicate: true,
     });
-    setSaved(true);
+    if (id && makePrimary) setPrimaryBookmark(id);
+    setSavedLabel(label);
   };
 
   const queue = result?.queue ?? null;
-  // Выносим в локальные константы: переменная состояния внутри JSX не сужается типами,
-  // и TypeScript ругается на возможный null.
   const schedule = result?.schedule ?? null;
   const source = result?.source ?? null;
   const intervals = schedule?.intervals ?? [];
   const nowMs = Date.now();
-  const isOffNow = intervals.some(
+  const currentOff = intervals.find(
     (interval) => Date.parse(interval.startsAt) <= nowMs && nowMs < Date.parse(interval.endsAt),
   );
+  const hasScheduleData = intervals.length > 0 || schedule?.allClear === true;
+  const statusText = !queue
+    ? null
+    : !hasScheduleData
+      ? t('addressWizard.statusUnknown')
+      : currentOff
+        ? t('addressWizard.offUntil', { time: formatKyivTime(currentOff.endsAt) })
+        : t('addressWizard.lightOn');
 
   return (
     <div className="space-y-4">
-      {/* Выбор области: отдельная строка, чтобы шаги адреса (НП → вулиця → дом) не начинали
-          с неудобного «списка областей» — в восьми случаях из девяти область уже выбрана. */}
-      <div className="space-y-1.5">
-        <label htmlFor="address-region" className="block text-xs font-semibold text-foreground">
-          {t('addressWizard.region')}
-        </label>
-        <select
-          id="address-region"
-          value={currentRegion}
-          onChange={(event) => {
-            setRegion(event.target.value);
-            // Смена области сбрасывает всё ниже: населённый пункт и улица другой области
-            // не существуют, и оставить их — значит искать то, чего нет.
-            setSettlement('');
-            setStreet('');
-            setHouse('');
-            setResult(null);
-          }}
-          className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          {regions.map((region) => (
-            <option key={region.cpu} value={region.cpu}>
-              {region.nameUa}
-            </option>
-          ))}
-        </select>
-      </div>
+      <StepCard step={1} title={t('addressWizard.settlement')} icon={MapPin}>
+        <div className="space-y-1.5">
+          <label htmlFor="address-region" className="block text-[11px] font-semibold text-muted-foreground">
+            {t('addressWizard.region')}
+          </label>
+          <select
+            id="address-region"
+            value={currentRegion}
+            onChange={(event) => {
+              setRegion(event.target.value);
+              setSettlement('');
+              setStreet('');
+              setHouse('');
+              setResult(null);
+              setSavedLabel(null);
+            }}
+            className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {regions.map((region) => (
+              <option key={region.cpu} value={region.cpu}>
+                {region.nameUa}
+              </option>
+            ))}
+          </select>
+        </div>
 
-      <ol className="grid gap-3 sm:grid-cols-2">
-        {/* Область выбирается здесь, а не берётся из шапки: поиск адреса — самостоятельный
-            сценарий, и заставлять человека менять область в шапке ради одного поиска
-            означало бы потерять выбранный адрес при возвращении на главную. */}
-        <StepField
-          step={1}
-          label={t('addressWizard.region')}
-          value={currentRegionData.nameUa ?? currentRegion}
-          readOnly
-        />
-        <li>
-          <StepField
-            step={2}
-            label={t('addressWizard.settlement')}
+        <div className="space-y-1.5">
+          <label htmlFor="address-settlement" className="block text-[11px] font-semibold text-muted-foreground">
+            {t('addressWizard.settlement')}
+          </label>
+          <input
+            id="address-settlement"
+            type="text"
             value={settlement}
             placeholder={t('addressWizard.settlementPlaceholder')}
-            onChange={(value) => {
-              setSettlement(value);
-              setResult(null);
-              // Смена села сбрасывает улицу и дом: они принадлежат предыдущему НП,
-              // и оставить их значило бы искать несуществующую улицу.
-              setStreet('');
-              setHouse('');
-            }}
+            autoComplete="off"
+            onChange={(event) => chooseSettlement(event.target.value)}
+            className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
           />
-          {/* Подсказки из офлайн-пакета: без них поиск адреса в дороге превращается в угадывание
-              точного написания НП. Данные те же, что у сервера (пакет собирается из справочника
-              settlements), поэтому подсказка ничего не выдумывает. */}
-          <SettlementHints
-            region={currentRegion}
-            query={settlement}
-            onPick={(name) => {
-              setSettlement(name);
-              setStreet('');
-              setHouse('');
-              setResult(null);
-            }}
-          />
-        </li>
-        <li>
-          <StepField
-            step={3}
-            label={t('addressWizard.street')}
-            value={street}
-            placeholder={t('addressWizard.streetPlaceholder')}
-            onChange={(value) => {
-              setStreet(value);
-              setResult(null);
-              setHouse('');
-            }}
-          />
-        </li>
-        <li>
-          <StepField
-            step={4}
-            label={t('addressWizard.house')}
-            value={house}
-            placeholder={t('addressWizard.housePlaceholder')}
-            onChange={(value) => {
-              setHouse(value);
-              setResult(null);
-            }}
-            onEnter={submit}
-          />
-        </li>
-      </ol>
+          <SettlementSuggestions region={currentRegion} query={settlement} onPick={chooseSettlement} />
+          <CityChips region={currentRegion} current={settlement} onPick={chooseSettlement} />
+        </div>
+      </StepCard>
 
-      <div className="flex flex-wrap gap-2">
+      <StepCard step={2} title={t('addressWizard.street')} icon={Building2} muted={!settlement.trim()}>
+        <div className="space-y-1.5">
+          <label htmlFor="address-street" className="block text-[11px] font-semibold text-muted-foreground">
+            {t('addressWizard.street')}
+          </label>
+          <input
+            id="address-street"
+            type="text"
+            value={street}
+            placeholder={settlement.trim() ? t('addressWizard.streetPlaceholder') : t('addressWizard.pickSettlementFirst')}
+            autoComplete="off"
+            disabled={!settlement.trim()}
+            onChange={(event) => {
+              setStreet(event.target.value);
+              setHouse('');
+              setResult(null);
+              setSavedLabel(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void submit();
+            }}
+            className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          />
+          <StreetChips
+            options={streetsQuery.data?.data ?? []}
+            query={street}
+            onPick={chooseStreet}
+            loading={streetsQuery.isFetching}
+          />
+          {streetsQuery.data?.wholeSettlementQueue && !street && (
+            <p className="text-[11px] font-semibold text-success">
+              {t('addressWizard.wholeSettlementQueue', { queue: streetsQuery.data.wholeSettlementQueue })}
+            </p>
+          )}
+
+          <label htmlFor="address-house" className="mt-2 block text-[11px] font-semibold text-muted-foreground">
+            {t('addressWizard.house')}
+          </label>
+          <input
+            id="address-house"
+            type="text"
+            value={house}
+            placeholder={street.trim() ? t('addressWizard.housePlaceholder') : t('addressWizard.pickStreetFirst')}
+            autoComplete="off"
+            disabled={!street.trim()}
+            onChange={(event) => {
+              setHouse(event.target.value);
+              setResult(null);
+              setSavedLabel(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void submit();
+            }}
+            className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          />
+          <HouseChips
+            options={housesQuery.data?.data ?? []}
+            wholeStreetQueue={housesQuery.data?.wholeStreetQueue ?? null}
+            onPick={chooseHouse}
+            loading={housesQuery.isFetching}
+          />
+        </div>
+      </StepCard>
+
+      <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => void submit()} disabled={!settlement.trim() || resolve.isPending} className="gap-2">
           <Search className="h-4 w-4" aria-hidden />
           {resolve.isPending ? t('addressWizard.searching') : t('addressWizard.find')}
@@ -189,7 +257,8 @@ export const AddressWizard: React.FC = () => {
         ) : null}
       </div>
 
-      {resolve.isPending && <Skeleton className="h-24 w-full rounded-2xl" />}
+
+      {resolve.isPending && <Skeleton className="h-28 w-full rounded-2xl" />}
 
       {resolve.isError && (
         <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -226,9 +295,8 @@ export const AddressWizard: React.FC = () => {
                 settlementName: settlement.trim(),
                 streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
                 queue: contributedQueue,
+                allowDuplicate: true,
               });
-              // Сразу перезапрашиваем адрес: привязка уже в базе, и человек видит свой график,
-              // а не пустое поле «черга не зафиксирована».
               void submit();
             }}
           />
@@ -236,78 +304,121 @@ export const AddressWizard: React.FC = () => {
       )}
 
       {queue && (
-        <section className="space-y-3 rounded-2xl border border-success/30 bg-success/5 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('addressWizard.yourQueue')}
+        <section className="overflow-hidden rounded-3xl border border-success/30 bg-card shadow-xs">
+          <div className="flex items-start gap-3 border-b border-success/20 bg-success/8 p-4">
+            <span className="inline-flex min-h-12 min-w-16 items-center justify-center rounded-2xl bg-success px-3 font-display text-xl font-bold text-success-foreground">
+              {queue}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-success">{t('addressWizard.yourQueue')}</p>
+              <p className="truncate text-sm font-semibold text-foreground">
+                {[settlement, street, house].filter(Boolean).join(', ')}
               </p>
-              <p className="font-display text-3xl font-bold text-foreground">{queue}</p>
-              <p className={cn('mt-1 text-sm font-semibold', isOffNow ? 'text-destructive' : 'text-success')}>
-                {isOffNow ? t('addressWizard.lightOff') : t('addressWizard.lightOn')}
+              <p className={cn('mt-1 inline-flex items-center gap-1 text-xs font-semibold', currentOff ? 'text-destructive' : hasScheduleData ? 'text-success' : 'text-muted-foreground')}>
+                {currentOff ? <ZapOff className="h-3.5 w-3.5" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
+                {statusText}
               </p>
             </div>
-            <Button onClick={save} disabled={saved} className="gap-2" variant={saved ? 'outline' : 'default'}>
-              <Star className={cn('h-4 w-4', saved && 'fill-current')} aria-hidden />
-              {saved ? t('addressWizard.saved') : t('addressWizard.save')}
-            </Button>
           </div>
 
-          {schedule && intervals.length > 0 ? (
-            <QueueScheduleBar intervals={intervals} date={schedule.date} />
-          ) : schedule?.allClear ? (
-            // График на этот день опубликован, но часов отключения в нём нет: «графіку немає» было бы
-            // неправдой, а человек как раз пришёл узнать, есть ли свет (см. /schedules, поле allClear).
-            <p className="text-xs font-medium text-success">{t('schedule.allClearTitle')}</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">{t('addressWizard.noScheduleToday')}</p>
-          )}
+          <div className="space-y-3 p-4">
+            {schedule && intervals.length > 0 ? (
+              <QueueScheduleBar intervals={intervals} date={schedule.date} showSummary={false} />
+            ) : schedule?.allClear ? (
+              <p className="text-xs font-medium text-success">{t('schedule.allClearTitle')}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">{t('addressWizard.noScheduleToday')}</p>
+            )}
 
-          {source && (
-            <p className="text-[11px] text-muted-foreground/80">{t('addressWizard.source', { source })}</p>
-          )}
+            <Button onClick={() => saveAs('Дім', true)} className="w-full gap-2">
+              <Star className={cn('h-4 w-4', savedLabel === 'Дім' && 'fill-current')} aria-hidden />
+              {t('addressWizard.makePrimary')}
+            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => saveAs('Дім')} className="gap-2">
+                <Home className="h-4 w-4" aria-hidden />
+                {t('addressWizard.saveHome')}
+              </Button>
+              <Button variant="outline" onClick={() => saveAs('Робота')} className="gap-2">
+                <Briefcase className="h-4 w-4" aria-hidden />
+                {t('addressWizard.saveWork')}
+              </Button>
+            </div>
+            {savedLabel && (
+              <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
+                <Check className="h-4 w-4" aria-hidden />
+                {t('addressWizard.savedAs', { label: savedLabel })}
+              </p>
+            )}
+            {source && <p className="text-[11px] text-muted-foreground/80">{t('addressWizard.source', { source })}</p>}
+          </div>
         </section>
       )}
     </div>
   );
 };
 
-/**
- * Локальные подсказки по населённым пунктам области.
- *
- * Справочник лежит в офлайн-пакете, поэтому подсказки работают и без сети — ровно там, где они
- * нужнее всего: в селе связь пропадает, а название села надо набрать точно.
- *
- * Показываем при двух и более символах и не больше пяти вариантов: список нужен, чтобы выбрать,
- * а не читать. Если на устройстве не весь справочник (пакет урезан по размеру), говорим об этом
- * прямо — иначе пустой список читается как «такого села нет», хотя оно просто не сохранено.
- */
-const SettlementHints: React.FC<{
+
+/** Шаг мастера с номером и иконкой: визуально отделяет адресные шаги от результата. */
+const StepCard: React.FC<{
+  step: number;
+  title: string;
+  icon: typeof MapPin;
+  muted?: boolean;
+  children: React.ReactNode;
+}> = ({ step, title, icon: Icon, muted, children }) => (
+  <section className={cn('rounded-2xl border border-border bg-card p-4 shadow-xs', muted && 'opacity-70')}>
+    <div className="mb-3 flex items-center gap-2">
+      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-primary/30 bg-primary/12 text-xs font-bold text-primary">
+        {step}
+      </span>
+      <Icon className="h-4 w-4 text-muted-foreground" aria-hidden />
+      <h2 className="text-sm font-bold text-foreground">{title}</h2>
+    </div>
+    <div className="space-y-3">{children}</div>
+  </section>
+);
+
+/** Подсказки НП: офлайн-пакет + серверный справочник, без дублей. */
+const SettlementSuggestions: React.FC<{
   region: string;
   query: string;
   onPick: (name: string) => void;
 }> = ({ region, query, onPick }) => {
   const { t } = useTranslation();
+  const server = useAddressSettlements(region, query);
+  const offline = useMemo(() => searchOfflineSettlements(region, query, 6), [region, query]);
   const stats = useMemo(() => offlineSettlementStats(region), [region]);
-  const items = useMemo(() => searchOfflineSettlements(region, query, 5), [region, query]);
 
-  if (items.length === 0) return null;
+  const names = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const item of [...offline.map((entry) => entry.name), ...(server.data?.data ?? []).map((entry) => entry.name)]) {
+      const key = item.toLocaleLowerCase('uk-UA');
+      if (key === query.trim().toLocaleLowerCase('uk-UA') || seen.has(key)) continue;
+      seen.add(key);
+      result.push(item);
+      if (result.length >= 6) break;
+    }
+    return result;
+  }, [offline, query, server.data]);
+
+  if (query.trim().length < 2 || names.length === 0) return null;
 
   return (
-    <div className="mt-1.5 space-y-1">
-      <ul className="flex flex-wrap gap-1.5">
-        {items.map((item) => (
-          <li key={item.name}>
-            <button
-              type="button"
-              onClick={() => onPick(item.name)}
-              className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
-            >
-              {item.name}
-            </button>
-          </li>
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-1.5">
+        {names.map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onPick(name)}
+            className="min-h-9 rounded-full border border-border bg-muted px-3 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+          >
+            {highlight(name, query)}
+          </button>
         ))}
-      </ul>
+      </div>
       {stats && stats.total > stats.shown && (
         <p className="text-[11px] text-muted-foreground">
           {t('offline.suggestionsPartial', { shown: stats.shown, total: stats.total })}
@@ -317,54 +428,156 @@ const SettlementHints: React.FC<{
   );
 };
 
-/** Одно поле шага с номером. readOnly — для области, которая берётся из выбранной в шапке. */
-const StepField: React.FC<{
-  step: number;
-  label: string;
-  value: string;
-  hint?: string;
-  placeholder?: string;
-  readOnly?: boolean;
-  onChange?: (value: string) => void;
-  onEnter?: () => void;
-}> = ({ step, label, value, hint, placeholder, readOnly, onChange, onEnter }) => (
-  <div className="space-y-1.5">
-    <label htmlFor={`address-step-${step}`} className="block text-xs font-semibold text-foreground">
-      {step}. {label}
-    </label>
-    <input
-      id={`address-step-${step}`}
-      type="text"
-      value={value}
-      readOnly={readOnly}
-      placeholder={placeholder}
-      onChange={(event) => onChange?.(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') onEnter?.();
-      }}
-      className={cn(
-        'h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors',
-        'focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring',
-        readOnly && 'bg-muted/40 text-muted-foreground',
+/** Быстрые города области: реальные названия, один тап выбирает НП. */
+const CityChips: React.FC<{ region: string; current: string; onPick: (name: string) => void }> = ({
+  region,
+  current,
+  onPick,
+}) => {
+  const { t } = useTranslation();
+  const cities = useMemo(() => {
+    const curated = MAIN_CITIES[region] ?? [];
+    if (curated.length > 0) return curated;
+    return topOfflineSettlements(region, 5).map((item) => item.name);
+  }, [region]);
+
+  if (cities.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-muted-foreground">{t('addressWizard.quickCities')}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {cities.map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onPick(name)}
+            className={cn(
+              'min-h-9 rounded-full border px-3 text-xs font-semibold transition-colors',
+              current === name
+                ? 'border-primary/50 bg-primary/15 text-primary'
+                : 'border-border bg-card text-foreground hover:bg-accent',
+            )}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
+/** Улицы выбранного НП: чипы с подсветкой введённого фрагмента. */
+const StreetChips: React.FC<{
+  options: Array<{ name: string; normalized: string }>;
+  query: string;
+  onPick: (name: string) => void;
+  loading: boolean;
+}> = ({ options, query, onPick, loading }) => {
+  const { t } = useTranslation();
+  if (loading && options.length === 0) {
+    return <p className="text-[11px] text-muted-foreground">{t('addressWizard.loadingStreets')}</p>;
+  }
+  if (options.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-muted-foreground">{t('addressWizard.quickStreets')}</p>
+      <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+        {options.slice(0, 18).map((option) => (
+          <button
+            key={option.normalized || option.name}
+            type="button"
+            onClick={() => onPick(option.name)}
+            className={cn(
+              'min-h-9 rounded-full border px-3 text-xs font-semibold transition-colors',
+              query === option.name
+                ? 'border-primary/50 bg-primary/15 text-primary'
+                : 'border-border bg-card text-foreground hover:bg-accent',
+            )}
+          >
+            {highlight(option.name, query)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/** Дома выбранной улицы: «12 → 2/2». Если домов нет — чипов нет, и это честно. */
+const HouseChips: React.FC<{
+  options: AddressHouseOption[];
+  wholeStreetQueue: string | null;
+  onPick: (house: string) => void;
+  loading: boolean;
+}> = ({ options, wholeStreetQueue, onPick, loading }) => {
+  const { t } = useTranslation();
+  if (loading && options.length === 0) {
+    return <p className="text-[11px] text-muted-foreground">{t('addressWizard.loadingHouses')}</p>;
+  }
+  if (options.length === 0) {
+    return wholeStreetQueue ? (
+      <p className="text-[11px] font-semibold text-success">
+        {t('addressWizard.wholeStreetQueue', { queue: wholeStreetQueue })}
+      </p>
+    ) : null;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold text-muted-foreground">{t('addressWizard.quickHouses')}</p>
+      <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto">
+        {options.slice(0, 40).map((option) => (
+          <button
+            key={`${option.housePattern}-${option.queue}`}
+            type="button"
+            onClick={() => onPick(option.housePattern)}
+            className="min-h-9 rounded-full border border-border bg-card px-3 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+          >
+            {option.housePattern}
+            <span className="ml-1 text-[10px] font-bold text-primary">{option.queue}</span>
+          </button>
+        ))}
+      </div>
+      {wholeStreetQueue && (
+        <p className="text-[11px] text-muted-foreground">
+          {t('addressWizard.wholeStreetQueue', { queue: wholeStreetQueue })}
+        </p>
       )}
-    />
-    {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-  </div>
-);
-/** Групи, которые воркер/бэкенд принимают к записи. Ровно те, что встречаются в графике ДТЕК. */
+    </div>
+  );
+};
+
+/** Подсветка совпадения в чипе — тот же приём, что в основном автокомплите. */
+function highlight(name: string, query: string) {
+  const needle = query.trim();
+  if (!needle) return name;
+  const at = name.toLocaleLowerCase('uk-UA').indexOf(needle.toLocaleLowerCase('uk-UA'));
+  if (at < 0) return name;
+  return (
+    <>
+      {name.slice(0, at)}
+      <mark className="rounded bg-primary/20 text-inherit">{name.slice(at, at + needle.length)}</mark>
+      {name.slice(at + needle.length)}
+    </>
+  );
+}
+
+
+/** Групи, які воркер/бекенд приймають до запису. Рівно ті, що трапляються в графіку ДТЕК. */
 const CONTRIBUTE_QUEUES = ['1/1', '1/2', '2/1', '2/2', '3/1', '3/2', '4/1', '4/2', '5/1', '5/2', '6/1', '6/2'];
 
 /**
- * Народная привязка: если своей очереди в базе нет, человек может назвать её сам.
+ * Народна прив'язка: якщо своєї черги в базі немає, людина може назвати її сама.
  *
- * Зачем это нужно. Привязки «адрес → очередь» невозможно вывести из графика оператора: в нём
- * есть группы, но нет того, какая улица к какой относится. Без ручного ввода база оставалась бы
- * пустой навсегда, и поиск по адресу не работал бы ни у кого. Пользователь знает свой номер
- * группы (он написан на квитанции и в приложении оператора), поэтому самый честный источник
- * этих данных — он сам.
+ * Прив'язки «адреса → черга» неможливо вивести з графіка оператора: у ньому є групи, але немає
+ * того, яка вулиця до якої належить. Номер групи написаний у квитанції та застосунку оператора,
+ * тому найчесніше джерело цих даних — сама людина. Ім'я й телефон не питаємо: для прив'язки
+ * вони не потрібні.
  *
- * Имя и телефон не спрашиваем намеренно: для привязки они не нужны, а личные данные собирать
- * не должны.
+ * Якщо мережі немає, кнопка «Зберегти лише на пристрої» кладе адресу в закладки локально:
+ * пошук продовжить працювати для цієї людини, навіть коли сервер недоступний.
  */
 const ContributeBlock: React.FC<{
   region: string;
@@ -375,6 +588,7 @@ const ContributeBlock: React.FC<{
 }> = ({ region, settlement, street, house, onContributed }) => {
   const { t } = useTranslation();
   const [queue, setQueue] = useState('');
+  const [localSaved, setLocalSaved] = useState(false);
   const contribute = useContributeAddress();
 
   return (
@@ -410,14 +624,27 @@ const ContributeBlock: React.FC<{
         >
           {contribute.isPending ? t('addressWizard.contributing') : t('addressWizard.contributeSubmit')}
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!queue}
+          onClick={() => {
+            onContributed(queue);
+            setLocalSaved(true);
+          }}
+        >
+          {t('addressWizard.contributeLocal')}
+        </Button>
       </div>
       {contribute.isError && (
         <p role="alert" className="text-xs text-destructive">
           {t('addressWizard.contributeFailed')}
         </p>
       )}
-      {contribute.isSuccess && (
-        <p className="text-xs font-semibold text-success">{t('addressWizard.contributeDone')}</p>
+      {(contribute.isSuccess || localSaved) && (
+        <p className="text-xs font-semibold text-success">
+          {localSaved ? t('addressWizard.contributeLocalDone') : t('addressWizard.contributeDone')}
+        </p>
       )}
     </div>
   );

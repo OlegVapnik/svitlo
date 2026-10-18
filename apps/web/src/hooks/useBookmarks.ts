@@ -97,7 +97,7 @@ export function useBookmarks() {
   }, []);
 
   /** Додає (або оновлює) закладку. Якщо така область+черга вже є — не створює дублікат, а повертає її id. */
-  const addBookmark = useCallback((input: Omit<Bookmark, 'id'>): string => {
+  const addBookmark = useCallback((input: Omit<Bookmark, 'id'> & { allowDuplicate?: boolean }): string => {
     const queue = normalizeQueueCode(input.queue);
     if (!isQueueCode(queue)) return '';
     const regionCpu = normalizeRegionCpu(input.regionCpu);
@@ -106,8 +106,14 @@ export function useBookmarks() {
     let next: Bookmark[];
     let createdId = '';
     setBookmarks((prev) => {
+      // «Дім» і «Робота» можуть бути на одній групі: при allowDuplicate один адрес не
+      // схлопується з іншим. Без флага поведінка попередня — одна закладка на область+чергу.
       const existing = prev.find(
-        (b) => b.regionCpu === regionCpu && b.queue === queue,
+        (b) =>
+          b.regionCpu === regionCpu &&
+          b.queue === queue &&
+          (!input.allowDuplicate ||
+            (b.settlementName === input.settlementName && b.streetName === input.streetName)),
       );
       if (existing) {
         // Уже є закладка на цю область+чергу. Раніше її підпис МОВЧКИ перезаписувався новим —

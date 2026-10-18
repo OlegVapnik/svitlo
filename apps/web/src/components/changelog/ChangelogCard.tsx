@@ -1,124 +1,110 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Wrench, ChevronDown, CloudCheck, CloudOff, Database } from 'lucide-react';
+import { ArrowUpCircle, Bug, ChevronRight, Gauge, Sparkles, Zap } from 'lucide-react';
+import type { ChangelogFile } from '@svitlo/shared';
 import bundledChangelog from '../../data/changelog.json';
 import { APP_VERSION } from '../../version.js';
 import { useChangelog } from '../../api/queries.js';
-import { isOfflineServed } from '../../api/offline-cache.js';
-import { formatDate, formatDateTime, isValidIso } from '../../lib/date.js';
-
-type ChangelogEntry = {
-  hash: string;
-  date: string;
-  kind: 'new' | 'fix';
-  label: string;
-  text: string;
-};
+import { formatDate } from '../../lib/date.js';
+import { isNewerVersion } from '../../lib/app-update.js';
+import { UpdateSheet } from './UpdateSheet.js';
 
 /**
- * Порядок смысловых разделов. Хеши и даты коммитов здесь не показываются: версия и дата
- * релиза стоят один раз в шапке, а пункты читаются как список изменений для человека.
+ * Встроенная копия — офлайн-фолбэк. Основной источник — сервер: задеплоенный фикс должен
+ * быть виден в установленном приложении без пересборки APK.
  */
-const GROUP_ORDER = [
-  { kind: 'new', Icon: Sparkles, labelKey: 'changelog.groupNew' },
-  { kind: 'fix', Icon: Wrench, labelKey: 'changelog.groupFix' },
-] as const;
+const BUNDLED = bundledChangelog as unknown as ChangelogFile;
 
 /**
- * Встроенная копия чейджлога — только офлайн-фолбэк.
+ * Компактная карточка «Що нового» на главной.
  *
- * Основной источник — сервер: задеплоенный фикс должен быть виден в уже установленном
- * приложении без пересборки APK. Если сети нет и кеша тоже, показываем то, что лежит в бандле,
- * — лучше чуть устаревший список, чем пустой раздел.
- */
-const BUNDLED_ENTRIES = bundledChangelog.entries as ChangelogEntry[];
-
-/**
- * Блок «Що нового» на головній.
- *
- * Джерело — згенерований tools/gen_changelog.mjs JSON. Він містить лише курирований текст для
- * людини: сирі тіла комітів у UI не потрапляють. Версія і дата стоять один раз у шапці, а сам
- * список розбитий на «Нові можливості» та «Виправлення» — без хешів і дат у кожному пункті.
+ * Содержимое — только последний релиз и три счётчика. Полная история открывается в отдельной
+ * шторке: на первом экране список изменений не должен спорить с графиком отключений.
  */
 export const ChangelogCard: React.FC = () => {
   const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
   const { data } = useChangelog();
-  const fromServer = data?.data;
-  const entries = (fromServer?.entries as ChangelogEntry[] | undefined) ?? BUNDLED_ENTRIES;
-  // Данных нет только если генератор ещё не запускался — тогда блок просто не рисуем.
-  if (entries.length === 0) return null;
+  const serverFile = data?.data;
+  const file = serverFile ?? BUNDLED;
+  const latest = file.releases?.[0];
 
-  /**
-   * Откуда список. Подпись обязательна: «Що нового» — единственное место, где по списку судят,
-   * доехали ли серверные исправления до установленного приложения. Без пометки встроенная копия
-   * выглядела бы как «фиксы не приходят», хотя на деле это отсутствие связи.
-   */
-  const offline = isOfflineServed();
-  // Дата сборки списка бывает не заполнена: генератор без git не пишет её вовсе. Тогда честнее
-  // сказать «оновлено з сервера» без выдуманного времени.
-  const generatedAt = fromServer?.generatedAt ? formatDateTime(fromServer.generatedAt) : null;
-  const sourceLabel = fromServer
-    ? offline
-      ? t('changelog.sourceCache')
-      : generatedAt
-        ? t('changelog.sourceServer', { when: generatedAt })
-        : t('changelog.sourceServerNoTime')
-    : t('changelog.sourceBundled');
-  const SourceIcon = fromServer ? (offline ? Database : CloudCheck) : CloudOff;
+  const hasUpdate = useMemo(
+    () => isNewerVersion(file.version || APP_VERSION, APP_VERSION),
+    [file.version],
+  );
 
-  // Дата релиза — только в шапке. Берём самый свежий пункт: генератор отдаёт список от новых
-  // к старым, поэтому entries[0] — последнее обновление.
-  const latestDate = entries[0]?.date;
-  const groups = GROUP_ORDER.map((group) => ({
-    ...group,
-    entries: entries.filter((entry) => entry.kind === group.kind),
-  })).filter((group) => group.entries.length > 0);
+  if (!latest) return null;
+
+  const total = latest.features.length + latest.fixes.length + latest.optimizations.length;
+  const preview = [...latest.features, ...latest.fixes, ...latest.optimizations].slice(0, 2);
 
   return (
-    /* Аккордеон по умолчанию свёрнут: «Що нового» живёт внизу главной и не спорит с графиком
-       за первый экран. Открывается по нажатию — обычный <details>, без JS-состояния. */
-    <details className="group/change rounded-2xl border border-border bg-card p-4 shadow-xs">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
-        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-bold text-foreground">
-          <Sparkles className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-          <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-            v{APP_VERSION}
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group flex w-full flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-left shadow-xs transition-colors hover:bg-card-raised"
+      >
+        <span className="flex w-full items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/12 text-primary">
+            <Zap className="h-5 w-5" aria-hidden />
           </span>
-          {latestDate && isValidIso(latestDate) && (
-            <time dateTime={latestDate} className="shrink-0 text-[10px] font-medium text-muted-foreground">
-              {formatDate(latestDate)}
-            </time>
-          )}
-          <span className="truncate">{t('home.whatsNew')}</span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-bold text-foreground">
+                {hasUpdate ? t('updates.available') : t('home.whatsNew')}
+              </span>
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                v{file.version || APP_VERSION}
+              </span>
+              {hasUpdate && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/12 px-2 py-0.5 text-[10px] font-bold text-primary">
+                  <ArrowUpCircle className="h-3 w-3" aria-hidden />
+                  {t('updates.newBadge')}
+                </span>
+              )}
+            </span>
+            <span className="mt-1 block text-[11px] text-muted-foreground">
+              {t('updates.latestRelease', { version: latest.version, date: formatDate(latest.date) })}
+            </span>
+          </span>
+          <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
         </span>
-        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground">
-          {entries.length} {t('changelog.entries')}
-          <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/change:rotate-180" aria-hidden />
+
+        <span className="flex flex-wrap gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-bold text-foreground">
+            <Sparkles className="h-3 w-3" aria-hidden />
+            {latest.features.length}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold text-amber-300">
+            <Bug className="h-3 w-3" aria-hidden />
+            {latest.fixes.length}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-bold text-emerald-300">
+            <Gauge className="h-3 w-3" aria-hidden />
+            {latest.optimizations.length}
+          </span>
+          <span className="ml-auto text-[11px] font-semibold text-muted-foreground">
+            {t('updates.itemsCount', { count: total })}
+          </span>
         </span>
-      </summary>
 
-      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <SourceIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-        <span className="min-w-0">{sourceLabel}</span>
-      </p>
+        {preview.length > 0 && (
+          <span className="w-full space-y-1 border-t border-hairline pt-2.5">
+            {preview.map((text, index) => (
+              <span key={index} className="flex gap-2 text-pretty text-xs leading-snug text-foreground/90">
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden />
+                {text}
+              </span>
+            ))}
+          </span>
+        )}
 
-      <div className="mt-3 space-y-3">
-        {groups.map(({ kind, Icon, labelKey, entries: groupEntries }) => (
-          <section key={kind} aria-label={t(labelKey)}>
-            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {t(labelKey)}
-            </h3>
-            <ul className="mt-1.5 space-y-1.5 border-l border-hairline pl-3">
-              {groupEntries.map((entry, index) => (
-                <li key={`${entry.hash}-${index}`} className="text-pretty text-sm leading-snug text-foreground">
-                  {entry.text}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-    </details>
+        <span className="text-[11px] font-semibold text-primary">{t('updates.openHistory')}</span>
+      </button>
+
+      <UpdateSheet open={open} onClose={() => setOpen(false)} file={file} bundled={!serverFile} />
+    </>
   );
 };

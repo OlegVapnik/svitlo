@@ -230,6 +230,50 @@ export async function suggestStreets(
     .map((row) => ({ name: row.name, wholeSettlementQueue: wholeSettlement[0] ? canonicalQueue(wholeSettlement[0].queue) : null }));
 }
 
+/**
+ * Дома выбранной улицы с их группами — для чипов «12 → 2/2» в мастере адреса.
+ *
+ * Отдаём только реальные записи `address_queues`: если домов нет, список пуст, и интерфейс
+ * предлагает ввести номер вручную. Придумывать диапазоны домов нельзя — человек сверится не с
+ * той группой.
+ */
+export async function listAddressHouses(input: {
+  region: string;
+  settlement: string;
+  street: string;
+}): Promise<{ data: StreetHouseRange[]; wholeStreetQueue: string | null }> {
+  const region = input.region.trim();
+  const settlementNormalized = await normalizeAddress(input.settlement);
+  const streetNormalized = await normalizeAddress(input.street);
+  if (!region || !settlementNormalized || !streetNormalized) return { data: [], wholeStreetQueue: null };
+
+  const rows = await db
+    .select({ housePattern: addressQueues.housePattern, queue: addressQueues.queue })
+    .from(addressQueues)
+    .where(
+      and(
+        eq(addressQueues.region, region),
+        eq(addressQueues.settlementNormalized, settlementNormalized),
+        eq(addressQueues.streetNormalized, streetNormalized),
+      ),
+    )
+    .limit(400);
+
+  const whole = rows.find((row) => row.housePattern === '*' || row.housePattern === '');
+  const seen = new Set<string>();
+  const data: StreetHouseRange[] = [];
+  for (const row of rows) {
+    if (row.housePattern === '*' || row.housePattern === '') continue;
+    const queue = canonicalQueue(row.queue);
+    const key = `${row.housePattern}|${queue}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    data.push({ housePattern: row.housePattern, queue });
+  }
+
+  return { data: data.slice(0, 200), wholeStreetQueue: whole ? canonicalQueue(whole.queue) : null };
+}
+
 export interface ImportRow {
   region: string;
   settlement: string;

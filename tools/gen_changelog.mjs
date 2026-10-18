@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 /**
- * Генерация чейджлога приложения из истории git.
+ * Генерация структурного чейнджлога приложения из истории git.
  *
  * Зачем отдельный шаг, если есть `git log`: сборка идёт в Docker, где репозитория нет, а в
- * PWA/Android-бандле история коммитов не нужна целиком. Поэтому чейджлог — маленький JSON,
+ * PWA/Android-бандле история коммитов не нужна целиком. Поэтому чейнджлог — маленький JSON,
  * который коммитится и раздаётся по сети (GET /api/v1/changelog). Благодаря этому фикс,
  * задеплоенный на сервере, виден в уже установленном приложении без пересборки APK.
- * Копия в apps/web/src/data используется только как офлайн-фолбэк, а копия в cf-worker/src/data —
- * для маршрута GET /api/v1/changelog в Cloudflare-воркере (в Workers нет файловой системы,
- * поэтому JSON попадает в бандл на сборке).
  *
- * Что попадает в выдачу:
- *  - только готовый текст для человека: trailer `Release-Note:` в теле коммита или запись
- *    в tools/changelog-notes.json. Сырые тела коммитов не используются — в них обоснования
- *    для разработчика, имена таблиц и лимиты инфраструктуры;
- *  - служебные изменения (chore/docs/test) в приложении ничего не объясняют и не попадают
- *    в список, даже если у них есть тело;
- *  - для истории до введения trailer'а тексты лежат в tools/changelog-notes.json. Это
- *    курируемый список: один коммит может дать несколько пунктов, а внутренние правки —
- *    не дать ни одного.
+ * Формат — сразу для экрана обновлений, а не для `git log`:
+ *   releases: [{ version, date, tag, features[], fixes[], optimizations[] }]
+ *   totalReleases / totalFeatures / totalFixes / totalOptimizations
+ *   entries — плоская копия для старых установленных APK (обратная совместимость).
+ *
+ * Версия релиза берётся из тела коммита (`Версия 2.15.0.`) — так её писали при каждом релизе.
+ * Коммит без версии относится к ближайшему более новому релизу: история идёт от свежих к старым,
+ * поэтому это не догадка о будущем, а привязка к уже объявленной версии.
+ *
+ * Тексты — только для человека: trailer `Release-Note:` или курируемая запись в
+ * tools/changelog-notes.json. Сырые тела коммитов не используются: в них обоснования для
+ * разработчика, имена таблиц и лимиты инфраструктуры.
  *
  * Запуск: node tools/gen_changelog.mjs [--limit 30]
  */
@@ -29,41 +29,45 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
-// Канонический источник — API: чейджлог отдаётся по сети, поэтому фикс, задеплоенный на
-// сервере, виден в уже установленном приложении без пересборки APK.
-// Копия в web — офлайн-фолбэк на случай, когда сети нет (её же подхватывает кеш ответов).
 const outPath = path.join(repoRoot, 'apps/api/src/data/changelog.json');
 const webFallbackPath = path.join(repoRoot, 'apps/web/src/data/changelog.json');
-// Копия для воркера: он раздаёт чейнджлог тем же маршрутом, что и Node-бэкенд, а читать файлы
-// из рантайма Cloudflare Workers не умеет — JSON вшивается в бандл wrangler на сборке.
 const workerPath = path.join(repoRoot, 'cf-worker/src/data/changelog.json');
-// Курируемые тексты для истории до появления trailer'а `Release-Note:`. Ключ — короткий хеш
-// коммита, значение — один объект { kind, text } или массив таких объектов. Коммиты, которых
-// здесь нет и у которых нет trailer'а, в чейнджлог не попадают: это внутренние правки.
 const notesPath = path.join(repoRoot, 'tools/changelog-notes.json');
+const versionPath = path.join(repoRoot, 'apps/web/src/version.ts');
+
+const CURRENT_VERSION = (() => {
+  const match = /APP_VERSION\s*=\s*'(\d+\.\d+\.\d+)'/u.exec(readFileSync(versionPath, 'utf8'));
+  if (!match?.[1]) throw new Error('Не найден APP_VERSION в apps/web/src/version.ts');
+  return match[1];
+})();
 
 const limitArgIndex = process.argv.indexOf('--limit');
-const limit = limitArgIndex > -1 ? Number(process.argv[limitArgIndex + 1]) : 30;
+const limit = limitArgIndex > -1 ? Number(process.argv[limitArgIndex + 1]) : 60;
 
-/**
- * Типы коммитов, которые значат что-то для человека, использующего приложение, и их вид в UI.
- * Служебные (chore, docs, test, ci, build, refactor) намеренно не показываются.
- */
+/** Типы коммитов, которые значат что-то для человека, и их раздел в UI. */
 const USER_FACING = {
-  feat: { kind: 'new', label: 'Нове' },
-  fix: { kind: 'fix', label: 'Виправлено' },
-  security: { kind: 'fix', label: 'Безпека' },
+  feat: 'features',
+  fix: 'fixes',
+  security: 'fixes',
+  perf: 'optimizations',
 };
 
-const KIND_LABELS = { new: 'Нове', fix: 'Виправлено' };
+const NOTE_SECTIONS = {
+  new: 'features',
+  feat: 'features',
+  feature: 'features',
+  fix: 'fixes',
+  fixed: 'fixes',
+  opt: 'optimizations',
+  optimization: 'optimizations',
+  perf: 'optimizations',
+};
 
 function loadCuratedNotes() {
   try {
     const parsed = JSON.parse(readFileSync(notesPath, 'utf8'));
     return parsed && typeof parsed.entries === 'object' && parsed.entries ? parsed.entries : {};
   } catch (error) {
-    // ENOENT — штатная ситуация для нового репозитория: тексты можно писать только
-    // trailer'ами. Любая другая ошибка — повод сказать о ней, но не ронять сборку.
     if (error.code !== 'ENOENT') {
       console.warn(`Не удалось прочитать ${path.relative(repoRoot, notesPath)}: ${error.message}`);
     }
@@ -91,21 +95,29 @@ function cleanNote(value) {
   return `${cut.slice(0, wordEnd > 0 ? wordEnd : 260).replace(/[;,.:-]$/u, '')}…`;
 }
 
-function noteToEntry(note, hash, date) {
+/** Версия из тела коммита: «Версия 2.15.0.» или «v2.15.0» в конце строки. */
+function commitVersion(text) {
+  const match = /(?:Версия|версія)\s*(\d+\.\d+\.\d+)/u.exec(text)
+    ?? /(?:^|\s)v(\d+\.\d+\.\d+)(?:\s|$)/mu.exec(text);
+  return match?.[1] ?? null;
+}
+
+function noteToEntry(note, hash, date, fallbackSection) {
   if (!note || typeof note.text !== 'string' || !note.text.trim()) return null;
-  const kind = note.kind === 'fix' ? 'fix' : 'new';
+  const section = NOTE_SECTIONS[String(note.kind ?? '').toLowerCase()] ?? fallbackSection;
   return {
     hash: hash.slice(0, 7),
     date,
-    kind,
-    label: KIND_LABELS[kind],
+    kind: section === 'fixes' ? 'fix' : section === 'optimizations' ? 'perf' : 'new',
+    label: section === 'fixes' ? 'Виправлено' : section === 'optimizations' ? 'Оптимізація' : 'Нове',
     text: cleanNote(note.text),
+    section,
   };
 }
 
 /** Разделители записей в `git log` — нужно, чтобы тело коммита не потеряло переносы строк. */
-const RECORD_SEPARATOR = '';
-const FIELD_SEPARATOR = '';
+const RECORD_SEPARATOR = '\u001e\u001e';
+const FIELD_SEPARATOR = '\u001f';
 
 function git(args) {
   return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
@@ -113,81 +125,114 @@ function git(args) {
 
 const raw = git([
   'log',
-  `--max-count=${Math.max(limit * 4, 120)}`, // берём с запасом: часть коммитов отсеется как служебные
+  `--max-count=${Math.max(limit * 4, 160)}`,
   `--pretty=format:%h${FIELD_SEPARATOR}%ad${FIELD_SEPARATOR}%s${FIELD_SEPARATOR}%b${RECORD_SEPARATOR}`,
   '--date=short',
 ]);
 
 const entries = [];
+let activeVersion = CURRENT_VERSION;
+
 for (const record of raw.split(RECORD_SEPARATOR)) {
   const trimmed = record.trim();
   if (!trimmed) continue;
   const [hash, date, subject, ...bodyLines] = trimmed.split(FIELD_SEPARATOR);
   if (!hash || !subject) continue;
 
-  // Курируемые тексты идут первыми: один коммит может дать несколько пользовательских
-  // пунктов (например, новая матрица и исправление таймера в одной правке).
+  const body = bodyLines.join('\n');
+  const declaredVersion = commitVersion(body);
+  if (declaredVersion) activeVersion = declaredVersion;
+
+  const type = subject.split(/[:(]/u)[0].trim().toLowerCase();
+  const fallbackSection = USER_FACING[type];
+
+  // Курируемые тексты идут первыми: один коммит может дать несколько пользовательских пунктов.
   const curated = curatedNotes[hash];
   if (curated) {
+    const bucket = fallbackSection ?? 'features';
     for (const note of Array.isArray(curated) ? curated : [curated]) {
-      const entry = noteToEntry(note, hash, date);
-      if (entry) entries.push(entry);
+      const entry = noteToEntry(note, hash, date, bucket);
+      if (entry) entries.push({ ...entry, version: activeVersion });
     }
     if (entries.length >= limit) break;
     continue;
   }
 
-  // Для новых коммитов единственный источник текста — trailer. Сырое тело не используем:
-  // оно написано для разработчика и содержит технический мусор.
-  //
-  // Один коммит может изменить несколько вещей для человека (например, стабильность облака,
-  // планировщик и восстановление будильников). Поэтому читаем ВСЕ строки `Release-Note`, а не
-  // только первую: иначе три пользовательские правки схлопнулись бы в один невнятный пункт.
-  const releaseNotes = [...bodyLines.join('\n').matchAll(/^Release-Note:\s*(.+)$/gimu)]
-    .map((match) => (match[1] ?? '').trim())
-    .filter(Boolean);
+  if (!fallbackSection) continue;
+
+  // Один коммит может изменить несколько вещей для человека. Поэтому читаем все строки
+  // Release-Note, а `[optimization]` позволяет отнести пункт к разделу оптимизаций.
+  const releaseNotes = [...body.matchAll(/^Release-Note(?:\[([a-z]+)\])?:\s*(.+)$/gimu)]
+    .map((match) => ({ kind: match[1] ?? null, text: (match[2] ?? '').trim() }))
+    .filter((note) => note.text.length > 0);
   if (releaseNotes.length === 0) continue;
 
-  // Тема вида `fix(web): …` или `feat: …` → тип из первого слова.
-  const type = subject.split(/[:(]/u)[0].trim().toLowerCase();
-  const meta = USER_FACING[type];
-  if (!meta) continue;
-
-  for (const releaseNote of releaseNotes) {
-    entries.push({
-      hash: hash.slice(0, 7),
-      date,
-      kind: meta.kind,
-      label: meta.label,
-      text: cleanNote(releaseNote),
-    });
+  for (const note of releaseNotes) {
+    const entry = noteToEntry(note, hash, date, fallbackSection);
+    if (entry) entries.push({ ...entry, version: activeVersion });
     if (entries.length >= limit) break;
   }
-
   if (entries.length >= limit) break;
 }
 
-// Порядок НЕ пересортировываем: git log уже отдаёт от свежих к старым, а сортировка по дате
-// перемешала бы коммиты одного дня (все даты в разработке одинаковые).
+/**
+ * Группировка по версиям. Порядок релизов — от новых к старым, как пришёл git log.
+ * Тег `Release` — на минорном/мажорном релизе, `Update` — на патче.
+ */
+const releaseMap = new Map();
+for (const entry of entries) {
+  const version = entry.version || CURRENT_VERSION;
+  let release = releaseMap.get(version);
+  if (!release) {
+    const [, , patch] = version.split('.').map(Number);
+    release = {
+      version,
+      date: entry.date,
+      tag: patch === 0 ? 'Release' : 'Update',
+      features: [],
+      fixes: [],
+      optimizations: [],
+    };
+    releaseMap.set(version, release);
+  }
+  if (entry.date > release.date) release.date = entry.date;
+  const bucket = entry.section === 'fixes' ? release.fixes : entry.section === 'optimizations' ? release.optimizations : release.features;
+  // Один и тот же текст не дублируем: курируемая запись и trailer могут описывать одно и то же.
+  if (!bucket.includes(entry.text)) bucket.push(entry.text);
+}
+
+const releases = [...releaseMap.values()];
+const totals = releases.reduce(
+  (sum, release) => ({
+    totalFeatures: sum.totalFeatures + release.features.length,
+    totalFixes: sum.totalFixes + release.fixes.length,
+    totalOptimizations: sum.totalOptimizations + release.optimizations.length,
+  }),
+  { totalFeatures: 0, totalFixes: 0, totalOptimizations: 0 },
+);
 
 const payload = {
   generatedAt: new Date().toISOString(),
+  version: CURRENT_VERSION,
   note: 'Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.',
-  entries,
+  totalReleases: releases.length,
+  ...totals,
+  releases,
+  // Плоский список для уже установленных APK, которые ещё читают `entries`.
+  entries: entries.map(({ version: _version, section: _section, ...entry }) => entry),
 };
 
 const serialized = JSON.stringify(payload, null, 1) + '\n';
-mkdirSync(path.dirname(outPath), { recursive: true });
-writeFileSync(outPath, serialized, 'utf8');
-mkdirSync(path.dirname(webFallbackPath), { recursive: true });
-writeFileSync(webFallbackPath, serialized, 'utf8');
-mkdirSync(path.dirname(workerPath), { recursive: true });
-writeFileSync(workerPath, serialized, 'utf8');
+for (const target of [outPath, webFallbackPath, workerPath]) {
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeFileSync(target, serialized, 'utf8');
+}
 
-console.log(`Записано ${entries.length} записей:`);
+console.log(`Версия ${CURRENT_VERSION}: ${releases.length} релизов, ${entries.length} пунктов`);
+console.log(`  функций ${totals.totalFeatures}, исправлений ${totals.totalFixes}, оптимизаций ${totals.totalOptimizations}`);
 console.log(`  канон (API):  ${path.relative(repoRoot, outPath)}`);
 console.log(`  фолбэк (web): ${path.relative(repoRoot, webFallbackPath)}`);
 console.log(`  воркер (CF):  ${path.relative(repoRoot, workerPath)}`);
-for (const entry of entries.slice(0, 5)) {
-  console.log(`  ${entry.date} [${entry.label}] ${entry.text.slice(0, 78)}`);
+for (const release of releases.slice(0, 5)) {
+  console.log(`  v${release.version} [${release.tag}] ${release.date}: +${release.features.length} / !${release.fixes.length} / ^${release.optimizations.length}`);
 }

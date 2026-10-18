@@ -4,6 +4,7 @@ import {
   canonicalQueue as canonicalQueueCode,
   importAddressQueuesBatch,
   isQueueCode,
+  listAddressHouses,
   liveLookupFromProvider,
   resolveQueueByAddress,
   suggestSettlements,
@@ -48,7 +49,8 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
       const limit = intParam(request.query.limit, 10, 1, 50);
       const data = await suggestSettlements(region, q, limit);
       reply.header('Cache-Control', 'no-store');
-      return { data, region };
+      // В облаке тот же контракт — объекты, а не строки: клиент читает `name`/`normalized`.
+      return { data: data.map((name) => ({ name })), region };
     },
   );
 
@@ -71,6 +73,23 @@ export default async function addressesRoutes(fastify: FastifyInstance) {
         wholeSettlementQueue: data[0]?.wholeSettlementQueue ?? null,
         region,
       };
+    },
+  );
+
+  /**
+   * Дома выбранной улицы с группами. Нужны для чипов «12 → 2/2»: человеку не нужно печатать
+   * номер дома, если оператор уже опубликовал привязку.
+   */
+  fastify.get<{ Querystring: { region?: string; settlement?: string; street?: string } }>(
+    '/api/v1/addresses/houses',
+    async (request, reply) => {
+      const settlement = (request.query.settlement ?? '').trim();
+      const street = (request.query.street ?? '').trim();
+      if (settlement.length < 2 || street.length < 2) return { data: [], wholeStreetQueue: null };
+      const region = readRegionParam(request.query.region);
+      const result = await listAddressHouses({ region, settlement, street });
+      reply.header('Cache-Control', 'public, max-age=300');
+      return result;
     },
   );
 

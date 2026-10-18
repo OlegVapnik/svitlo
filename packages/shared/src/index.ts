@@ -552,6 +552,29 @@ export interface AddressHouseOption {
   queue: string;
 }
 
+/** Улица в подсказках мастера адреса. */
+export interface AddressStreetOption {
+  name: string;
+  normalized: string;
+  source?: string;
+  /** На весь населённый пункт известна одна группа — можно не спрашивать улицу. */
+  wholeSettlementQueue?: string | null;
+}
+
+/** Подсказки улиц (GET /api/v1/addresses/streets). */
+export interface AddressStreetsResponse {
+  data: AddressStreetOption[];
+  wholeSettlementQueue: string | null;
+  region?: string;
+}
+
+/** Дома выбранной улицы с группами (GET /api/v1/addresses/houses). */
+export interface AddressHousesResponse {
+  data: AddressHouseOption[];
+  /** Группа на всю улицу, если оператор не разбил её по домам. */
+  wholeStreetQueue: string | null;
+}
+
 /** Ответ поиска своей группы (GET /api/v1/addresses/resolve). */
 export interface AddressResolveResult {
   /** Найденная группа; null — привязки в базе нет. */
@@ -588,9 +611,26 @@ export interface AddressQueueImportRow {
  * Отдельный тип живёт здесь, потому что список приходит с сервера: серверный фикс должен быть
  * виден в уже установленном приложении без пересборки APK.
  */
+export interface ChangelogRelease {
+  version: string;
+  date: string;
+  tag: 'Release' | 'Update';
+  features: string[];
+  fixes: string[];
+  optimizations: string[];
+}
+
 export interface ChangelogFile {
   generatedAt: string | null;
-  entries: Array<{ hash: string; date: string; kind: 'new' | 'fix'; label: string; text: string }>;
+  /** Версия серверной сборки — по ней клиент понимает, есть ли обновление. */
+  version: string;
+  totalReleases: number;
+  totalFeatures: number;
+  totalFixes: number;
+  totalOptimizations: number;
+  releases: ChangelogRelease[];
+  /** Плоский список для старых APK. Новый код читает `releases`. */
+  entries?: Array<{ hash: string; date: string; kind: 'new' | 'fix' | 'perf'; label: string; text: string }>;
 }
 
 export interface NewsSourcesResponse {

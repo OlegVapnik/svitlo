@@ -5,7 +5,19 @@ import { logger } from '../utils/logger.js';
 
 interface ChangelogFile {
   generatedAt: string | null;
-  entries: Array<{ hash: string; date: string; kind: 'new' | 'fix'; label: string; text: string }>;
+  version: string;
+  totalReleases: number;
+  totalFeatures: number;
+  totalFixes: number;
+  totalOptimizations: number;
+  releases: Array<{
+    version: string;
+    date: string;
+    tag: 'Release' | 'Update';
+    features: string[];
+    fixes: string[];
+    optimizations: string[];
+  }>;
 }
 
 /**
@@ -44,7 +56,15 @@ function load(): ChangelogFile {
   // Обязательно пишем в лог: тихо пустой чейджлог выглядит как «мы ничего не писали»,
   // хотя на деле сломался путь к данным.
   logger.warn({ candidates }, 'Changelog file not found; serving empty changelog');
-  cache = { generatedAt: null, entries: [] };
+  cache = {
+    generatedAt: null,
+    version: '0.0.0',
+    totalReleases: 0,
+    totalFeatures: 0,
+    totalFixes: 0,
+    totalOptimizations: 0,
+    releases: [],
+  };
   return cache;
 }
 
@@ -54,7 +74,7 @@ export default async function changelogRoutes(fastify: FastifyInstance) {
     // Кэш на стороне клиента короткий: список обновляется при выкатке, а не по часам.
     // ETag — чтобы приложение не перекачивало неизменившийся список.
     reply.header('Cache-Control', 'public, max-age=300');
-    reply.header('ETag', `W/"changelog-${data.entries.length}-${data.entries[0]?.hash ?? '0'}"`);
+    reply.header('ETag', `W/"changelog-${data.version}-${data.totalFeatures + data.totalFixes + data.totalOptimizations}"`);
     return { data };
   });
 }

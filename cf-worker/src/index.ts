@@ -2835,7 +2835,8 @@ async function resolveAddress(
   const rows = await env.DB.prepare(
     `SELECT region, settlement_name, settlement_normalized, street_name, street_normalized,
             house_pattern, queue, source, updated_at
-     FROM address_queues WHERE ${filter.clause} AND settlement_normalized = ?`,
+     FROM address_queues WHERE ${filter.clause} AND settlement_normalized = ?
+     LIMIT 2000`,
   ).bind(...filter.bindings, settlementNormalized).all<AddressQueueRow>();
   const entries = rows.results ?? [];
   if (entries.length === 0) {
@@ -3567,7 +3568,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // только с выкаткой, а не с каждым запросом, поэтому кеш браузера работает как надо.
     return json({ data: changelog }, 200, {
       'cache-control': 'public, max-age=300',
-      etag: `W/"changelog-${changelog.entries.length}-${changelog.entries[0]?.hash ?? '0'}"`,
+      etag: `W/"changelog-${changelog.version}-${changelog.totalFeatures + changelog.totalFixes + changelog.totalOptimizations}"`,
     });
   }
 
@@ -3748,11 +3749,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // (знаем и улицу, и очередь). Показываем оба — очереди может ещё не быть, и это честно.
     const streetRegions = regionIn(readRegions.length > 0 ? readRegions : ['']);
     const known = await env.DB.prepare(
-      `SELECT name, normalized FROM directory_streets
+      `SELECT name, normalized, source FROM directory_streets
        WHERE ${streetRegions.clause} AND settlement_normalized = ? AND normalized LIKE ?
        LIMIT ${STREETS_ROW_LIMIT}`,
     ).bind(...streetRegions.bindings, settlementNormalized, `%${needle}%`)
-      .all<{ name: string; normalized: string }>();
+      .all<{ name: string; normalized: string; source: string | null }>();
 
     const bound = await env.DB.prepare(
       `SELECT DISTINCT street_name AS name, street_normalized AS normalized FROM address_queues
@@ -3763,7 +3764,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
     const streets: Array<{ name: string; normalized: string; source: PlaceSource }> = [
       ...(bound.results ?? []).map((row) => ({ name: row.name, normalized: row.normalized, source: 'address_queues' as const })),
-      ...(known.results ?? []).map((row) => ({ name: row.name, normalized: row.normalized, source: 'curated' as const })),
+      ...(known.results ?? []).map((row) => ({
+        name: row.name,
+        normalized: row.normalized,
+        source: (row.source === 'osm' ? 'osm' : 'curated') as PlaceSource,
+      })),
     ];
 
     let places: Array<{ name: string; normalized: string; source: PlaceSource }> = dedupePlaces(streets);
@@ -3794,9 +3799,44 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const queues = [...new Set((whole.results ?? []).map((row) => normalizeQueue(row.queue)))];
 
     return json({
-      data: places,
+      // Ограничение обязательно: при пустом запросе SQL возвращает все улицы НП, а панель
+      // чипов рассчитана на два десятка. Без slice ответ раздувался бы до тысяч строк.
+      data: places.slice(0, limit),
       wholeSettlementQueue: queues.length === 1 ? queues[0] : null,
       region,
+    });
+  }
+
+  if (path === '/addresses/houses') {
+    // Дома выбранной улицы вместе с их группами. Это отдельный запрос, а не часть resolve:
+    // человек выбирает улицу ещё до дома, и список нужен для чипов «12 → 2/2», а не для ответа.
+    const settlement = (url.searchParams.get('settlement') ?? '').trim();
+    const street = (url.searchParams.get('street') ?? '').trim();
+    if (settlement.length < 2 || street.length < 2) {
+      return json({ data: [], wholeStreetQueue: null });
+    }
+    const filter = regionIn(readRegions.length > 0 ? readRegions : ['']);
+    if (filter.clause === '') return json({ data: [], wholeStreetQueue: null });
+
+    const rows = await env.DB.prepare(
+      `SELECT house_pattern, queue FROM address_queues
+       WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
+       LIMIT 400`,
+    )
+      .bind(...filter.bindings, normalizeAddress(settlement), normalizeAddress(street))
+      .all<{ house_pattern: string; queue: string }>();
+
+    const entries = rows.results ?? [];
+    const whole = entries.find((row) => row.house_pattern === '*' || row.house_pattern === '');
+    const houses = dedupeQueues(
+      entries
+        .filter((row) => row.house_pattern !== '*' && row.house_pattern !== '')
+        .map((row) => ({ housePattern: row.house_pattern, queue: normalizeQueue(row.queue) })),
+    ).slice(0, 200);
+
+    return json({
+      data: houses,
+      wholeStreetQueue: whole ? normalizeQueue(whole.queue) : null,
     });
   }
 

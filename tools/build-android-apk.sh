@@ -246,6 +246,16 @@ if [[ ! -f "${APK}" ]]; then
   exit 1
 fi
 
+# OTA-ссылка для сайта и Android-моста. Файл кладём в public, Vite копирует его в dist,
+# и Pages отдаёт тот же APK, что собран и подписан сейчас. Сам бинарник не коммитится:
+# это артефакт сборки, а не исходник.
+if [[ "${BUILD_TYPE}" == release ]]; then
+  PUBLIC_APK="${REPO_ROOT}/apps/web/public/svitlo-latest.apk"
+  mkdir -p "$(dirname "${PUBLIC_APK}")"
+  install -m 644 "${APK}" "${PUBLIC_APK}"
+  echo ">>> APK для OTA: ${PUBLIC_APK} ($(du -h "${PUBLIC_APK}" | cut -f1))"
+fi
+
 echo ">>> Готово"
 ls -lh "${APK}"
 echo

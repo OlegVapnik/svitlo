@@ -19,9 +19,13 @@ export interface SheetProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  /** Собственная шапка вместо стандартной: экран обновлений рисует крупный бейдж и две строки. */
+  header?: React.ReactNode;
+  /** Липкий подвал: кнопки обновления всегда под рукой, даже если таймлайн длинный. */
+  footer?: React.ReactNode;
 }
 
-export const Sheet: React.FC<SheetProps> = ({ open, onClose, title, children }) => {
+export const Sheet: React.FC<SheetProps> = ({ open, onClose, title, children, header, footer }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [dragOffset, setDragOffset] = useState(0);
   // Откуда открыли — туда же вернём фокус при закрытии, иначе он пропадает на body.
@@ -119,19 +123,34 @@ export const Sheet: React.FC<SheetProps> = ({ open, onClose, title, children }) 
           <span className="h-1.5 w-full rounded-full bg-muted-foreground/40" />
         </div>
 
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="font-display text-base font-bold text-foreground">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрити"
-            className="-mr-1 inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted"
-          >
-            <X className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
+        {header ? (
+          <div className="relative mb-3">
+            {header}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрити"
+              className="absolute right-0 top-0 inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </div>
+        ) : (
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="font-display text-base font-bold text-foreground">{title}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрити"
+              className="-mr-1 inline-flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted"
+            >
+              <X className="h-5 w-5" aria-hidden />
+            </button>
+          </div>
+        )}
 
         {children}
+        {footer}
       </div>
     </div>
   );

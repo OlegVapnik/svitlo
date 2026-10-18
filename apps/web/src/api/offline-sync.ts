@@ -435,6 +435,26 @@ export function searchOfflineSettlements(region: string, query: string, limit = 
   return rankSettlements(settlements, query, limit) as SyncSettlement[];
 }
 
+/**
+ * НП з відомими групами — для швидких чипів під полем пошуку.
+ *
+ * Сортуємо за кількістю груп, а не за алфавітом: у пакеті область може містити тисячі сіл, і
+ * першим у списку має бути місто, де пошук адреси реально працює. Це не «головні міста» за
+ * вигаданим рейтингом — тільки факти з офлайн-пакета.
+ */
+export function topOfflineSettlements(region: string, limit = 6): SyncSettlement[] {
+  const record = readOfflineBundle(region);
+  const settlements = record?.bundle.settlements;
+  if (!settlements || settlements.length === 0) return [];
+  return [...settlements]
+    .sort((left, right) => {
+      const byQueues = (right.queues?.length ?? 0) - (left.queues?.length ?? 0);
+      if (byQueues !== 0) return byQueues;
+      return left.name.localeCompare(right.name, 'uk');
+    })
+    .slice(0, Math.max(0, limit));
+}
+
 /** Сколько НП лежит на устройстве и сколько их всего знает сервер — для честной подписи в UI. */
 export interface OfflineSettlementStats {
   /** Сколько записей реально сохранено на телефоне (пакет может быть урезан). */

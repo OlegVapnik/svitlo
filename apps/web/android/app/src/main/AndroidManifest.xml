@@ -58,6 +58,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- OTA: после скачивания APK открываем системный установщик. exported=false —
+             снаружи этот приёмник вызвать нельзя. -->
+        <receiver
+            android:name=".UpdateDownloadReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -80,4 +91,7 @@
     <!-- После reboot нужно снова запланировать будильники; без этого разрешения система не
          доставит BOOT_COMPLETED. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- OTA: Android 8+ требует это разрешение, чтобы приложение могло открыть установщик APK.
+         Система всё равно покажет человеку отдельное подтверждение. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

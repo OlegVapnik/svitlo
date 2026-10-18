@@ -1,17 +1,20 @@
 package ua.com.svitlo.app;
 
 import android.Manifest;
+import android.app.DownloadManager;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.util.Base64;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.Toast;
 import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -342,6 +345,60 @@ public class MainActivity extends BridgeActivity {
             SvitloWidgetProvider.storeState(current, json);
             SvitloWidgetProvider.refresh(current);
             OutageAlarmReceiver.schedule(current, json);
+        }
+
+        /**
+         * OTA-обновление: скачать APK системным DownloadManager.
+         *
+         * Своя загрузка через WebView не годится: у неё нет уведомления, докачки и передачи
+         * файла установщику. DownloadManager же работает даже когда приложение свёрнуто, а
+         * UpdateDownloadReceiver после завершения открывает системный установщик.
+         */
+        @JavascriptInterface
+        public boolean downloadUpdate(String apkUrl) {
+            MainActivity current = activity.get();
+            return current != null && current.enqueueApkDownload(apkUrl);
+        }
+    }
+
+    /** Ставит APK в очередь загрузки и запоминает id для приёмника завершения. */
+    private boolean enqueueApkDownload(String apkUrl) {
+        if (apkUrl == null || apkUrl.trim().isEmpty()) return false;
+        Uri uri;
+        try {
+            uri = Uri.parse(apkUrl.trim());
+        } catch (Exception error) {
+            return false;
+        }
+        String scheme = uri.getScheme();
+        if (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme)) return false;
+
+        try {
+            DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            if (manager == null) return false;
+            DownloadManager.Request request = new DownloadManager.Request(uri)
+                .setTitle(getString(R.string.update_download_title))
+                .setDescription(getString(R.string.update_download_description))
+                .setMimeType("application/vnd.android.package-archive")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalFilesDir(
+                    this,
+                    Environment.DIRECTORY_DOWNLOADS,
+                    "svitlo-update-" + System.currentTimeMillis() + ".apk"
+                )
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false);
+            long id = manager.enqueue(request);
+            if (id <= 0) return false;
+            getSharedPreferences(UpdateDownloadReceiver.PREFS, MODE_PRIVATE)
+                .edit()
+                .putLong(UpdateDownloadReceiver.KEY_DOWNLOAD_ID, id)
+                .apply();
+            Toast.makeText(this, getString(R.string.update_download_started), Toast.LENGTH_LONG).show();
+            return true;
+        } catch (Exception error) {
+            // Нет места, запрет загрузок, кривой URL — это не повод ронять WebView.
+            return false;
         }
     }
 }

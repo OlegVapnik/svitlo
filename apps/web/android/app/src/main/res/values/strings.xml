@@ -11,4 +11,7 @@
     <string name="widget_default_next">Графік ще не завантажено</string>
     <string name="notification_channel_outages">Відключення та повернення світла</string>
     <string name="notification_channel_outages_desc">Попередження за 15 хвилин до відключення і коли світло повертається</string>
+    <string name="update_download_title">Оновлення Svitlo</string>
+    <string name="update_download_description">Завантажуємо нову версію застосунку</string>
+    <string name="update_download_started">Завантаження оновлення почалося</string>
 </resources>

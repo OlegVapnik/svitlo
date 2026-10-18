@@ -273,6 +273,7 @@ function isoTime(value) {
 function buildRows(sources, normalizeAddress) {
   const settlements = new Map();
   const bindings = new Map();
+  const streets = new Map();
 
   const isRegionLike = (name) => {
     const normalized = normalizeAddress(name);
@@ -336,6 +337,21 @@ function buildRows(sources, normalizeAddress) {
       source: String(row.source ?? 'manual').trim() || 'manual',
       updated_at: isoTime(row.updated_at ?? row.last_seen_at),
     });
+    // Улица из привязки — реальный факт: она уже проверена и лежит в address_queues.
+    // Раньше directory_streets оставался пустым, и подсказки улиц не работали даже там,
+    // где очередь была известна.
+    if (streetNormalized) {
+      const streetKey = `${region}\u0000${settlementNormalized}\u0000${streetNormalized}`;
+      if (!streets.has(streetKey)) {
+        streets.set(streetKey, {
+          region,
+          settlement_normalized: settlementNormalized,
+          name: streetName,
+          normalized: streetNormalized,
+          source: 'address_queues',
+        });
+      }
+    }
   };
 
   for (const row of sources.katottg) addSettlement(row.region, row.name, row.source);
@@ -350,7 +366,12 @@ function buildRows(sources, normalizeAddress) {
   for (const row of localAddresses) addBinding(row);
   for (const row of localQueues) addBinding({ ...row, street_name: '', house_pattern: '*' });
 
-  return { settlements: [...settlements.values()], bindings: [...bindings.values()], skipped };
+  return {
+    settlements: [...settlements.values()],
+    bindings: [...bindings.values()],
+    streets: [...streets.values()],
+    skipped,
+  };
 }
 
 // ── Файловые источники справочника ───────────────────────────────────────────
@@ -448,6 +469,19 @@ function statementsForBindings(rows) {
         '  source = excluded.source,\n' +
         '  updated_at = excluded.updated_at\n' +
         "WHERE address_queues.source <> 'community';",
+    );
+  }
+  return statements;
+}
+
+function statementsForStreets(rows) {
+  const statements = [];
+  for (const batch of chunks(rows, ROWS_PER_STATEMENT)) {
+    const values = batch.map(
+      (row) => `  (${[row.region, row.settlement_normalized, row.name, row.normalized, row.source].map(sqlLiteral).join(', ')})`,
+    );
+    statements.push(
+      `INSERT OR IGNORE INTO directory_streets (region, settlement_normalized, name, normalized, source) VALUES\n${values.join(',\n')};`,
     );
   }
   return statements;
@@ -594,6 +628,7 @@ async function main() {
   log('');
   log('В D1 уедет:');
   log(`  directory_settlements — ${rows.settlements.length} строк`);
+  log(`  directory_streets     — ${rows.streets.length} улиц из привязок`);
   log(`  address_queues        — ${rows.bindings.length} привязок`);
   if (rows.skipped.regionLike > 0) {
     log(`  пропущено ${rows.skipped.regionLike}: «${formatList(rows.skipped.examples)}» — это агрегаты областей, а не населённые пункты`);
@@ -601,8 +636,8 @@ async function main() {
   if (rows.skipped.duplicates > 0) {
     log(`  у ${rows.skipped.duplicates} привязок была не одна черга: ключ D1 — один адрес → одна черга, осталась первая`);
   }
-  if (db.available && db.streetQueues === 0) {
-    log('  directory_streets — нечего переносить: `street_queues` не привязана к НП, а улицы едут внутри привязок `address_queues`');
+  if (rows.streets.length === 0) {
+    log('  directory_streets — пусто: в подтверждённых привязках нет названий улиц');
   }
 
   // Файлы пишем всегда: их можно посмотреть глазами и применить руками, без этого скрипта.
@@ -616,6 +651,11 @@ async function main() {
     );
   }
   if (wantAddresses) {
+    writeSqlFiles(
+      'directory_streets',
+      statementsForStreets(rows.streets),
+      '-- Улицы из подтверждённых привязок «адрес → черга». Источник: tools/sync-directory-to-d1.mjs',
+    );
     writeSqlFiles(
       'address_queues',
       statementsForBindings(rows.bindings),

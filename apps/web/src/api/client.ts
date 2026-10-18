@@ -1,4 +1,4 @@
-import type { AddressResolveResult } from '@svitlo/shared';
+import type { AddressHousesResponse, AddressResolveResult, AddressStreetsResponse } from '@svitlo/shared';
 import { noteServedFromCache, noteServedOnline, readCache, writeCache } from './offline-cache.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] || '/api/v1';
@@ -170,6 +170,45 @@ export const api = {
   },
   suggestAddresses: (query: string, limit = 8, signal?: AbortSignal) =>
     fetcher(`/addresses/suggest?q=${encodeURIComponent(query)}&limit=${limit}`, { signal }),
+  /** Подсказки населённых пунктов области (в облаке — справочник + OSM). */
+  fetchAddressSettlements: (
+    params: { region: string; q: string; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<{ data: Array<{ name: string; normalized?: string }> }> => {
+    const query = new URLSearchParams({
+      region: params.region,
+      q: params.q,
+      limit: String(params.limit ?? 8),
+    });
+    return fetcher(`/addresses/settlements?${query}`, { signal }) as Promise<{
+      data: Array<{ name: string; normalized?: string }>;
+    }>;
+  },
+  /** Улицы выбранного населённого пункта: быстрые чипы в мастере адреса. */
+  fetchAddressStreets: (
+    params: { region: string; settlement: string; q?: string; limit?: number },
+    signal?: AbortSignal,
+  ): Promise<AddressStreetsResponse> => {
+    const query = new URLSearchParams({
+      region: params.region,
+      settlement: params.settlement,
+      q: params.q ?? '',
+      limit: String(params.limit ?? 24),
+    });
+    return fetcher(`/addresses/streets?${query}`, { signal }) as Promise<AddressStreetsResponse>;
+  },
+  /** Дома выбранной улицы с группами — чипы «12 → 2/2», чтобы не печатать номер. */
+  fetchAddressHouses: (
+    params: { region: string; settlement: string; street: string },
+    signal?: AbortSignal,
+  ): Promise<AddressHousesResponse> => {
+    const query = new URLSearchParams({
+      region: params.region,
+      settlement: params.settlement,
+      street: params.street,
+    });
+    return fetcher(`/addresses/houses?${query}`, { signal }) as Promise<AddressHousesResponse>;
+  },
   fetchQueueSchedule: (queue: string, date: string, region?: string) => {
     const params = new URLSearchParams({ queue, date });
     if (region) params.set('region', region);
