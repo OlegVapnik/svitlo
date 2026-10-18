@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { hydrateOfflineStartup } from './api/offline-sync.js';
+import { installNativeGuards } from './lib/native-guards.js';
 import './styles/globals.css';
 
 /**
@@ -26,6 +27,12 @@ if ('caches' in window) {
  * кадра — ровно ради этого эндпоинт /sync и делался.
  */
 hydrateOfflineStartup();
+
+/**
+ * Нативні жести — до першого рендера, щоб довге натискання на першому екрані вже не
+ * відкривало браузерне меню. У браузері функція нічого не робить.
+ */
+installNativeGuards();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

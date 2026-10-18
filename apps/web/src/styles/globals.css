@@ -582,3 +582,38 @@
     }
   }
 }
+
+/* --- Нативний відгук: інтерфейс не повинен поводитись як сторінка браузера ---
+   Довге натискання на таймері, чипах, картках чи табах викликало виділення тексту й системне
+   меню «Копіювати» — застосунок у WebView видавав себе з головою. Виділення вимкнене для
+   оболонки, але НЕ для полів вводу й тексту новин: останній можна скопіювати свідомо.
+   `overscroll-behavior-y: none` прибирає «гумовий» відскок сторінки й pull-to-refresh,
+   які в нативному застосунку читаються як дефект. */
+@layer base {
+  html,
+  body,
+  #root {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  img,
+  svg,
+  a,
+  button {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+
+  /* Єдині місця, де виділення лишається: ввід і явно позначений текст (новини, адреси). */
+  input,
+  textarea,
+  [contenteditable='true'],
+  .selectable-text {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}

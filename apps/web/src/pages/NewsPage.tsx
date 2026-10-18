@@ -227,9 +227,11 @@ export const NewsPage: React.FC<{ embedded?: boolean }> = ({ embedded = false })
                   {formatDateTime(item.publishedAt ?? item.firstSeenAt)}
                 </span>
               </div>
-              <h2 className="break-words text-sm font-semibold leading-snug text-foreground sm:text-base">{item.title}</h2>
+              {/* Єдиний текст в інтерфейсі, який можна виділити й скопіювати: новину
+                  людина може переслати, а таймер і кнопки — ні (див. globals.css). */}
+              <h2 className="selectable-text break-words text-sm font-semibold leading-snug text-foreground sm:text-base">{item.title}</h2>
               {(item.summary || item.body) && (
-                <p className="line-clamp-3 break-words text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                <p className="selectable-text line-clamp-3 break-words text-xs leading-relaxed text-muted-foreground sm:text-sm">
                   {item.summary || item.body}
                 </p>
               )}

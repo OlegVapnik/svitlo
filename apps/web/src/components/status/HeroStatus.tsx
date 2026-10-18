@@ -166,14 +166,16 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
             {/* Деликатная линия вместо волнистого разделителя: 1px и 6% белого. */}
             <div className="border-t border-hairline" aria-hidden />
 
-            {/* Волнистая змейка прогресса слота: сколько уже прошло и сколько осталось. */}
+            {/* Волнистая змейка прогресса слота: сколько уже прошло и сколько осталось.
+                Процент завершення не дублюємо підписом: «пройдено 42%» нічого не додає до
+                «Пройшло 2 год · Залишилось 3 год», а на маленькому екрані забирав місце.
+                Для скрін-рідера відсоток лишається в aria-valuenow самої смуги. */}
             {slot && (
               <WavyProgressBar
                 progress={slot.percent}
                 tone={tone}
                 elapsedLabel={t('home.waveElapsed', { time: formatMinutesUk(slot.elapsedMinutes) })}
                 remainingLabel={t('home.waveRemaining', { time: formatMinutesUk(slot.remainingMinutes) })}
-                percentLabel={t('home.wavePercent', { percent: slot.percent })}
                 aria-label={t('home.heroProgress', { percent: slot.percent })}
               />
             )}

@@ -110,6 +110,15 @@ public class MainActivity extends BridgeActivity {
             bridgeRegistered = true;
         }
 
+        // Довге натискання в WebView відкривало системне меню «Копіювати» й виділяло текст
+        // таймера/кнопок — застосунок видавав себе за браузер. Скасовуємо і сам лонг-клік,
+        // і виділення на рівні View; текстові поля лишаються редагованими (вони в HTML).
+        webView.setLongClickable(false);
+        webView.setOnLongClickListener(v -> true);
+        // Гаптика тільки через SvitloNative.haptic: інакше система додає свій відгук на
+        // довге натискання, і жест «спрацьовує двічі».
+        webView.setHapticFeedbackEnabled(false);
+
         WebSettings settings = webView.getSettings();
         settings.setSupportZoom(false);
         settings.setBuiltInZoomControls(false);
