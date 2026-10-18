@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import { AddressWizard } from '../components/address/AddressWizard.js';
+import { SavedPlacesSection } from '../components/places/SavedPlacesSection.js';
 
 /**
  * Раздел «Пошук»: область → населённый пункт → вулиця → дом.
@@ -28,6 +29,8 @@ export const SearchPage: React.FC = () => {
       </header>
 
       <AddressWizard />
+
+      <SavedPlacesSection />
 
       {/* Честная граница возможностей, а не мелкий шрифт в подвале: часть адресов в базе
           ещё не привязана к группе, и человек должен знать об этом до, а не после поиска. */}

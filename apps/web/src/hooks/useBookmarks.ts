@@ -1,200 +1,211 @@
-import { useCallback, useState } from 'react';
-import { isQueueCode, normalizeQueueCode } from '../lib/queue.js';
-import { normalizeRegionCpu } from '../lib/region.js';
+import { useCallback, useSyncExternalStore } from 'react';
+import {
+  LEGACY_BOOKMARKS_KEY,
+  MAX_SAVED_PLACES,
+  SAVED_PLACES_KEY,
+  addSavedPlace,
+  ensurePrimary,
+  migrateSavedPlaces,
+  moveSavedPlace,
+  readRawSavedPlaces,
+  removeSavedPlace,
+  renameSavedPlace,
+  restoreSavedPlace,
+  serializeSavedPlaces,
+  setSavedPlaceIcon,
+  setSavedPlacePrimary,
+  setSavedPlaceQueue,
+  type AddPlaceInput,
+  type AddPlaceResult,
+  type PlaceIcon,
+  type SavedPlace,
+} from '../lib/saved-places.js';
 
-/** Ключ localStorage: версионованный, чтобы ломать (мигрировать) устаревшие форматы. */
-const BOOKMARKS_KEY = 'svitlo_bookmarks';
-const BOOKMARKS_SCHEMA_VERSION = 1;
+export type { AddPlaceInput, AddPlaceResult, PlaceIcon, SavedPlace };
+export {
+  MAX_SAVED_PLACES,
+  PLACE_ICONS,
+  defaultPlaceLabel,
+  sanitizePlaceLabel,
+} from '../lib/saved-places.js';
 
-/**
- * Закладка групи/локації: «Дім — Київ, черга 3.1», «Батьки — с. Деснянське, черга 2/2»,
- * «Робота — Львів, черга 1.2». Користувач може тримати кілька закладок з РІЗНИХ областей
- * України й перемикатися між ними в 1 клік на головній і в /queues.
- */
-export interface Bookmark {
-  id: string;
-  /** Людська підпис для чипа/списку (напр. «Дім» або «с. Деснянське»). */
-  label: string;
-  /** cpu області з каталогу /regions (напр. 'kyiv-city'). Кожна закладка несе СОЮ область. */
-  regionCpu: string;
-  /** Назва населеного пункту (села/смт/міста), якщо закладка = вулиця/село. */
-  settlementName?: string;
-  /** Назва вулиці, якщо закладка = конкретна вулиця в селі/місті. */
-  streetName?: string;
-  /** Черга у форматі застосунку ('3', '2/2'). */
-  queue: string;
-  /** Головна закладка — та, що показується в герої на головній, якщо декілька. */
-  isPrimary?: boolean;
-  /**
-   * Адресу підтвердив сам користувач кнопкою «Це моя група». Це не дані оператора, тому в
-   * закладці окрема помітка: не можна видавати локальне підтвердження за офіційну привʼязку.
-   */
-  addressConfirmed?: boolean;
-}
-
-interface StoredBookmarks {
-  schemaVersion: number;
-  bookmarks: Bookmark[];
-}
-
-/** Перевіряє, чи валідна закладка: усі обов'язкові поля присутні, черга й область коректні. */
-function isValidBookmark(value: unknown): value is Bookmark {
-  if (typeof value !== 'object' || value === null) return false;
-  const b = value as Record<string, unknown>;
-  return (
-    typeof b.id === 'string' && b.id.length > 0 &&
-    typeof b.label === 'string' && b.label.trim().length > 0 &&
-    typeof b.regionCpu === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(b.regionCpu) &&
-    typeof b.queue === 'string'
-  );
-}
+/** Історична назва типу: закладка = збережене місце. Поля ті самі, тому код-споживач не ламається. */
+export type Bookmark = SavedPlace;
 
 /**
- * Читає закладки з localStorage, відфільтровуючи мусор старих версій (схема, що не збігається
- * з поточною, вважається застарілою і не використовується).
+ * Спільний стан збережених місць.
  *
- * Експортовано, бо список потрібен і поза React-компонентом: фонова перевірка сповіщень про
- * відключення читає ті самі закладки, щоб знати, за якими чергами стежити.
+ * Чому зовнішнє сховище, а не `useState` у хуку: місця редагуються з пʼяти екранів (головна,
+ * пошук адреси, «Мої черги», майстер адреси). Раніше кожен `useBookmarks` тримав власну копію,
+ * тому перейменування в одному місці не було видно в іншому до перемонтування компонента.
+ * `useSyncExternalStore` дає один стан на застосунок без context-провайдера.
  */
-export function loadBookmarks(): Bookmark[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(BOOKMARKS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as StoredBookmarks;
-    if (parsed.schemaVersion !== BOOKMARKS_SCHEMA_VERSION) return [];
-    return (parsed.bookmarks ?? []).filter(isValidBookmark);
-  } catch {
-    return [];
-  }
+let cache: SavedPlace[] | null = null;
+const listeners = new Set<() => void>();
+let storageBound = false;
+
+function emit(): void {
+  for (const listener of listeners) listener();
 }
 
-/** Зберігає закладки в localStorage з актуальною версією схеми. */
-function persistBookmarks(bookmarks: Bookmark[]): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    const payload: StoredBookmarks = { schemaVersion: BOOKMARKS_SCHEMA_VERSION, bookmarks };
-    localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(payload));
-  } catch {
-    // ignore quota errors
+function writeCache(
+  places: SavedPlace[],
+  options: { persist?: boolean } = {},
+): SavedPlace[] {
+  cache = places;
+  if (options.persist !== false && typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(SAVED_PLACES_KEY, serializeSavedPlaces(places));
+      // Старий ключ прибираємо тільки ПІСЛЯ успішного запису нового: інакше при переповненні
+      // сховища міграція втратила б і стару копію, і нову.
+      localStorage.removeItem(LEGACY_BOOKMARKS_KEY);
+    } catch {
+      // Квота або приватний режим: працюємо в памʼяті, застосунок не падає.
+    }
   }
+  return cache;
 }
 
-function makeId(): string {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `bm-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+function getSnapshot(): SavedPlace[] {
+  if (cache) return cache;
+  if (typeof localStorage === 'undefined') {
+    cache = [];
+    return cache;
+  }
+  const { raw, migrated } = readRawSavedPlaces(localStorage);
+  const places = migrateSavedPlaces(raw);
+  // Міграцію записуємо одразу (без emit — ми всередині рендера), щоб наступний запуск
+  // уже читав новий формат і не мігрував повторно.
+  return writeCache(places, { persist: migrated && places.length > 0 });
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  if (!storageBound && typeof window !== 'undefined') {
+    storageBound = true;
+    // Інша вкладка змінила місця — підхоплюємо без перезавантаження.
+    window.addEventListener('storage', (event) => {
+      if (event.key !== null && event.key !== SAVED_PLACES_KEY) return;
+      cache = null;
+      getSnapshot();
+      emit();
+    });
+  }
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function update(next: SavedPlace[]): void {
+  writeCache(next);
+  emit();
 }
 
 /**
- * Закладки груп/локацій з усієї України.
+ * Читає місця поза React: фонова перевірка сповіщень про відключення не має компонента.
+ * Експорт збережено з часів закладок — на ньому тримається `useOutageNotifications`.
+ */
+export function loadBookmarks(): SavedPlace[] {
+  return getSnapshot();
+}
+
+/** Повний список місць (для не-React коду й тестів). */
+export const loadSavedPlaces = loadBookmarks;
+
+/**
+ * Збережені місця з усієї України.
  *
- * На відміну від `useMyQueues` (масив рядків без області), закладка несе свою область,
- * населений пункт і вулицю — тому графік запитується по `regionCpu` закладки, а не по
+ * На відміну від `useMyQueues` (масив рядків без області), місце несе свою область,
+ * населений пункт і вулицю — тому графік запитується по `regionCpu` місця, а не по
  * глобальній поточній області.
  */
 export function useBookmarks() {
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>(loadBookmarks);
+  const places = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const bookmarks = places;
+  const primaryBookmark = places.find((place) => place.isPrimary) ?? places[0] ?? null;
 
-  const sync = useCallback((next: Bookmark[]) => {
-    setBookmarks(next);
-    persistBookmarks(next);
+  /** Додає місце. Повертає його id (порожній рядок, якщо додати не вдалося). */
+  const addBookmark = useCallback((input: AddPlaceInput): string => {
+    const result = addSavedPlace(getSnapshot(), input);
+    if (result.ok) {
+      update(result.places);
+      return result.place.id;
+    }
+    // Для сумісності зі старими формами: дублікат повертає id існуючого місця, щоб
+    // викликач міг одразу зробити його головним.
+    return result.duplicate?.id ?? '';
   }, []);
 
-  /** Додає (або оновлює) закладку. Якщо така область+черга вже є — не створює дублікат, а повертає її id. */
-  const addBookmark = useCallback((input: Omit<Bookmark, 'id'> & { allowDuplicate?: boolean }): string => {
-    const queue = normalizeQueueCode(input.queue);
-    if (!isQueueCode(queue)) return '';
-    const regionCpu = normalizeRegionCpu(input.regionCpu);
-    const label = input.label.trim();
-
-    let next: Bookmark[];
-    let createdId = '';
-    setBookmarks((prev) => {
-      // «Дім» і «Робота» можуть бути на одній групі: при allowDuplicate один адрес не
-      // схлопується з іншим. Без флага поведінка попередня — одна закладка на область+чергу.
-      const existing = prev.find(
-        (b) =>
-          b.regionCpu === regionCpu &&
-          b.queue === queue &&
-          (!input.allowDuplicate ||
-            (b.settlementName === input.settlementName && b.streetName === input.streetName)),
-      );
-      if (existing) {
-        // Уже є закладка на цю область+чергу. Раніше її підпис МОВЧКИ перезаписувався новим —
-        // через що «Дім» і «Робота» на одній групі не могли існувати разом, а старе назва
-        // зникало без запиту. Тепер існуючу закладку не чіпаємо: перейменувати її можна
-        // явно (renameBookmark), додавання — не приховане редагування.
-        // Єдиний виняток — підтвердження адреси: якщо людина натиснула «Це моя група»,
-        // помітка має зʼявитися навіть у раніше збереженій закладці.
-        next = input.addressConfirmed
-          ? prev.map((bookmark) => (bookmark.id === existing.id ? { ...bookmark, addressConfirmed: true } : bookmark))
-          : prev;
-        createdId = existing.id;
-      } else {
-        createdId = makeId();
-        next = [...prev, {
-          id: createdId,
-          label: label || `${regionCpu} · ${queue}`,
-          regionCpu,
-          settlementName: input.settlementName,
-          streetName: input.streetName,
-          queue,
-          isPrimary: prev.length === 0 ? true : input.isPrimary,
-          ...(input.addressConfirmed ? { addressConfirmed: true } : {}),
-        }];
-      }
-      persistBookmarks(next);
-      return next;
-    });
-    return createdId;
+  /** Те саме, але з причиною відмови — для форми, яка показує «уже є» або «ліміт». */
+  const addPlace = useCallback((input: AddPlaceInput): AddPlaceResult => {
+    const result = addSavedPlace(getSnapshot(), input);
+    if (result.ok) update(result.places);
+    return result;
   }, []);
 
   /**
-   * Перейменувати закладку («Дім», «Робота», «Вулиця Шевченка»).
-   *
-   * Раніше перейменувати було нечем: назва змінювалася лише побічним шляхом — повторним
-   * addBookmark з тим самим region+queue, який ще й затирав адресу попередньої закладки.
+   * Перейменувати місце («Дім» → «Офіс»). Порожня назва не стирає стару: людина могла
+   * випадково стерти текст і натиснути «Готово».
    */
   const renameBookmark = useCallback((id: string, label: string) => {
-    const trimmed = label.trim();
-    if (!trimmed) return;
-    setBookmarks((prev) => {
-      const next = prev.map((b) => (b.id === id ? { ...b, label: trimmed } : b));
-      persistBookmarks(next);
-      return next;
-    });
+    update(renameSavedPlace(getSnapshot(), id, label));
   }, []);
 
-  const removeBookmark = useCallback((id: string) => {
-    setBookmarks((prev) => {
-      const next = prev.filter((b) => b.id !== id);
-      // Якщо видалили головну й лишились інші — перша стає головною.
-      if (next.length > 0 && !next.some((b) => b.isPrimary)) {
-        next[0] = { ...next[0], isPrimary: true };
-      }
-      persistBookmarks(next);
-      return next;
-    });
+  const setBookmarkIcon = useCallback((id: string, icon: PlaceIcon) => {
+    update(setSavedPlaceIcon(getSnapshot(), id, icon));
   }, []);
 
-  /** Виставляє активну (головну) закладку — що показувати в герої на головній. */
+  const setBookmarkQueue = useCallback((id: string, queue: string) => {
+    update(setSavedPlaceQueue(getSnapshot(), id, queue));
+  }, []);
+
+  /** Видаляє місце і повертає його разом із позицією — для undo протягом кількох секунд. */
+  const removeBookmark = useCallback(
+    (id: string): { place: SavedPlace; index: number } | null => {
+      const current = getSnapshot();
+      const index = current.findIndex((place) => place.id === id);
+      if (index < 0) return null;
+      const place = current[index]!;
+      update(removeSavedPlace(current, id));
+      return { place, index };
+    },
+    [],
+  );
+
+  /** Повертає видалене місце на його позицію (не в кінець списку). */
+  const restoreBookmark = useCallback((place: SavedPlace, index: number) => {
+    update(restoreSavedPlace(getSnapshot(), place, index));
+  }, []);
+
   const setPrimaryBookmark = useCallback((id: string) => {
-    setBookmarks((prev) => {
-      const next = prev.map((b) => ({ ...b, isPrimary: b.id === id }));
-      persistBookmarks(next);
-      return next;
-    });
+    update(setSavedPlacePrimary(getSnapshot(), id));
   }, []);
 
-  const primaryBookmark = bookmarks.find((b) => b.isPrimary) ?? bookmarks[0] ?? null;
+  const moveBookmark = useCallback((id: string, direction: -1 | 1) => {
+    update(moveSavedPlace(getSnapshot(), id, direction));
+  }, []);
+
+  /** Скидання головного місця після ручних правок у DevTools / битого сховища. */
+  const normalizeOrder = useCallback(() => {
+    update(ensurePrimary(getSnapshot()));
+  }, []);
 
   return {
+    places,
     bookmarks,
     primaryBookmark,
+    canAdd: places.length < MAX_SAVED_PLACES,
     addBookmark,
+    addPlace,
     removeBookmark,
+    restoreBookmark,
     setPrimaryBookmark,
     renameBookmark,
+    setBookmarkIcon,
+    setBookmarkQueue,
+    moveBookmark,
+    normalizeOrder,
   };
 }
+
+

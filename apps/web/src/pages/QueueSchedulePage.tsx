@@ -221,7 +221,14 @@ type QueueCardProps = {
  * групи, тому список груп треба питати per-region, а не один раз для поточної області.
  */
 const BookmarkQueueCard: React.FC<{
-  bookmark: { regionCpu: string; queue: string; label: string; streetName?: string; isPrimary?: boolean };
+  bookmark: {
+    regionCpu: string;
+    queue: string;
+    label: string;
+    streetName?: string;
+    house?: string;
+    isPrimary?: boolean;
+  };
   date: string;
   onRemove: () => void;
   onSetPrimary: () => void;
@@ -235,7 +242,7 @@ const BookmarkQueueCard: React.FC<{
       regionCpu={bookmark.regionCpu}
       regionName={regions.find((region) => region.cpu === bookmark.regionCpu)?.nameUa ?? bookmark.regionCpu}
       queue={bookmark.queue}
-      street={bookmark.streetName ?? bookmark.label}
+      street={[bookmark.streetName, bookmark.house].filter(Boolean).join(' ') || bookmark.label}
       date={date}
       isPrimary={bookmark.isPrimary ?? false}
       onRemove={onRemove}

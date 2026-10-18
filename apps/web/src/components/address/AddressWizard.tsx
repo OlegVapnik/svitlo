@@ -2,16 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BadgeCheck,
-  Briefcase,
+  BookmarkPlus,
   Building2,
   Check,
   ChevronDown,
   ExternalLink,
-  Home,
   ListFilter,
   MapPin,
   Search,
-  Star,
   Zap,
   ZapOff,
 } from 'lucide-react';
@@ -31,12 +29,15 @@ import {
   topOfflineSettlements,
 } from '../../api/offline-sync.js';
 import { QueueScheduleBar } from '../schedule/QueueScheduleBar.js';
+import { PlaceNameEditor } from '../places/PlaceNameEditor.js';
 import { Button } from '../ui/Button.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { cn } from '../../lib/cn.js';
 import { formatKyivTime } from '../../lib/date.js';
 import { formatQueueLabel } from '../../lib/queue-label.js';
 import { operatorLink } from '../../lib/operator-links.js';
+import { hapticTick } from '../../lib/haptics.js';
+import { MAX_SAVED_PLACES, type PlaceIcon } from '../../lib/saved-places.js';
 import type { AddressHouseOption, AddressResolveResult, QueueScheduleData } from '@svitlo/shared';
 
 /**
@@ -85,10 +86,16 @@ function sortQueues(left: string, right: string): number {
  * соседние известные дома, ручной выбор из реального списка групп области и официальную ссылку
  * оператора. Локально подтверждённая человеком группа сохраняется с отдельной пометкой.
  */
+/** Результат спроби зберегти місце: показуємо причину відмови, а не мовчимо. */
+type SaveFeedback =
+  | { kind: 'saved'; label: string }
+  | { kind: 'duplicate'; label: string; queueDiffers: boolean }
+  | { kind: 'limit' };
+
 export const AddressWizard: React.FC = () => {
   const { t } = useTranslation();
   const { currentRegion, setRegion, regions } = useRegion();
-  const { addBookmark, setPrimaryBookmark } = useBookmarks();
+  const { addPlace, setPrimaryBookmark } = useBookmarks();
 
   const [settlement, setSettlement] = useState('');
   const [street, setStreet] = useState('');
@@ -97,7 +104,11 @@ export const AddressWizard: React.FC = () => {
   const [manualQueue, setManualQueue] = useState<string | null>(null);
   const [groupDraft, setGroupDraft] = useState('');
   const [confirmedQueue, setConfirmedQueue] = useState<string | null>(null);
-  const [savedLabel, setSavedLabel] = useState<string | null>(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [draftLabel, setDraftLabel] = useState('');
+  const [draftIcon, setDraftIcon] = useState<PlaceIcon>('home');
+  const [draftPrimary, setDraftPrimary] = useState(true);
+  const [saveFeedback, setSaveFeedback] = useState<SaveFeedback | null>(null);
 
   const resolve = useAddressLookup();
   const streetsQuery = useAddressStreets(currentRegion, settlement, street);
@@ -111,13 +122,15 @@ export const AddressWizard: React.FC = () => {
     setManualQueue(null);
     setGroupDraft('');
     setConfirmedQueue(null);
-    setSavedLabel(null);
+    setSaveOpen(false);
+    setSaveFeedback(null);
   };
 
   const submit = async (overrides: { settlement?: string; street?: string; house?: string } = {}) => {
     const nextSettlement = (overrides.settlement ?? settlement).trim();
     if (!nextSettlement) return;
-    setSavedLabel(null);
+    setSaveFeedback(null);
+    setSaveOpen(false);
     setManualQueue(null);
     setConfirmedQueue(null);
     const found = await resolve.mutateAsync({
@@ -147,7 +160,7 @@ export const AddressWizard: React.FC = () => {
     setHouse(value);
     setManualQueue(null);
     setConfirmedQueue(null);
-    setSavedLabel(null);
+    setSaveFeedback(null);
     void submit({ house: value });
   };
 
@@ -196,42 +209,71 @@ export const AddressWizard: React.FC = () => {
       .slice(0, 4);
   }, [house, housesQuery.data]);
 
-  const saveAs = (label: 'Дім' | 'Робота', makePrimary = false) => {
-    if (!activeQueue) return;
-    const id = addBookmark({
-      label: `${t(label === 'Дім' ? 'addressWizard.labelHome' : 'addressWizard.labelWork')} · ${settlement}, ${street} ${house}`.trim(),
-      regionCpu: currentRegion,
-      settlementName: settlement.trim(),
-      streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
-      queue: activeQueue,
-      allowDuplicate: true,
-      addressConfirmed: confirmedQueue === activeQueue,
-    });
-    if (id && makePrimary) setPrimaryBookmark(id);
-    setSavedLabel(label);
+  const openSavePanel = () => {
+    setDraftLabel(t('places.iconHome'));
+    setDraftIcon('home');
+    setDraftPrimary(true);
+    setSaveFeedback(null);
+    setSaveOpen(true);
+    hapticTick('tick');
   };
 
-  /** «Це моя група»: сохраняем локально с пометкой, что группу подтвердил человек. */
+  /**
+   * Зберігає місце з власною назвою та іконкою.
+   *
+   * Дублікат адреси — не помилка введення: людина могла вже зберегти цей будинок як «Дім».
+   * Тому показуємо, під якою назвою адреса вже є, і не створюємо другу копію. Якщо група
+   * відрізняється, підказуємо оновити її в місці, а не плодити «Дім» і «Дім 2».
+   */
+  const savePlace = () => {
+    if (!activeQueue) return;
+    const result = addPlace({
+      label: draftLabel,
+      icon: draftIcon,
+      regionCpu: currentRegion,
+      settlementName: settlement.trim(),
+      streetName: street.trim() || undefined,
+      house: house.trim() || undefined,
+      queue: activeQueue,
+      addressConfirmed: confirmedQueue === activeQueue,
+    });
+
+    if (result.ok) {
+      if (draftPrimary) setPrimaryBookmark(result.place.id);
+      setSaveFeedback({ kind: 'saved', label: result.place.label });
+      setSaveOpen(false);
+      hapticTick('confirm');
+      return;
+    }
+
+    if (result.reason === 'duplicate' && result.duplicate) {
+      setSaveFeedback({
+        kind: 'duplicate',
+        label: result.duplicate.label,
+        queueDiffers: result.duplicate.queue !== activeQueue,
+      });
+      return;
+    }
+
+    if (result.reason === 'limit') setSaveFeedback({ kind: 'limit' });
+  };
+
+  /**
+   * «Це моя група» більше не зберігає місце мовчки: раніше тут з'являвся запис «Дім» без
+   * назви, який потім доводилось перейменовувати. Тепер група лише підтверджується, а місце
+   * людина зберігає сама — з назвою та іконкою.
+   */
   const confirmNearbyGroup = (option: AddressHouseOption) => {
     setManualQueue(option.queue);
     setConfirmedQueue(option.queue);
-    const id = addBookmark({
-      label: `${t('addressWizard.labelHome')} · ${settlement}, ${street} ${house}`.trim(),
-      regionCpu: currentRegion,
-      settlementName: settlement.trim(),
-      streetName: [street, house].filter(Boolean).join(' ').trim() || undefined,
-      queue: option.queue,
-      allowDuplicate: true,
-      addressConfirmed: true,
-    });
-    if (id) setSavedLabel(t('addressWizard.confirmedLocal'));
+    setSaveFeedback(null);
   };
 
   const applyManualGroup = () => {
     if (!groupDraft) return;
     setManualQueue(groupDraft);
     setConfirmedQueue(null);
-    setSavedLabel(null);
+    setSaveFeedback(null);
   };
 
   const operator = operatorLink(currentRegion);
@@ -334,7 +376,7 @@ export const AddressWizard: React.FC = () => {
               setResult(null);
               setManualQueue(null);
               setConfirmedQueue(null);
-              setSavedLabel(null);
+              setSaveFeedback(null);
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') void submit();
@@ -489,26 +531,55 @@ export const AddressWizard: React.FC = () => {
               <p className="text-xs text-muted-foreground">{t('addressWizard.noScheduleToday')}</p>
             )}
 
-            <Button onClick={() => saveAs('Дім', true)} className="w-full gap-2">
-              <Star className={cn('h-4 w-4', savedLabel === 'Дім' && 'fill-current')} aria-hidden />
-              {t('addressWizard.makePrimary')}
-            </Button>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => saveAs('Дім')} className="gap-2">
-                <Home className="h-4 w-4" aria-hidden />
-                {t('addressWizard.saveHome')}
+            {saveOpen ? (
+              <div className="space-y-3 rounded-2xl border border-primary/30 bg-primary-container/10 p-3">
+                <PlaceNameEditor
+                  label={draftLabel}
+                  icon={draftIcon}
+                  autoFocus
+                  onLabelChange={setDraftLabel}
+                  onIconChange={setDraftIcon}
+                  onSubmit={savePlace}
+                  onCancel={() => setSaveOpen(false)}
+                  submitLabel={t('places.save')}
+                />
+                <label className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={draftPrimary}
+                    onChange={(event) => setDraftPrimary(event.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  {t('addressWizard.makePrimary')}
+                </label>
+              </div>
+            ) : (
+              <Button onClick={openSavePanel} className="w-full gap-2">
+                <BookmarkPlus className="h-4 w-4" aria-hidden />
+                {t('places.save')}
               </Button>
-              <Button variant="outline" onClick={() => saveAs('Робота')} className="gap-2">
-                <Briefcase className="h-4 w-4" aria-hidden />
-                {t('addressWizard.saveWork')}
-              </Button>
-            </div>
-            {savedLabel && (
-              <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
+            )}
+
+            {saveFeedback?.kind === 'saved' && (
+              <p
+                role="status"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-success"
+              >
                 <Check className="h-4 w-4" aria-hidden />
-                {savedLabel === 'Дім' || savedLabel === 'Робота'
-                  ? t('addressWizard.savedAs', { label: savedLabel })
-                  : savedLabel}
+                {t('addressWizard.savedAs', { label: saveFeedback.label })}
+              </p>
+            )}
+            {saveFeedback?.kind === 'duplicate' && (
+              <p role="alert" className="rounded-xl bg-warning/10 px-3 py-2 text-xs text-foreground">
+                <span className="font-semibold">{t('places.duplicateTitle')}. </span>
+                {saveFeedback.queueDiffers
+                  ? t('places.duplicateQueue')
+                  : t('places.duplicateDesc', { label: saveFeedback.label })}
+              </p>
+            )}
+            {saveFeedback?.kind === 'limit' && (
+              <p role="alert" className="rounded-xl bg-warning/10 px-3 py-2 text-xs font-semibold text-foreground">
+                {t('places.limit', { max: MAX_SAVED_PLACES })}
               </p>
             )}
             {activeSource && (
