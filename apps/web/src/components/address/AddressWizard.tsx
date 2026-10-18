@@ -174,17 +174,7 @@ export const AddressWizard: React.FC = () => {
     const nextSettlement = (overrides.settlement ?? settlement).trim();
     const nextStreet = (overrides.street ?? street).trim();
     const nextHouse = (overrides.house ?? house).trim();
-    if (!nextSettlement || selectedSettlement !== nextSettlement) return;
-    if (nextStreet && selectedStreet !== nextStreet) return;
-    if (nextHouse && selectedHouse !== nextHouse) {
-      const knownHouse = (housesQuery.data?.data ?? []).some((item) => {
-        const range = item.housePattern.match(/^(\d{1,5})\s*[-–—]\s*(\d{1,5})$/u);
-        return range
-          ? nextHouse === range[1]
-          : item.housePattern.toLocaleLowerCase('uk-UA') === nextHouse.toLocaleLowerCase('uk-UA');
-      });
-      if (!knownHouse) return;
-    }
+    if (!nextSettlement) return;
     setSaveFeedback(null);
     setSaveOpen(false);
     setManualQueue(null);
@@ -511,12 +501,7 @@ export const AddressWizard: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onClick={() => void submit()}
-          disabled={
-            selectedSettlement !== settlement.trim() ||
-            (Boolean(street.trim()) && selectedStreet !== street.trim()) ||
-            (Boolean(house.trim()) && selectedHouse !== house.trim()) ||
-            resolve.isPending
-          }
+          disabled={!settlement.trim() || resolve.isPending}
           className="gap-2"
         >
           <Search className="h-4 w-4" aria-hidden />

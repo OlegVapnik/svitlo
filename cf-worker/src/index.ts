@@ -1884,32 +1884,60 @@ async function loadMirrorRegionNames(env: Env): Promise<Record<string, string>> 
  */
 function toIntervals(rows: SlotRow[], queue: string, date: string) {
   const wanted = normalizeQueue(queue);
-  // Два ключа области (канонический и легаси) могут принести один и тот же слот из разных
-  // источников. Дедупликация по времени не даёт графику удвоиться, когда источник поменялся,
-  // а старые строки ещё лежат в D1.
-  const seen = new Set<string>();
-  return rows
+  const filtered = rows
     .filter((row) => normalizeQueue(row.queue) === wanted)
-    .sort((a, b) => a.time_from.localeCompare(b.time_from))
-    .filter((row) => {
-      const key = `${row.time_from}|${row.time_to}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .map((row) => ({
-      startsAt: localSlotToUtc(date, row.time_from, false),
-      endsAt: localSlotToUtc(date, row.time_to, true),
-      // Локальное время оператора («20:00»). Обязательное поле контракта
-      // GroupOutageInterval: без него карточка ближайших отключений на главной рисовала
-      // «– –» вместо времени, хотя сам график был загружен. Наш скрипт сверки контрактов
-      // это пропустил — он сравнивал форму массива, но не заходил внутрь элемента списка.
-      localTimeFrom: row.time_from,
-      localTimeTo: row.time_to,
-      stateCode: OFF_STATE.code,
-      stateName: OFF_STATE.name,
-      stateColor: OFF_STATE.color,
-    }));
+    .sort((a, b) => a.time_from.localeCompare(b.time_from));
+
+  // Преобразуем каждую пару в миллисекунды UTC и локальные строки
+  interface IntervalCandidate {
+    startMs: number;
+    endMs: number;
+    localTimeFrom: string;
+    localTimeTo: string;
+  }
+
+  const rawIntervals: IntervalCandidate[] = [];
+  for (const row of filtered) {
+    const startsAt = localSlotToUtc(date, row.time_from, false);
+    const endsAt = localSlotToUtc(date, row.time_to, true);
+    const startMs = Date.parse(startsAt);
+    const endMs = Date.parse(endsAt);
+    if (endMs > startMs) {
+      rawIntervals.push({
+        startMs,
+        endMs,
+        localTimeFrom: row.time_from,
+        localTimeTo: row.time_to,
+      });
+    }
+  }
+
+  // Сортируем по началу интервала
+  rawIntervals.sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+
+  // Склеиваем смежные или пересекающиеся интервалы (например, 06:00-06:30 + 06:30-07:00 -> 06:00-07:00)
+  const merged: IntervalCandidate[] = [];
+  for (const cur of rawIntervals) {
+    const prev = merged[merged.length - 1];
+    if (prev && cur.startMs <= prev.endMs) {
+      if (cur.endMs > prev.endMs) {
+        prev.endMs = cur.endMs;
+        prev.localTimeTo = cur.localTimeTo;
+      }
+    } else {
+      merged.push({ ...cur });
+    }
+  }
+
+  return merged.map((item) => ({
+    startsAt: new Date(item.startMs).toISOString(),
+    endsAt: new Date(item.endMs).toISOString(),
+    localTimeFrom: item.localTimeFrom,
+    localTimeTo: item.localTimeTo,
+    stateCode: OFF_STATE.code,
+    stateName: OFF_STATE.name,
+    stateColor: OFF_STATE.color,
+  }));
 }
 
 /**
