@@ -3935,11 +3935,22 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       `SELECT d.name AS name, d.normalized AS normalized, 'curated' AS source
        FROM directory_settlements d WHERE ${settlementsFilter.clause} AND d.normalized LIKE ?`,
     ).bind(...settlementsFilter.bindings, `%${needle}%`).all<{ name: string; normalized: string; source: 'curated' }>();
+    // Если каталог ОСР уточняет одноимённый населённый пункт районом, не предлагаем рядом
+    // неразличимый вариант из OSM/статического реестра. Он не имеет связанных улиц и приводил
+    // к пустому списку после выбора, хотя районный вариант содержит полный адресный каталог.
+    const districtQualifiedBases = new Set(
+      (ours.results ?? []).flatMap((row) => {
+        const separator = row.name.lastIndexOf(' · ');
+        if (separator < 0) return [];
+        const base = normalizeAddress(row.name.slice(separator + 3));
+        return base ? [base] : [];
+      }),
+    );
 
     // Тип аннотирован явно: без него TypeScript сужает `source` до литерала 'curated'
     // и не даёт потом положить рядом подсказки из OSM.
     let places: Array<{ name: string; normalized: string; lat: number | null; lon: number | null; source: PlaceSource }> =
-      (ours.results ?? []).map((row) => ({
+      (ours.results ?? []).filter((row) => !districtQualifiedBases.has(row.normalized)).map((row) => ({
         name: row.name,
         normalized: row.normalized,
         lat: null,
@@ -3952,9 +3963,11 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // не находил «Чернігів», а человек именно так и набирает название.
     const fromDirectory = searchSettlements(query, region || undefined, limit);
     for (const hit of fromDirectory) {
+      const normalized = normalizeAddress(hit.name);
+      if (districtQualifiedBases.has(normalized)) continue;
       places.push({
         name: hit.name,
-        normalized: normalizeAddress(hit.name),
+        normalized,
         lat: hit.lat,
         lon: hit.lon,
         source: 'directory',
@@ -3988,7 +4001,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       );
       for (const item of osm) {
         const place = nominatimToPlace(item, 'osm');
-        if (place) places.push(place);
+        if (place && !districtQualifiedBases.has(place.normalized)) places.push(place);
       }
     }
     return json({ data: dedupePlaces(places).slice(0, limit) });

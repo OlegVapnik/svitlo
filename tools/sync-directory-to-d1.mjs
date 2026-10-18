@@ -702,19 +702,6 @@ async function main() {
   }, normalizeAddress);
 
   if (hierarchy) {
-    const districtQualifiedBases = new Set(
-      hierarchyHouses.flatMap((house) => {
-        const separator = String(house.settlement ?? '').lastIndexOf(' · ');
-        if (separator < 0) return [];
-        const base = normalizeAddress(String(house.settlement).slice(separator + 3));
-        return base ? [`${house.region}\u0000${base}`] : [];
-      }),
-    );
-    // The operator's PDF splits same-named places by district (for example, two Bakhmachs).
-    // Keep those selectable labels and remove the plain KATOTTG/local alias, which has no streets.
-    rows.settlements = rows.settlements.filter(
-      (row) => !districtQualifiedBases.has(`${row.region}\u0000${row.normalized}`),
-    );
     const settlementKeys = new Set(rows.settlements.map((row) => `${row.region}\u0000${row.normalized}`));
     const streetKeys = new Set(rows.streets.map((row) => `${row.region}\u0000${row.settlement_normalized}\u0000${row.normalized}`));
     const settlementNames = new Map();
@@ -795,14 +782,6 @@ async function main() {
       'directory_settlements',
       [
         ...(hierarchy ? ["DELETE FROM directory_settlements WHERE source = 'chernihivoblenergo-pdf';"] : []),
-        ...(hierarchy
-          ? [...new Set(hierarchyHouses.flatMap((house) => {
-              const separator = String(house.settlement ?? '').lastIndexOf(' · ');
-              if (separator < 0) return [];
-              const base = normalizeAddress(String(house.settlement).slice(separator + 3));
-              return base ? [`DELETE FROM directory_settlements WHERE region = ${sqlLiteral(house.region)} AND normalized = ${sqlLiteral(base)};`] : [];
-            }))]
-          : []),
         ...statementsForDirectory(rows.settlements),
       ],
       '-- Справочник НП для офлайн-поиска адреса. Источник: tools/sync-directory-to-d1.mjs',
@@ -812,14 +791,6 @@ async function main() {
     writeSqlFiles(
       'directory_streets',
       [
-        ...(hierarchy
-          ? [...new Set(hierarchyHouses.flatMap((house) => {
-              const separator = String(house.settlement ?? '').lastIndexOf(' · ');
-              if (separator < 0) return [];
-              const base = normalizeAddress(String(house.settlement).slice(separator + 3));
-              return base ? [`DELETE FROM directory_streets WHERE region = ${sqlLiteral(house.region)} AND settlement_normalized = ${sqlLiteral(base)};`] : [];
-            }))]
-          : []),
         ...statementsForStreets(rows.streets, Boolean(hierarchy)),
       ],
       '-- Улицы из подтверждённых привязок «адрес → черга». Источник: tools/sync-directory-to-d1.mjs',
