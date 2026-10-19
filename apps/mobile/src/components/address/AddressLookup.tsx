@@ -71,6 +71,8 @@ export function AddressLookup() {
   const queuesQuery = useQueues(currentRegionData.cpu);
   const resolve = useAddressLookup();
   const manualScheduleQuery = useQueueSchedule(manualQueue ?? undefined, today, currentRegion);
+  // Пак даёт группу без расписания; график читаем точечно по найденной группе.
+  const resultScheduleQuery = useQueueSchedule(result?.queue ?? undefined, today, currentRegion);
 
   useEffect(() => {
     setSettlement(currentRegion === 'kyiv-city' ? 'Київ' : '');
@@ -149,7 +151,7 @@ export function AddressLookup() {
   const activeQueue = manualQueue ?? result?.queue ?? null;
   const activeSchedule: QueueScheduleData | null = manualQueue
     ? (manualScheduleQuery.data?.data ?? null)
-    : (result?.schedule ?? null);
+    : (result?.schedule ?? resultScheduleQuery.data?.data ?? null);
 
   const now = Date.now();
   const intervals = activeSchedule?.intervals ?? [];

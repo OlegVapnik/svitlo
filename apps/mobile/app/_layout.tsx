@@ -5,7 +5,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { configureCoreApi } from '@svitlo/core';
+import { configureAddressPacks, configureCoreApi } from '@svitlo/core';
 import { hydrateOfflineStartup } from '@svitlo/core/api/offline-sync';
 import { queryClient } from '@svitlo/core/api/query-client';
 
@@ -22,8 +22,17 @@ import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://svitlo-api.olegvapnik45.workers.dev/api/v1';
 
+/**
+ * Статические паки адресов живут на Cloudflare Pages (тот же деплой, что и веб).
+ * У приложения нет origin, поэтому путь абсолютный; при необходимости стенд подменяется
+ * через `EXPO_PUBLIC_ADDRESS_PACKS_BASE_URL`.
+ */
+const ADDRESS_PACKS_BASE_URL =
+  process.env.EXPO_PUBLIC_ADDRESS_PACKS_BASE_URL ?? 'https://svitlo-ua-4ze.pages.dev/data/address';
+
 installStorage();
 configureCoreApi({ apiBaseUrl: API_BASE_URL });
+configureAddressPacks({ baseUrl: ADDRESS_PACKS_BASE_URL });
 // Гидратация офлайн-пакета ДО первого рендера: экраны запускают запросы сразу при монтировании,
 // и без этого первый кадр в офлайне был бы пустым («немає даних»), а график приезжал бы вторым.
 hydrateOfflineStartup();
