@@ -9,6 +9,8 @@
   "workspaces": [
     "apps/web",
     "apps/api",
-    "packages/shared"
+    "apps/mobile",
+    "packages/shared",
+    "packages/core"
   ]
 }

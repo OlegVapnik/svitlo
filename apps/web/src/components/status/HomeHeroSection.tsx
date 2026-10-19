@@ -35,7 +35,7 @@ import { useTheme } from '../../hooks/useTheme.js';
 import { QueuePlacesChips } from '../queue/QueuePlacesChips.js';
 import { useMyAddress } from '../../hooks/useMyAddress.js';
 import { useNativeWidgetSync, type NativeWidgetState } from '../../hooks/useNativeWidgetSync.js';
-import { API_BASE_URL } from '../../api/client.js';
+import { getApiBaseUrl } from '@svitlo/core';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
 import {
   formatMinutesUk,
@@ -301,7 +301,7 @@ export const HomeHeroSection: React.FC = () => {
     return {
       regionName: currentRegionData.nameUa,
       regionCpu: currentRegionData.cpu,
-      apiBaseUrl: API_BASE_URL,
+      apiBaseUrl: getApiBaseUrl(),
       queue: selectedQueue,
       isOff: isOffNow,
       statusText,

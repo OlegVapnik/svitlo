@@ -364,3 +364,44 @@ APK публиковать только после успешных провер
 поэтому расписание в D1 замирает до 00:00 UTC. В логах это видно как
 `scheduled: зеркало недоступно`. ГПВ при этом не переписывается (фингерпринт совпал).
 Лечение — ждать сброса или платный план; код к этому не восприимчив.
+
+## Фаза 0: scaffold `apps/mobile` (2026-10-19)
+
+Каркас Expo SDK 58 готов и проверен: `tsc --noEmit`, `expo-doctor` 20/20, `expo export
+--platform android` (Hermes 3.9 МБ), debug APK в Docker (Gradle 9.4.1, arm64) — BUILD
+SUCCESSFUL. Config plugin `withAndroidWidget` копирует `native-android/` при prebuild.
+
+Отклонения от плана, зафиксированные осознанно:
+- хранилище — `expo-sqlite/kv-store` вместо MMKV (v4 требует Nitro);
+- `react-native-css-interop` и `react-native-worklets` объявлены явно: при pnpm
+  isolated-раскладке Metro не видит транзитивные пакеты;
+- плагин импортирует `expo/config-plugins` (sub-export), а не `@expo/config-plugins`;
+- `newArchEnabled` удалён из app.json — в SDK 58 новая архитектура единственная;
+- `versionCode` в сгенерированном проекте = 1; привязка к git-count — фаза 5.
+
+Сборка без локального SDK: `.cache/gradle` + `svitlo-android-builder:latest`, добавить
+`-e ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a` для быстрой dev-сборки.
+
+## Фаза 1: `packages/core` (2026-10-19)
+
+Общая логика вынесена из `apps/web/src` в `@svitlo/core`, чтобы её использовали веб и мобильный
+без копипасты. Проверено: `tsc` ядра и веба, `vitest` веба 191/191, `vite build`,
+`expo export` мобильного с реальным импортом `@svitlo/core/lib/region` и `/api/client`.
+
+Что в ядре:
+- `src/lib/*` — region, region-queue, queue, settlement-search, schedule-payload, day-schedule,
+  intervals, group-outages, outage-dates, queue-label, queue-overlap, timeline, source-health,
+  operator-links, region-centers, date, power-window-planner, install-id;
+- `src/api/*` — client, offline-cache, offline-region-schedules, offline-sync, queries, query-client;
+- `src/storage.ts` (KeyValueStorage) и `src/config.ts` (apiBaseUrl/appVersion).
+
+Ключевые решения:
+- ядро не знает про платформу: `import.meta.env` заменён на `configureCoreApi()` (веб вызывает
+  перед рендером, `main.tsx`), `localStorage` — на `storage`/`configureStorage` (веб подключает
+  адаптер в `lib/platform-storage.ts`);
+- относительные импорты внутри ядра — БЕЗ `.js`: Metro не умеет достраивать `.js` → `.ts`, а Vite
+  спокойно резолвит без расширения. Это правило для всего кода в `packages/core`;
+- в `apps/web` перенесённые файлы оставлены однострочными шимами `export * from '@svitlo/core/…'`,
+  поэтому все существующие импорты и тесты веба работают без правок;
+- `API_BASE_URL` из `api/client` заменён на `getApiBaseUrl()` (значение задаётся на старте, а не
+  читается из env при загрузке модуля).

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PlugZap } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useQueues } from '../../api/queries.js';
-import { API_BASE_URL } from '../../api/client.js';
+import { getApiBaseUrl } from '@svitlo/core';
 
 /**
  * Диагностика соединения с API.
@@ -39,7 +39,7 @@ export const ConnectionProblem: React.FC = () => {
       <dl className="space-y-1 text-xs">
         <div className="flex gap-2">
           <dt className="shrink-0 font-semibold text-muted-foreground">{t('regions.apiAddress')}</dt>
-          <dd className="min-w-0 break-all font-mono text-foreground">{API_BASE_URL}</dd>
+          <dd className="min-w-0 break-all font-mono text-foreground">{getApiBaseUrl()}</dd>
         </div>
         <div className="flex gap-2">
           <dt className="shrink-0 font-semibold text-muted-foreground">build</dt>

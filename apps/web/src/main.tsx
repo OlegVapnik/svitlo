@@ -1,9 +1,21 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { configureCoreApi } from '@svitlo/core';
 import { App } from './App';
 import { hydrateOfflineStartup } from './api/offline-sync.js';
 import { installNativeGuards, markNativeShell } from './lib/native-guards.js';
+import { installWebStorage } from './lib/platform-storage.js';
 import './styles/globals.css';
+
+/**
+ * Платформенная конфигурация общего ядра — до первого запроса и первого чтения хранилища.
+ *
+ * Адрес API в вебе относительный (`/api/v1`), версия приходит из Vite. Общий код `@svitlo/core`
+ * больше не читает `import.meta.env` (в Metro такого механизма нет), поэтому значения передаются
+ * явно. Это же место — единственная точка, где веб знает про localStorage.
+ */
+configureCoreApi({ apiBaseUrl: import.meta.env['VITE_API_BASE_URL'] || '/api/v1' });
+installWebStorage();
 
 /**
  * Удаляем кэш API от прошлых версий Service Worker'а. Он накапливался с runtimeCaching

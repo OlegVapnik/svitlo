@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { configureStorage } from '@svitlo/core';
 import type { SyncBundle } from '@svitlo/shared';
 import { queryClient } from './query-client.js';
 import {
@@ -19,9 +20,21 @@ const BUNDLE_KEY = `svitlo:offline-bundle:v1:${REGION}`;
 const CATALOG_KEY = 'svitlo:offline-catalog:v1';
 const SYNCED_AT = '2026-10-16T09:00:00.000Z';
 
-/** Хранилище-заглушка: в node-окружении localStorage нет, а логика гидратации без него не работает. */
+/**
+ * Хранилище-заглушка: в node-окружении localStorage нет, а логика гидратации без него не работает.
+ *
+ * Логика лежит в `@svitlo/core` и читает платформенный бэкенд через `configureStorage`, поэтому
+ * подменяем не только `localStorage` (на него опирается сам тест), но и это подключение — иначе
+ * ядро ходило бы в своё пустое in-memory хранилище и не увидело бы засеянные данные.
+ */
 function mockStorage(): void {
   const store = new Map<string, string>();
+  configureStorage({
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => void store.set(key, value),
+    removeItem: (key) => void store.delete(key),
+    keys: () => [...store.keys()],
+  });
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => store.get(key) ?? null,
     setItem: (key: string, value: string) => void store.set(key, value),
