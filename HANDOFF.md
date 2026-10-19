@@ -405,3 +405,27 @@ SUCCESSFUL. Config plugin `withAndroidWidget` копирует `native-android/`
   поэтому все существующие импорты и тесты веба работают без правок;
 - `API_BASE_URL` из `api/client` заменён на `getApiBaseUrl()` (значение задаётся на старте, а не
   читается из env при загрузке модуля).
+
+## Фаза 2: Главная на мобильном (2026-10-19)
+
+Вертикальный срез «Головна» поверх `@svitlo/core`: статус по выбранной группе, выбор группы,
+ближайшие отключения области, офлайн-пакет.
+
+Что появилось в `apps/mobile`:
+- `app/_layout.tsx` — `configureCoreApi` (абсолютный адрес API из `EXPO_PUBLIC_API_BASE_URL`,
+  дефолт — прод-воркер), `installStorage()` (expo-sqlite/kv-store), `hydrateOfflineStartup()` до
+  первого рендера и общий `queryClient` из `@svitlo/core/api/query-client` (второй клиент означал
+  бы, что офлайн-пакет льётся в один кеш, а экраны читают другой);
+- `src/context/RegionContext.tsx` — активная область без URL (в вебе она ещё в `?region=`);
+- `src/hooks/` — `useRegionQueue`, `useOfflineSync` (следит за `AppState` вместо вкладки);
+- `src/lib/power-state.ts` — состояние сети по графику: пустой график = «не знаем», не «свет есть»;
+- `src/components/home/` — RegionPicker, HeroStatus, QueueGrid (1/1…6/2), UpcomingOutages.
+
+Состояние области и группы держит сам экран и передаёт вниз пропсами: два `useRegionQueue` в разных
+компонентах дали бы два независимых выбора, и нажатие в сетке не меняло бы герой-статус.
+
+Проверено: `tsc`, `expo-doctor` 20/20, `expo export` (4 МБ бандл). Прод-воркер отвечает:
+`/regions` и `/schedules/upcoming?region=chernihivska-oblast&days=2` отдают реальные интервалы.
+
+НЕ проверено в этой сессии: запуск на эмуляторе/телефоне (в окружении нет Android SDK и KVM).
+DoD фазы 2 требует прогона dev-client на устройстве — сделать при первой возможности.

@@ -10,6 +10,8 @@ import {
   type ThemeMode,
 } from './tokens';
 
+export type { Palette, PowerState, StatusTone, ThemeMode } from './tokens';
+
 interface ThemeContextValue {
   mode: ThemeMode;
   palette: Palette;

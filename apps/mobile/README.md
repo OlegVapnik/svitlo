@@ -63,3 +63,17 @@ docker run --rm --user "$(id -u):$(id -g)" \
 APK: `android/app/build/outputs/apk/debug/app-debug.apk`. Первая сборка ~15–20 мин
 (компиляция C++ модулей), инкрементальная ~4–7 мин. `arm64-v8a` — только для dev-проверок;
 release собирать со всеми ABI (фаза 5).
+
+## Фаза 2: Главная
+
+Точка входа подключает ядро до первого рендера: `configureCoreApi` (адрес API), `installStorage`
+(expo-sqlite/kv-store) и `hydrateOfflineStartup()` (офлайн-пакет), плюс общий `queryClient` из
+`@svitlo/core/api/query-client`.
+
+Адрес API на сборке:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL="http://10.0.2.2:8787/api/v1" npx expo start   # Android-эмулятор → локальный API
+```
+
+Без переменной используется прод-воркер `https://svitlo-api.olegvapnik45.workers.dev/api/v1`.
