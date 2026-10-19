@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { getQueueSchedule, getQueueScheduleMeta } from '../services/schedule-import.service.js';
+import { getQueueSchedule, getQueueScheduleMeta, queueReadVariants } from '../services/schedule-import.service.js';
 import {
   MIRROR_SCHEDULE_SOURCE,
   ensureMirrorSchedule,
@@ -80,7 +80,14 @@ async function buildQueueSchedule(queue: string, date: string, region: string, l
     .filter((value): value is string => Boolean(value))
     .sort()
     .pop() ?? null;
-  const covered = perKey.some((entry) => (entry.coverage?.queues.includes(queue) ?? false) || entry.meta.source !== null);
+  // Коды покрытия ищем с учётом региональных синонимов (у Києва «1» ≡ «1/1»): покриття дзеркала
+  // лежить у формі «1/1», а запрос от живого источника приходит плоским «1».
+  const queueVariants = queueReadVariants(queue, region);
+  const covered = perKey.some(
+    (entry) =>
+      (entry.coverage ? entry.coverage.queues.some((code) => queueVariants.includes(code)) : false) ||
+      entry.meta.source !== null,
+  );
   return {
     data: {
       queue,
@@ -94,7 +101,13 @@ async function buildQueueSchedule(queue: string, date: string, region: string, l
       // «Світло за графіком» — не те саме, що `covered`: коли фід на цю добу вже показує відключення,
       // а слотів ще немає (імпорт відстав), чесніше «даних немає», ніж «світло є» (див. `isAllClear`).
       // Для області з кількома мережами — тільки якщо БЕЗ ВІДКЛЮЧЕНЬ КОЖНА з них.
-      allClear: perKey.length > 0 && perKey.every((entry) => isAllClear(entry.coverage, queue, entry.intervals.length)),
+      allClear:
+        perKey.length > 0 &&
+        perKey.every((entry) => {
+          // `isAllClear` сверяет код с покрытием дзеркала — берём ту форму кода, что реально в нём.
+          const coverageQueue = entry.coverage?.queues.find((code) => queueVariants.includes(code)) ?? queue;
+          return isAllClear(entry.coverage, coverageQueue, entry.intervals.length);
+        }),
     },
   };
 }

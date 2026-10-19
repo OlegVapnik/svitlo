@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import { QUEUE_CODE_PATTERN } from '@svitlo/shared';
-import { DEFAULT_QUEUE_CODES, isQueueCode, normalizeQueueCode, queueOptionsForGrid, sanitizeQueueList } from './queue';
+import {
+  canonicalQueueCode,
+  canonicalQueueListForRegion,
+  DEFAULT_QUEUE_CODES,
+  isQueueCode,
+  normalizeQueueCode,
+  queueCodeMatches,
+  queueOptionsForGrid,
+  sanitizeQueueList,
+} from './queue';
 
 /**
  * Веб держит свою копию шаблона очереди (без zod в бандле). Первый тест — сторож расхождения:
@@ -49,5 +58,30 @@ describe('queue code format', () => {
     expect(new Set(DEFAULT_QUEUE_CODES).size).toBe(12);
     expect(DEFAULT_QUEUE_CODES[0]).toBe('1/1');
     expect(DEFAULT_QUEUE_CODES[DEFAULT_QUEUE_CODES.length - 1]).toBe('6/2');
+  });
+});
+
+/**
+ * Київ: живой источник отдаёт «1…6», зеркало — «1/1…60/1». Для человека это одна группа, поэтому
+ * сравнение кодов должно сводить обе формы. Для остальных областей «1» и «1/1» — разные черги.
+ */
+describe('region-aware queue code canonicalization', () => {
+  test('для Києва плоский код и «N/1» — один код', () => {
+    expect(canonicalQueueCode('kyiv-city', '3')).toBe('3/1');
+    expect(canonicalQueueCode('kyiv', '3')).toBe('3/1');
+    expect(canonicalQueueCode('kyiv-city', '3/1')).toBe('3/1');
+    expect(canonicalQueueCode('kyiv-city', '3/2')).toBe('3/2');
+    expect(queueCodeMatches('kyiv-city', '3', '3/1')).toBe(true);
+  });
+
+  test('для остальных областей «N» и «N/1» — разные черги', () => {
+    expect(canonicalQueueCode('chernihivska-oblast', '3')).toBe('3');
+    expect(queueCodeMatches('chernihivska-oblast', '3', '3/1')).toBe(false);
+    expect(queueCodeMatches('chernihivska-oblast', '3/1', '3/1')).toBe(true);
+  });
+
+  test('canonicalQueueListForRegion сводит дубли и мусор', () => {
+    expect(canonicalQueueListForRegion('kyiv-city', ['1', '2', '1', 'черга', '1/1'])).toEqual(['1/1', '2/1']);
+    expect(canonicalQueueListForRegion('lvivska-oblast', ['1', '1/1', '1'])).toEqual(['1', '1/1']);
   });
 });

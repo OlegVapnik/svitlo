@@ -30,6 +30,7 @@ import { queryClient } from './query-client';
 import { writeCache } from './offline-cache';
 import { writeRegionScheduleSnapshot } from './offline-region-schedules';
 import { rankSettlements } from '../lib/settlement-search';
+import { canonicalQueueCode, canonicalQueueListForRegion } from '../lib/queue';
 import { getStoredRegion, isRegionCpu, normalizeRegionCpu, type RegionSummary } from '../lib/region';
 
 /** Ключ записи пакета области. Версия в имени — чтобы запись старого формата не выдавала себя за новую. */
@@ -126,11 +127,30 @@ function saveCatalog(regions: RegionSummary[]): void {
   const store = storage;
   if (!Array.isArray(regions) || regions.length === 0) return;
   try {
-    const record: CatalogRecord = { savedAt: new Date().toISOString(), regions };
+    const record: CatalogRecord = { savedAt: new Date().toISOString(), regions: canonicalizeRegions(regions) };
     store.setItem(CATALOG_KEY, JSON.stringify(record));
   } catch {
     // Квота исчерпана — не настаиваем: каталог придёт по сети.
   }
+}
+
+/**
+ * Приводит коды групп области к канонической форме (Київ: «3» → «3/1»).
+ *
+ * Офлайн-пакет формирует сервер, и у Києва живой источник может отдать плоские «1…6», а зеркало —
+ * «1/1…60/1». Без сведения к одной форме выбранная группа не находила свои интервалы ни в кеше, ни
+ * в снимке. Применяем и при записи на диск, и при гидратации — чтобы старая запись тоже читалась.
+ */
+function canonicalizeRegions(regions: RegionSummary[]): RegionSummary[] {
+  return regions.map((region) => ({
+    ...region,
+    queues: canonicalQueueListForRegion(region.cpu, region.queues ?? []),
+  }));
+}
+
+/** Приводит `queue` у записей области (группы, бакеты) к канонической форме области. */
+function canonicalizeQueueField<T extends { queue: string }>(region: string, items: readonly T[]): T[] {
+  return items.map((item) => ({ ...item, queue: canonicalQueueCode(region, item.queue) }));
 }
 
 /** Сохраняет пакет области. `null` — не поместилось или хранилище недоступно (данные при этом не теряются). */
@@ -187,16 +207,21 @@ function applyBundle(client: QueryClient, region: string, bundle: SyncBundle, at
   const updatedAt = at ?? Date.parse(bundle.syncedAt);
   const options = Number.isFinite(updatedAt) ? { updatedAt } : undefined;
 
-  client.setQueryData(['regions'], { data: bundle.regions }, options);
+  // Коды групп области сводим к канонической форме (Київ: «3» → «3/1»), иначе строка матрицы и
+  // выбранная группа не сходились бы с интервалами пакета.
+  client.setQueryData(['regions'], { data: canonicalizeRegions(bundle.regions) }, options);
   if (bundle.status) client.setQueryData(['status', region], { data: bundle.status }, options);
-  if (Array.isArray(bundle.queues)) client.setQueryData(['queues', region], { data: bundle.queues }, options);
+  if (Array.isArray(bundle.queues)) {
+    client.setQueryData(['queues', region], { data: canonicalizeQueueField(region, bundle.queues) }, options);
+  }
 
   const schedules = bundle.schedulesByRegion?.[region];
   if (schedules && Array.isArray(schedules.buckets)) {
-    client.setQueryData(['upcomingGroupOutages', region, SCHEDULE_DAYS], { data: schedules.buckets }, options);
+    const buckets = canonicalizeQueueField(region, schedules.buckets);
+    client.setQueryData(['upcomingGroupOutages', region, SCHEDULE_DAYS], { data: buckets }, options);
     // Снимок области — чтобы кнопки групп (useQueueSchedule) работали в офлайне без своего
     // запроса. Время снимка берём серверное: именно оно показывается как «дані станом на».
-    writeRegionScheduleSnapshot(region, schedules.buckets, bundle.syncedAt);
+    writeRegionScheduleSnapshot(region, buckets, bundle.syncedAt);
   }
 
   if (Array.isArray(bundle.news)) {
@@ -261,7 +286,8 @@ export function hydrateOfflineStartup(): string {
   const region = startupRegion();
   if (!hydrateStoredRegion(region)) {
     const catalog = readCatalog();
-    if (catalog) queryClient.setQueryData(['regions'], { data: catalog.regions });
+    // Записи на диске могли быть сделаны до введения канонизации — прогоняем и их.
+    if (catalog) queryClient.setQueryData(['regions'], { data: canonicalizeRegions(catalog.regions) });
     setSyncState({ phase: 'idle', region, syncedAt: null, settlements: 0 });
   }
   return region;

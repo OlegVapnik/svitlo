@@ -3,6 +3,33 @@ import { kyivOffsetMinutes } from './schedule-normalizer.js';
 
 export type ScheduleImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };
 
+/**
+ * Области, где один набор групп публикуется двумя кодировками: плоской «1» и подгруппой «1/1».
+ *
+ * Київ: живой источник (Ясно/ДТЕК) отдаёт «1…6», зеркало ГПВ — «1/1…60/1». Для человека это одна
+ * группа, поэтому при чтении ищем слоты/покрытие под обеими формами. Для остальных областей «1» и
+ * «1/1» — РІЗНІ черги, тож тождество тут не вводится.
+ */
+const FLAT_SUBGROUP_REGIONS = new Set(['kyiv-city', 'kyiv']);
+
+/**
+ * Варианты кода черги для чтения: разделители («2.2», «2_2» → «2/2») и, у Києва, синонім «N» ↔ «N/1».
+ * Невідома область не меняет поведение — возвращаются только разделительные варианты.
+ */
+export function queueReadVariants(queue: string, region?: string): string[] {
+  const variants = [
+    queue,
+    queue.replace('/', '.').replace('_', '.'),
+    queue.replace('/', '_').replace('.', '_'),
+  ];
+  if (region && FLAT_SUBGROUP_REGIONS.has(region.trim().toLowerCase())) {
+    if (/^\d+$/u.test(queue)) variants.push(`${queue}/1`);
+    const match = /^(\d+)\/1$/u.exec(queue);
+    if (match) variants.push(match[1]!);
+  }
+  return variants.filter((value, index, self) => self.indexOf(value) === index);
+}
+
 export function localTimeForUtc(iso: string, date: string): string {
   const shifted = new Date(Date.parse(iso) + kyivOffsetMinutes(date) * 60_000);
   return `${String(shifted.getUTCHours()).padStart(2, '0')}:${String(shifted.getUTCMinutes()).padStart(2, '0')}`;
@@ -86,12 +113,9 @@ export async function getQueueScheduleMeta(
   const { db } = await import('../db/connection.js');
   const { scheduleSlots } = await import('../db/schema.js');
   const { and, eq, desc, inArray, sql } = await import('drizzle-orm');
-  // Варіанти одного коду черги: «2/2», «2.2», «2_2» — нечутливий пошук по роздільнику.
-  const queueVariants = [
-    queue,
-    queue.replace('/', '.').replace('_', '.'),
-    queue.replace('/', '_').replace('.', '_'),
-  ].filter((value, index, self) => self.indexOf(value) === index);
+  // Варіанти одного коду черги: «2/2», «2.2», «2_2» — нечутливий пошук по роздільнику, плюс у
+  // Києва синонім «N» ↔ «N/1» (живий источник vs зеркало).
+  const queueVariants = queueReadVariants(queue, targetRegion);
   // 1. Сначала пытаемся найти слоты для конкретной очереди
   const rows = await db
     .select({ source: scheduleSlots.source, createdAt: scheduleSlots.createdAt })
@@ -163,12 +187,9 @@ export async function getQueueSchedule(
   const { db } = await import('../db/connection.js');
   const { scheduleSlots } = await import('../db/schema.js');
   const { and, eq, inArray } = await import('drizzle-orm');
-  // Варіанти одного коду черги: «2/2», «2.2», «2_2» — нечутливий пошук по роздільнику.
-  const queueVariants = [
-    queue,
-    queue.replace('/', '.').replace('_', '.'),
-    queue.replace('/', '_').replace('.', '_'),
-  ].filter((value, index, self) => self.indexOf(value) === index);
+  // Варіанти одного коду черги: «2/2», «2.2», «2_2» — нечутливий пошук по роздільнику, плюс у
+  // Києва синонім «N» ↔ «N/1» (живий источник vs зеркало).
+  const queueVariants = queueReadVariants(queue, targetRegion);
   const rows = await db
     .select()
     .from(scheduleSlots)

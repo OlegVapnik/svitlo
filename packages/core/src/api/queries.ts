@@ -21,7 +21,8 @@ import type {
   AddressHousesResponse,
   AddressStreetsResponse,
 } from '@svitlo/shared';
-import type { RegionListResponse } from '../lib/region';
+import type { RegionListResponse, RegionSummary } from '../lib/region';
+import { canonicalQueueCode, canonicalQueueListForRegion } from '../lib/queue';
 import { api } from './client';
 import { pickRegionSchedule, writeRegionScheduleSnapshot } from './offline-region-schedules';
 
@@ -133,7 +134,18 @@ export const useStreetQueues = () =>
 export const useQueues = (region?: string) =>
   useQuery<{ data: QueueSummary[] }>({
     queryKey: ['queues', region],
-    queryFn: ({ signal }) => api.fetchQueues(region, signal),
+    queryFn: async ({ signal }) => {
+      const response = await api.fetchQueues(region, signal);
+      // Коды групп области приводим к канонической форме: у Києва источник может отдать «3», а
+      // каталог и график — «3/1». Без единой формы строка матрицы не находила свои отключения.
+      return {
+        ...response,
+        data: (response?.data ?? []).map((item: QueueSummary) => ({
+          ...item,
+          queue: canonicalQueueCode(region, item.queue),
+        })),
+      };
+    },
     staleTime: 60_000,
   });
 
@@ -152,12 +164,18 @@ export const useUpcomingGroupOutages = (region?: string, days = 2) =>
     queryKey: ['upcomingGroupOutages', region, days],
     queryFn: async ({ signal }) => {
       const response = await api.fetchUpcomingGroupOutages(region, days, signal);
-      // Пишемо лише успішну відповідь: невдача чи порожня відповідь не мають затерти вчорашній
-      // робочий графік, бо інакше після однієї помилки офлайн стане порожнім назавжди.
-      if (region && Array.isArray(response?.data)) {
-        writeRegionScheduleSnapshot(region, response.data);
+      // Коди груп зводимо до канонічної форми області (Київ: «3» → «3/1»): інакше активна група
+      // в сітці не знаходила свої інтервали, а офлайн-снимок писався під іншою кодировкою.
+      const data = (response?.data ?? []).map((item: GroupOutageSummary) => ({
+        ...item,
+        queue: canonicalQueueCode(region, item.queue),
+      }));
+      // Пишемо лише успішну непорожню відповідь: невдача чи порожня відповідь не мають затерти
+      // вчорашній робочий графік, бо інакше після однієї помилки офлайн стане порожнім назавжди.
+      if (region && data.length > 0) {
+        writeRegionScheduleSnapshot(region, data);
       }
-      return response;
+      return { ...response, data };
     },
     enabled: Boolean(region),
     staleTime: 60_000,
@@ -171,7 +189,18 @@ export const useUpcomingGroupOutages = (region?: string, days = 2) =>
 export const useRegions = () =>
   useQuery<RegionListResponse>({
     queryKey: ['regions'],
-    queryFn: ({ signal }) => api.fetchRegions(signal),
+    queryFn: async ({ signal }) => {
+      const response = await api.fetchRegions(signal);
+      // Список групп каталога — единственный источник для сетки выбора. Приводим к каноническим
+      // кодам области, чтобы кнопка группы совпадала с выбранной и с кодом запроса графика.
+      return {
+        ...response,
+        data: (response?.data ?? []).map((region: RegionSummary) => ({
+          ...region,
+          queues: canonicalQueueListForRegion(region.cpu, region.queues ?? []),
+        })),
+      };
+    },
     staleTime: 300_000,
   });
 

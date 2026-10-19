@@ -1,3 +1,5 @@
+import { normalizeRegionCpu } from './region';
+
 /**
  * Код очереди в приложении: «3» или «2/2».
  *
@@ -15,6 +17,52 @@ export function normalizeQueueCode(value: string): string {
 /** Годится ли строка как код очереди («3», «2/2»); «черга», «2/2/2», пусто — нет. */
 export function isQueueCode(value: string): boolean {
   return QUEUE_CODE.test(value.trim());
+}
+
+/**
+ * Области, где один и тот же набор групп публикуется двумя кодировками: плоской «1» и подгруппой
+ * «1/1». Для Києва живой источник (Ясно/ДТЕК) отдаёт «1…6», а зеркало ГПВ — «1/1…60/1»; для
+ * человека это одна и та же группа, но сравнение строк их различает и график «пропадает».
+ *
+ * Только для этих областей плоский код и «N/1» тождественны. Для Чернігівщини «1» и «1/1» —
+ * РІЗНІ черги (основна і підгрупа), поэтому правило нельзя применять ко всем областям.
+ */
+const FLAT_SUBGROUP_REGIONS = new Set(['kyiv-city']);
+
+/**
+ * Канонический код группы для области: у Києва плоский «3» приводится к «3/1», чтобы данные и
+ * выбранная группа сравнивались в одной форме. Для остальных областей код возвращается как есть.
+ */
+export function canonicalQueueCode(regionCpu: string | undefined | null, code: string): string {
+  const clean = normalizeQueueCode(code);
+  if (!regionCpu || !isQueueCode(clean)) return clean;
+  if (!FLAT_SUBGROUP_REGIONS.has(normalizeRegionCpu(regionCpu))) return clean;
+  return /^\d+$/.test(clean) ? `${clean}/1` : clean;
+}
+
+/** Равны ли два кода группы с учётом региональных синонимов (Київ: «3» ≡ «3/1»). */
+export function queueCodeMatches(regionCpu: string | undefined | null, a: string, b: string): boolean {
+  return canonicalQueueCode(regionCpu, a) === canonicalQueueCode(regionCpu, b);
+}
+
+/**
+ * Приводит список групп области к каноническим кодам, убирая дубли. Нужно на границе данных
+ * (каталог, `/queues`, `upcoming`): иначе у Києва в одном ответе соседствуют «1» и «1/1», и
+ * строгое сравнение с выбранной группой ломается.
+ */
+export function canonicalQueueListForRegion(
+  regionCpu: string | undefined | null,
+  values: readonly string[],
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const code = canonicalQueueCode(regionCpu, value);
+    if (!isQueueCode(code) || seen.has(code)) continue;
+    seen.add(code);
+    result.push(code);
+  }
+  return result;
 }
 
 /**

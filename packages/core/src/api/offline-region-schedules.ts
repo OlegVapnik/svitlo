@@ -15,6 +15,7 @@
  */
 import type { QueueScheduleData, ScheduleIntervalUtc } from '@svitlo/shared';
 import { storage } from '../storage';
+import { canonicalQueueCode } from '../lib/queue';
 
 const PREFIX = 'svitlo:offline-region-schedules:';
 
@@ -126,9 +127,11 @@ export function pickRegionSchedule(
   const snapshot = readRegionScheduleSnapshot(region);
   if (!snapshot) return null;
 
-  const wanted = queueKey(cleanQueue);
+  // Код группы сравниваем в канонической форме области: у Києва запрос «3» и снимок «3/1» —
+  // одна группа, и без сведения к канонической форме офлайн-график не находился.
+  const wanted = canonicalQueueCode(region, queueKey(cleanQueue));
   const bucket = snapshot.buckets.find(
-    (item) => item.date === date && queueKey(item.queue) === wanted,
+    (item) => item.date === date && canonicalQueueCode(region, queueKey(item.queue)) === wanted,
   );
   if (!bucket) return null;
 

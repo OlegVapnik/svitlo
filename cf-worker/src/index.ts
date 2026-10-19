@@ -306,6 +306,29 @@ function resolveDbRegions(regionParam: string): string[] {
   return [...new Set([value, canonical, ...feedKeys])];
 }
 
+/**
+ * Области, где один набор групп публикуется двумя кодировками: плоской «1» и подгруппой «1/1».
+ *
+ * Київ: живой источник (Ясно/ДТЕК) отдаёт «1…6», зеркало ГПВ — «1/1…60/1». Для человека это одна
+ * и та же группа, но поиск по точному коду её не находил: `/schedules?queue=1` отвечал пустым
+ * графиком, хотя данные лежали под «1/1». Для остальных областей «1» и «1/1» — РІЗНІ черги, поэтому
+ * тождество вводится только здесь.
+ */
+const FLAT_SUBGROUP_REGIONS = new Set(['kyiv-city']);
+
+/**
+ * Коды чтения для запрошенной группы: у Києва «1» и «1/1» — синонимы, поэтому слоты/покрытие
+ * ищем под обеими формами. Для прочих областей возвращаем ровно один код — поведение не меняется.
+ */
+function queueReadAliases(regionParam: string, queue: string): string[] {
+  const clean = normalizeQueue(queue);
+  if (!FLAT_SUBGROUP_REGIONS.has(canonicalRegionCpu(regionParam))) return [clean];
+  if (/^\d+$/u.test(clean)) return [clean, `${clean}/1`];
+  const match = /^(\d+)\/1$/u.exec(clean);
+  if (match) return [clean, match[1]!];
+  return [clean];
+}
+
 /** `column IN (?, …)` по ключам чтения. Пустой список — фильтра по области нет («вся страна»). */
 function regionIn(regions: string[], column = 'region'): { clause: string; bindings: string[] } {
   const keys = [...new Set(regions.filter((key) => key))];
@@ -1922,10 +1945,12 @@ async function loadMirrorRegionNames(env: Env): Promise<Record<string, string>> 
  * Пустой массив означает «по этой группе отключений в этот день нет» — это законное состояние,
  * фронтенд по нему честно покажет «свет будет», а не ошибку.
  */
-function toIntervals(rows: SlotRow[], queue: string, date: string) {
-  const wanted = normalizeQueue(queue);
+function toIntervals(rows: SlotRow[], queue: string | readonly string[], date: string) {
+  // Принимаем и один код, и набор синонимов (Київ: «1» ≡ «1/1»): слоты под любой из форм — это
+  // график одной и той же группы.
+  const wanted = new Set((Array.isArray(queue) ? queue : [queue]).map((code) => normalizeQueue(code)));
   const filtered = rows
-    .filter((row) => normalizeQueue(row.queue) === wanted)
+    .filter((row) => wanted.has(normalizeQueue(row.queue)))
     .sort((a, b) => a.time_from.localeCompare(b.time_from));
 
   // Преобразуем каждую пару в миллисекунды UTC и локальные строки
@@ -2501,11 +2526,12 @@ function mirrorCoverageOn(
 function mirrorIntervalsFor(
   snapshot: MirrorSnapshot,
   keys: string[],
-  queue: string,
+  queue: string | readonly string[],
   date: string,
 ): ReturnType<typeof toIntervals> {
+  const aliases = new Set((Array.isArray(queue) ? queue : [queue]).map((code) => normalizeQueue(code)));
   const rows = mirrorSlotRows(mirrorSlotsFor(snapshot, keys)).filter(
-    (row) => row.date === date && normalizeQueue(row.queue) === normalizeQueue(queue),
+    (row) => row.date === date && aliases.has(normalizeQueue(row.queue)),
   );
   return toIntervals(rows, queue, date);
 }
@@ -2516,12 +2542,14 @@ function mirrorScheduleResponse(
   keys: string[],
   queue: string,
   date: string,
+  aliases: readonly string[] = [normalizeQueue(queue)],
 ): Record<string, unknown> {
-  const intervals = mirrorIntervalsFor(snapshot, keys, queue, date);
+  const intervals = mirrorIntervalsFor(snapshot, keys, aliases, date);
   const coverage = mirrorCoverageOn(snapshot, keys, date);
-  const queueCovered = coverage.queues.has(normalizeQueue(queue)) || coverage.queues.has(ALL_CLEAR_QUEUE);
+  const queueCovered =
+    aliases.some((code) => coverage.queues.has(normalizeQueue(code))) || coverage.queues.has(ALL_CLEAR_QUEUE);
   const covered = queueCovered || intervals.length > 0;
-  const offByFeed = coverage.offQueues.has(normalizeQueue(queue));
+  const offByFeed = aliases.some((code) => coverage.offQueues.has(normalizeQueue(code)));
   return {
     queue: normalizeQueue(queue),
     date,
@@ -2706,7 +2734,8 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
     const date = url.searchParams.get('date') ?? today;
     if (!queue) return json({ error: { code: 'VALIDATION_ERROR', message: 'queue обовʼязковий' } }, 400);
     const scheduleKeys = mirrorReadKeys(snapshot, requestedRegion, date, queue);
-    return json({ data: mirrorScheduleResponse(snapshot, scheduleKeys, queue, date) }, 200, headers);
+    const aliases = queueReadAliases(requestedRegion, queue);
+    return json({ data: mirrorScheduleResponse(snapshot, scheduleKeys, queue, date, aliases) }, 200, headers);
   }
 
   if (path === '/schedules/upcoming') {
@@ -4112,19 +4141,22 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     const queue = normalizeQueue(url.searchParams.get('queue') ?? '');
     const date = url.searchParams.get('date') ?? today;
     if (!queue) return json({ error: { code: 'VALIDATION_ERROR', message: 'queue обовʼязковий' } }, 400);
+    // Коды чтения: у Києва «1» и «1/1» — одна группа, поэтому слоты и покрытие ищем под обеими формами.
+    const queueAliases = queueReadAliases(requestedRegion, queue);
     // Сеть многомережной области выбираем по факту: та, у которой на эту дату есть график этой черги.
     readRegions = await resolveReadRegions(env, dbRegions, date, queue);
     const [rows, coverage] = await Promise.all([loadSlots(env, readRegions, date), coverageOfDay(env, readRegions, date)]);
-    const intervals = toIntervals(rows, queue, date);
+    const intervals = toIntervals(rows, queueAliases, date);
     // Три состояния, которые раньше сливались в одно «пусто» и давали «Немає даних»:
     //   интервалы есть          → график опубликован, есть часы отключений;
     //   покрытие без отключений → allClear: график опубликован, «світло за графіком»;
     //   ни того, ни другого     → covered: false, оператор на эту дату ничего не публиковал.
-    const queueCovered = coverage.queues.has(queue) || coverage.queues.has(ALL_CLEAR_QUEUE);
+    const queueCovered =
+      queueAliases.some((code) => coverage.queues.has(code)) || coverage.queues.has(ALL_CLEAR_QUEUE);
     const covered = queueCovered || intervals.length > 0;
     // «Світло за графіком» ставим, только если фід не видит отключений у этой очереди: пустые слоты
     // при `has_outages = 1` — это отставший импорт, и обещать свет было бы прямой брехнью.
-    const offByFeed = coverage.offQueues.has(queue);
+    const offByFeed = queueAliases.some((code) => coverage.offQueues.has(code));
     // Источник берём у самих слотов: раньше здесь было жёстко 'mirror', и слоты, собранные из
     // Telegram, выдавались за данные зеркала — источник в интерфейсе был бы неправдой.
     const slotSource = rows.find((row) => row.source)?.source ?? null;

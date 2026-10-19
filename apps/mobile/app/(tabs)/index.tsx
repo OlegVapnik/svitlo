@@ -94,6 +94,7 @@ export default function HomeScreen() {
         />
 
         <QueueGrid
+          regionCpu={currentRegion}
           queues={currentRegionData.queues}
           selected={selectedQueue}
           active={activeQueues}

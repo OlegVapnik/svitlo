@@ -1,5 +1,11 @@
 import { storage as coreStorage, type KeyValueStorage } from '../storage';
-import { isQueueCode, normalizeQueueCode, sanitizeQueueList } from './queue';
+import {
+  canonicalQueueCode,
+  isQueueCode,
+  normalizeQueueCode,
+  queueCodeMatches,
+  sanitizeQueueList,
+} from './queue';
 import { normalizeRegionCpu } from './region';
 
 /** Минимальный контракт хранилища: тесты передают in-memory заглушку. */
@@ -30,6 +36,26 @@ export function getRegionQueuesMap(storage?: StorageLike): Record<string, string
   }
 }
 
+/**
+ * Знаходить канонічний код із доступних груп області, що відповідає збереженому коду.
+ *
+ * Строге `includes` тут непридатне: у Києва збережений «3» і отримана з джерела «3/1» — одна
+ * група, і без зведення до канонічної форми вибір «зникав» (сітка показувала одну кодировку,
+ * а графік запитувався за іншою). Коли доступних кодів немає, повертаємо канонічний код — тоді
+ * сервер віддасть дані під будь-якою з форм.
+ */
+function resolveQueueSelection(
+  regionCpu: string,
+  storedCode: string,
+  availableQueues: string[],
+): string | null {
+  if (availableQueues.length === 0) {
+    const canonical = canonicalQueueCode(regionCpu, storedCode);
+    return isQueueCode(canonical) ? canonical : null;
+  }
+  return availableQueues.find((candidate) => queueCodeMatches(regionCpu, candidate, storedCode)) ?? null;
+}
+
 /** Читає збережену чергу для вказаної області з урахуванням доступних черг. */
 export function getStoredQueueForRegion(
   regionCpu: string,
@@ -42,9 +68,8 @@ export function getStoredQueueForRegion(
   // 1. Пріоритет: збережений вибір користувача для цієї конкретної області
   const storedForRegion = map[cleanCpu];
   if (storedForRegion) {
-    if (availableQueues.length === 0 || availableQueues.includes(storedForRegion)) {
-      return storedForRegion;
-    }
+    const matched = resolveQueueSelection(cleanCpu, storedForRegion, availableQueues);
+    if (matched) return matched;
   }
 
   // 2. Фолбек на legacy myQueues (якщо черга підходить для цієї області)
@@ -54,9 +79,8 @@ export function getStoredQueueForRegion(
       const parsedLegacy = sanitizeQueueList(JSON.parse(rawLegacy));
       const firstLegacy = parsedLegacy[0];
       if (firstLegacy) {
-        if (availableQueues.length === 0 || availableQueues.includes(firstLegacy)) {
-          return firstLegacy;
-        }
+        const matched = resolveQueueSelection(cleanCpu, firstLegacy, availableQueues);
+        if (matched) return matched;
       }
     }
   } catch {
@@ -65,7 +89,8 @@ export function getStoredQueueForRegion(
 
   // 3. Якщо черги є, але вибору ще немає — беремо першу чергу області (ніколи не хардкодимо '2/2')
   if (availableQueues.length > 0) {
-    return availableQueues[0]!;
+    const first = canonicalQueueCode(cleanCpu, availableQueues[0]!);
+    return isQueueCode(first) ? first : availableQueues[0]!;
   }
 
   return null;
@@ -79,7 +104,7 @@ export function setStoredQueueForRegion(
   storage?: StorageLike,
 ): void {
   const cleanCpu = normalizeRegionCpu(regionCpu);
-  const cleanQueue = normalizeQueueCode(queue);
+  const cleanQueue = canonicalQueueCode(cleanCpu, normalizeQueueCode(queue));
   if (!isQueueCode(cleanQueue)) return;
 
   try {

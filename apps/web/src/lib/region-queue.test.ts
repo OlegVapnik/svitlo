@@ -72,4 +72,24 @@ describe('per-region queue persistence and retrieval', () => {
     const queues = ['1/1', '2/2', '3/1'];
     expect(getStoredQueueForRegion('chernihivska-oblast', queues, storage)).toBe('2/2');
   });
+
+  /**
+   * Київ: живой источник отдаёт плоские «1…6», зеркало — «1/1…60/1». Сохранённый плоский код должен
+   * находить свою группу среди канонических, иначе сітка и герой-статус расходились («даних немає»).
+   */
+  it('matches a stored flat Kyiv code against canonical «N/1» available queues', () => {
+    const storage = new MockStorage();
+    setStoredQueueForRegion('kyiv', '3', storage);
+
+    expect(getStoredQueueForRegion('kyiv-city', ['2/1', '3/1', '4/1'], storage)).toBe('3/1');
+    // Без доступных групп возвращается канонический код — сервер віддасть дані під будь-якою формою.
+    expect(getStoredQueueForRegion('kyiv-city', [], storage)).toBe('3/1');
+  });
+
+  it('keeps «N» и «N/1» distinct for regions where they are different queues', () => {
+    const storage = new MockStorage();
+    setStoredQueueForRegion('chernihivska-oblast', '3', storage);
+
+    expect(getStoredQueueForRegion('chernihivska-oblast', ['3', '3/1'], storage)).toBe('3');
+  });
 });
