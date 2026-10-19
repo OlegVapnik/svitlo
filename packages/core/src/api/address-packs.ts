@@ -5,11 +5,15 @@
  * (`tools/build-address-packs.py`) кладёт НП/улицы/дома в неизменяемые JSON-файлы, а клиент
  * ищет по ним локально. D1 остаётся источником графиков, а не поисковым движком.
  *
- * Контракт manifest.json:
+ * Контракт manifest.json (version 2):
  *   { version, generatedAt, regions: { [cpu]: {
  *       settlements: { url, hash, count },
- *       shards: { [перваяБукваНП]: { url, hash, count } }
+ *       shards: { [перваяБукваНП]: { url, hash, count } },
+ *       houses: { [0..15]: { url, hash, count } }
  *   } } }
+ *
+ * Индекс улиц не содержит домов: открытие «Поиска» в Киеве не должно парсить дома всех
+ * 2 400 улиц. Дома лежат в отдельном шарде улицы и читаются только после выбора улицы.
  *
  * Пустой/недоступный пак — не ошибка: вызывающий код откатывается на серверный API.
  */
@@ -33,6 +37,8 @@ export interface AddressPackRef {
 export interface AddressPackRegion {
   settlements: AddressPackRef;
   shards: Record<string, AddressPackRef>;
+  /** Шарды домов по номеру 0..15. В старых паках отсутствует. */
+  houses?: Record<string, AddressPackRef>;
   settlementsCount?: number;
   streetsCount?: number;
 }
@@ -50,13 +56,17 @@ export interface PackSettlement {
   streetsCount: number;
 }
 
-export interface PackStreet {
-  name: string;
-  normalized: string;
-  defaultQueue: string | null;
-  queues: string[];
-  houses: Record<string, string | null>;
-}
+/**
+ * Компактный кортеж улицы: [название, нормализованный ключ, группа улицы, группы, шард домов].
+ * Массив вместо объекта — индекс Киева остаётся лёгким, а поиск идёт по готовому `normalized`.
+ */
+export type PackStreet = [string, string, string | null, string[], number | null];
+
+const STREET_NAME = 0;
+const STREET_NORMALIZED = 1;
+const STREET_DEFAULT_QUEUE = 2;
+const STREET_QUEUES = 3;
+const STREET_HOUSES_SHARD = 4;
 
 interface SettlementsPack {
   region: string;
@@ -67,6 +77,12 @@ interface StreetsPack {
   region: string;
   shard: string;
   settlements: Record<string, { settlement: string; settlementNormalized: string; streets: PackStreet[] }>;
+}
+
+interface HousesPack {
+  region: string;
+  shard: number;
+  streets: Record<string, Array<[string, string | null]>>;
 }
 
 /**
@@ -273,28 +289,48 @@ async function loadSettlementStreets(region: string, settlement: PackSettlement)
   }
 }
 
-/** Улицы НП из пака; `null` — пака/НП нет, вызывающий откатывается на API. */
+/**
+ * Улицы НП из пака; `null` — пака/НП нет, вызывающий откатывается на API.
+ *
+ * Возвращаем не больше 30 подсказок и не сортируем весь массив: генератор уже отсортировал
+ * улицы по нормализованному ключу. Сначала идут совпадения с начала строки, затем вхождения
+ * внутрь. Для пустого запроса отдаём первые `limit` улиц (алфавитный обзор), а не весь город.
+ */
 export async function fetchPackStreets(
   region: string,
   settlementInput: string,
   query: string,
-  limit = 24,
+  limit = 20,
 ): Promise<AddressStreetsResponse | null> {
   const settlement = await findSettlement(region, settlementInput);
   if (!settlement) return null;
   const data = await loadSettlementStreets(region, settlement);
   if (!data) return null;
 
+  const max = Math.min(limit, 30);
   const needle = normalizeAddress(query);
-  const streets = data.streets
-    .filter((street) => !needle || street.normalized.includes(needle))
-    .sort(
-      (left, right) =>
-        byQuery(needle)(left.normalized) - byQuery(needle)(right.normalized) ||
-        naturalCompare(left.name, right.name),
-    )
-    .slice(0, limit)
-    .map((street) => ({ name: street.name, normalized: street.normalized }));
+  const streets: Array<{ name: string; normalized: string }> = [];
+  const push = (street: PackStreet): boolean => {
+    streets.push({ name: street[STREET_NAME], normalized: street[STREET_NORMALIZED] });
+    return streets.length >= max;
+  };
+
+  if (!needle) {
+    for (const street of data.streets) {
+      if (push(street)) break;
+    }
+  } else {
+    for (const street of data.streets) {
+      if (street[STREET_NORMALIZED].startsWith(needle) && push(street)) break;
+    }
+    if (streets.length < max) {
+      for (const street of data.streets) {
+        const normalized = street[STREET_NORMALIZED];
+        if (normalized.startsWith(needle) || !normalized.includes(needle)) continue;
+        if (push(street)) break;
+      }
+    }
+  }
 
   return {
     data: streets,
@@ -303,11 +339,26 @@ export async function fetchPackStreets(
   };
 }
 
-function housesOf(street: PackStreet): AddressHouseOption[] {
-  return Object.entries(street.houses)
-    .filter(([, queue]) => Boolean(queue))
-    .map(([housePattern, queue]) => ({ housePattern, queue: queue! }))
-    .sort((left, right) => naturalCompare(left.housePattern, right.housePattern));
+async function loadStreetHouses(
+  region: string,
+  settlement: PackSettlement,
+  street: PackStreet,
+): Promise<AddressHouseOption[]> {
+  const shard = street[STREET_HOUSES_SHARD];
+  if (shard === null) return [];
+  const manifest = await loadAddressPackManifest();
+  const ref = manifest?.regions?.[region]?.houses?.[String(shard)];
+  if (!ref) return [];
+  try {
+    const pack = await loadPack<HousesPack>(ref);
+    const key = `${settlement.normalized}|${street[STREET_NORMALIZED]}`;
+    const rows = pack.streets?.[key] ?? [];
+    return rows
+      .filter(([, queue]) => Boolean(queue))
+      .map(([housePattern, queue]) => ({ housePattern, queue: queue! }));
+  } catch {
+    return [];
+  }
 }
 
 /** Дома улицы с группами; `null` — пака/улицы нет, нужен серверный фолбэк. */
@@ -321,17 +372,18 @@ export async function fetchPackHouses(
   const data = await loadSettlementStreets(region, settlement);
   if (!data) return null;
   const streetNorm = normalizeAddress(streetInput);
-  const street = data.streets.find((item) => item.normalized === streetNorm);
+  const street = data.streets.find((item) => item[STREET_NORMALIZED] === streetNorm);
   if (!street) return null;
-  const houses = housesOf(street);
-  const whole = street.defaultQueue ?? (houses.length === 0 && street.queues.length === 1 ? street.queues[0]! : null);
+  const houses = await loadStreetHouses(region, settlement, street);
+  const whole =
+    street[STREET_DEFAULT_QUEUE] ??
+    (houses.length === 0 && street[STREET_QUEUES].length === 1 ? street[STREET_QUEUES][0]! : null);
   return { data: houses, wholeStreetQueue: whole };
 }
 
-function findHouse(street: PackStreet, houseInput: string): AddressHouseOption | null {
+function findHouse(houses: AddressHouseOption[], houseInput: string): AddressHouseOption | null {
   const target = normalizeHouseNumber(houseInput);
   if (!target) return null;
-  const houses = housesOf(street);
 
   const exact = houses.find((item) => normalizeHouseNumber(item.housePattern) === target);
   if (exact) return exact;
@@ -355,8 +407,8 @@ export async function resolvePackAddress(
 
   const streetNorm = normalizeAddress(params.street ?? '');
   const street = streetNorm
-    ? data.streets.find((item) => item.normalized === streetNorm) ??
-      data.streets.find((item) => item.normalized.includes(streetNorm)) ??
+    ? data.streets.find((item) => item[STREET_NORMALIZED] === streetNorm) ??
+      data.streets.find((item) => item[STREET_NORMALIZED].includes(streetNorm)) ??
       null
     : null;
 
@@ -378,12 +430,13 @@ export async function resolvePackAddress(
     return { queue: null, options: [], reason: 'not-found', source: null, confidence: null, schedule: null };
   }
 
+  const houses = await loadStreetHouses(region, settlement, street);
   if (params.house?.trim()) {
-    const found = findHouse(street, params.house);
+    const found = findHouse(houses, params.house);
     if (found) {
       return {
         queue: found.queue,
-        options: housesOf(street).slice(0, 50),
+        options: houses.slice(0, 50),
         reason: 'exact-house',
         source: 'operator',
         confidence: 'official',
@@ -392,7 +445,7 @@ export async function resolvePackAddress(
     }
     return {
       queue: null,
-      options: housesOf(street).slice(0, 50),
+      options: houses.slice(0, 50),
       reason: 'not-found',
       source: null,
       confidence: null,
@@ -400,26 +453,32 @@ export async function resolvePackAddress(
     };
   }
 
-  const options = housesOf(street);
-  if (street.defaultQueue) {
+  if (street[STREET_DEFAULT_QUEUE]) {
     return {
-      queue: street.defaultQueue,
-      options,
+      queue: street[STREET_DEFAULT_QUEUE],
+      options: houses.slice(0, 50),
       reason: 'whole-street',
       source: 'operator',
       confidence: 'official',
       schedule: null,
     };
   }
-  if (options.length === 0 && street.queues.length === 1) {
+  if (houses.length === 0 && street[STREET_QUEUES].length === 1) {
     return {
-      queue: street.queues[0]!,
-      options,
+      queue: street[STREET_QUEUES][0]!,
+      options: [],
       reason: 'whole-street',
       source: 'operator',
       confidence: 'official',
       schedule: null,
     };
   }
-  return { queue: null, options, reason: 'not-found', source: null, confidence: null, schedule: null };
+  return {
+    queue: null,
+    options: houses.slice(0, 50),
+    reason: 'not-found',
+    source: null,
+    confidence: null,
+    schedule: null,
+  };
 }

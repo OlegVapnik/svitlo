@@ -18,6 +18,16 @@ const settlements = {
     { name: 'Бахмач', normalized: 'бахмач', queues: ['2/1'], streetsCount: 1 },
   ],
 };
+const housesShard = {
+  region: REGION,
+  shard: 0,
+  streets: {
+    'чернігів|васільківська': [
+      ['1-14', '1/1'],
+      ['100/А', '1/1'],
+    ],
+  },
+};
 const shard = {
   region: REGION,
   shard: 'ч',
@@ -25,15 +35,7 @@ const shard = {
     'чернігів': {
       settlement: 'Чернігів',
       settlementNormalized: 'чернігів',
-      streets: [
-        {
-          name: 'вул. Васильківська',
-          normalized: 'васільківська',
-          defaultQueue: null,
-          queues: ['1/1'],
-          houses: { '100/А': '1/1', '1-14': '1/1' },
-        },
-      ],
+      streets: [['вул. Васильківська', 'васільківська', null, ['1/1'], 0]],
     },
   },
 };
@@ -48,14 +50,18 @@ function mockStorage(): void {
   });
 }
 
+let fetchCalls: string[] = [];
+
 function stubPacks(): void {
+  fetchCalls = [];
   const manifest = {
-    version: 1,
+    version: 2,
     generatedAt: '2026-10-19T00:00:00Z',
     regions: {
       [REGION]: {
         settlements: { url: `${REGION}/settlements.aaa.json`, hash: 'aaa', count: 2 },
         shards: { ч: { url: `${REGION}/streets-ч.bbb.json`, hash: 'bbb', count: 1 } },
+        houses: { 0: { url: `${REGION}/houses-0.ccc.json`, hash: 'ccc', count: 1 } },
       },
     },
   };
@@ -63,9 +69,11 @@ function stubPacks(): void {
     [`${BASE}/manifest.json`]: manifest,
     [`${BASE}/${REGION}/settlements.aaa.json`]: settlements,
     [`${BASE}/${REGION}/streets-ч.bbb.json`]: shard,
+    [`${BASE}/${REGION}/houses-0.ccc.json`]: housesShard,
   };
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
     const url = String(input);
+    fetchCalls.push(url);
     const body = bodies[url];
     return body
       ? new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -92,6 +100,8 @@ describe('address packs: локальный поиск без D1', () => {
     const streets = await fetchPackStreets(REGION, 'Чернігів', 'василь');
     expect(streets?.data.map((item) => item.name)).toEqual(['вул. Васильківська']);
 
+    expect(fetchCalls.some((url) => url.includes('/houses-'))).toBe(false);
+
     const houses = await fetchPackHouses(REGION, 'Чернігів', 'Васильківська');
     expect(houses?.data.map((item) => item.housePattern)).toEqual(['1-14', '100/А']);
 
@@ -110,6 +120,11 @@ describe('address packs: локальный поиск без D1', () => {
       house: '7',
     });
     expect(resolved?.queue).toBe('1/1');
+  });
+
+  test('пустой запрос отдаёт не больше 20 улиц и не тянет дома', async () => {
+    const streets = await fetchPackStreets(REGION, 'Чернігів', '');
+    expect(streets?.data.length).toBeLessThanOrEqual(20);
   });
 
   test('области без пака отдают null — остаётся серверный фолбэк', async () => {

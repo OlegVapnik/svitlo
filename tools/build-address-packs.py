@@ -9,19 +9,22 @@
 Результат кладётся в apps/web/public/data/address/ и уезжает на Pages вместе с фронтендом.
 Vite копирует public/ в dist, поэтому агенту не нужно ничего отдельно загружать.
 
-Формат:
+Формат (version 2):
   manifest.json
   <region>/settlements.<hash>.json
-  <region>/streets-<shard>.<hash>.json
+  <region>/streets-<shard>.<hash>.json   — только названия улиц (кортежи без домов)
+  <region>/houses-<0..15>.<hash>.json    — дома по 16 хеш-шардам улицы
 
-Шард — первая буква нормализованного названия населённого пункта. Житель Батурина
-скачивает не весь регион, а только свой шард (обычно 1–3 МБ до сжатия).
+Шард индекса улиц — первая буква нормализованного названия населённого пункта. Дома вынесены
+в отдельный слой: автокомплит улиц не должен парсить десятки тысяч номеров домов, чтобы найти
+одну улицу. Кортеж улицы: [name, normalized, defaultQueue, queues, housesShard].
 """
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
 import json
+import re
 import shutil
 import sys
 import unicodedata
@@ -34,6 +37,23 @@ CHERNIHIV = ROOT / ".cache/address-hierarchy/chernihiv-final.json"
 KYIV_CITY = ROOT / ".cache/address-ua/kyiv-city.streets.jsonl"
 KYIVSKA = ROOT / ".cache/address-ua/kyivska-oblast.streets.jsonl"
 UKRAINIAN = set("абвгґдеєжзиіїйклмнопрстуфхцчшщьюя")
+
+# Улица попадает в один из 16 шардов домов по стабильному FNV-1a от нормализованного ключа.
+# Клиент не повторяет хеш: номер шарда лежит прямо в кортеже улицы.
+HOUSE_SHARDS = 16
+
+
+def house_shard(street_normalized: str) -> int:
+    h = 2166136261
+    for byte in street_normalized.encode("utf-8"):
+        h ^= byte
+        h = (h * 16777619) & 0xFFFFFFFF
+    return h % HOUSE_SHARDS
+
+
+def natural_key(value: str) -> list[Any]:
+    """«1, 2, 10», а не «1, 10, 2»: порядок домов в шарде задаёт клиенту готовый список."""
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", value)]
 
 
 def norm(value: Any) -> str:
@@ -149,39 +169,46 @@ def load_jsonl(path: Path) -> dict[str, Any]:
 def build_region(cpu: str, source: dict[str, Any]) -> dict[str, Any]:
     settlements: list[dict[str, Any]] = []
     shards: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    house_shards: dict[int, dict[str, list[list[str | None]]]] = {}
 
     for settlement_norm, entry in sorted(source["streets"].items()):
-        streets = list(entry["streets"].values())
+        streets = sorted(entry["streets"].values(), key=lambda item: item["normalized"])
         queues: set[str] = set()
+        street_tuples: list[list[Any]] = []
         for street in streets:
             queues.update(street.get("queues") or [])
             if street.get("defaultQueue"):
                 queues.add(street["defaultQueue"])
+            houses = street.get("houses") or {}
+            shard = house_shard(street["normalized"]) if houses else None
+            if shard is not None:
+                key = f"{settlement_norm}|{street['normalized']}"
+                house_shards.setdefault(shard, {})[key] = [
+                    [pattern, queue or None]
+                    for pattern, queue in sorted(houses.items(), key=lambda kv: natural_key(str(kv[0])))
+                ]
+            street_tuples.append(
+                [
+                    street["name"],
+                    street["normalized"],
+                    street.get("defaultQueue"),
+                    street.get("queues") or [],
+                    shard,
+                ]
+            )
         settlements.append(
             {
                 "name": entry["name"],
                 "normalized": settlement_norm,
                 "queues": sorted(queues),
-                "streetsCount": len(streets),
+                "streetsCount": len(street_tuples),
             }
         )
         shards.setdefault(shard_key(settlement_norm), []).append(
             {
                 "settlement": entry["name"],
                 "settlementNormalized": settlement_norm,
-                "streets": sorted(
-                    (
-                        {
-                            "name": street["name"],
-                            "normalized": street["normalized"],
-                            "defaultQueue": street.get("defaultQueue"),
-                            "queues": street.get("queues") or [],
-                            "houses": street.get("houses") or {},
-                        }
-                        for street in streets
-                    ),
-                    key=lambda item: item["normalized"],
-                ),
+                "streets": street_tuples,
             }
         )
 
@@ -194,8 +221,7 @@ def build_region(cpu: str, source: dict[str, Any]) -> dict[str, Any]:
 
     shard_manifest: dict[str, Any] = {}
     for key, items in sorted(shards.items()):
-        # Компактный формат: массив пар [settlement, streets] не нужен, оставляем словарь
-        # по нормализованному НП — клиент выбирает шард по первой букве и берёт свой ключ.
+        # Словарь по нормализованному НП: клиент выбирает шард по первой букве и берёт свой ключ.
         payload = {
             "region": cpu,
             "shard": key,
@@ -208,11 +234,22 @@ def build_region(cpu: str, source: dict[str, Any]) -> dict[str, Any]:
             sum(len(item["streets"]) for item in items),
         )
 
+    houses_manifest: dict[str, Any] = {}
+    for shard, streets_map in sorted(house_shards.items()):
+        houses_manifest[str(shard)] = write_pack(
+            cpu,
+            f"houses-{shard}",
+            {"region": cpu, "shard": shard, "streets": streets_map},
+            len(streets_map),
+        )
+
     return {
         "settlements": settlements_pack,
         "shards": shard_manifest,
+        "houses": houses_manifest,
         "settlementsCount": len(settlements),
         "streetsCount": sum(item["count"] for item in shard_manifest.values()),
+        "housesCount": sum(item["count"] for item in houses_manifest.values()),
     }
 
 
@@ -233,7 +270,7 @@ def main() -> int:
     }
 
     manifest = {
-        "version": 1,
+        "version": 2,
         "generatedAt": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "regions": regions,
     }
@@ -245,9 +282,16 @@ def main() -> int:
     total = sum(item["settlementsCount"] for item in regions.values())
     streets = sum(item["streetsCount"] for item in regions.values())
     size = sum(p.stat().st_size for p in OUT.rglob("*.json"))
-    print(f"Готово: {len(regions)} областей, {total} НП, {streets} улиц, {size / 1024 / 1024:.1f} МБ JSON")
+    houses = sum(item["housesCount"] for item in regions.values())
+    print(
+        f"Готово: {len(regions)} областей, {total} НП, {streets} улиц, {houses} улиц с домами, "
+        f"{size / 1024 / 1024:.1f} МБ JSON"
+    )
     for cpu, item in regions.items():
-        print(f"  {cpu}: НП {item['settlementsCount']}, улиц {item['streetsCount']}, шардов {len(item['shards'])}")
+        print(
+            f"  {cpu}: НП {item['settlementsCount']}, улиц {item['streetsCount']}, "
+            f"шардов улиц {len(item['shards'])}, шардов домов {len(item['houses'])}"
+        )
     return 0
 
 
