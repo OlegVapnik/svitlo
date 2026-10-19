@@ -117,19 +117,27 @@ echo "    Схема актуальна."
 # гонять при каждом деплое. Падение НЕ отменяет деплой: воркер и сайт обязаны уехать, даже если
 # локальная база не поднята или у wrangler кончилась квота — о неудаче сообщаем и идём дальше,
 # а перенос можно повторить одной командой.
-echo "==> 1/5. Переношу справочник адресов в D1 (НП, черги, привязки)"
-HIERARCHY_JSON=".cache/address-hierarchy/chernihiv.json"
-if [ ! -s "$HIERARCHY_JSON" ]; then
-  echo "ОШИБКА: отсутствует PDF-иерархия $HIERARCHY_JSON; адресный деплой остановлен." >&2
-  echo "    Сначала сформируйте snapshot: python3 tools/import-address-hierarchy.py" >&2
-  exit 1
-fi
-if node tools/sync-directory-to-d1.mjs --apply --verify --hierarchy-json "$HIERARCHY_JSON"; then
-  :
+if [ "${SKIP_ADDRESS_IMPORT:-0}" = "1" ]; then
+  # Во время исчерпанной квоты D1 перенос справочника — это десятки тысяч записей,
+  # которые отнимают остаток у графиков. Деплой кода от него не зависит.
+  echo "==> 1/5. Пропускаю перенос справочника адресов (SKIP_ADDRESS_IMPORT=1)"
 else
-  echo "ОШИБКА: перенос справочника/иерархии не удался; деплой остановлен." >&2
-  echo "    Повторить перенос: node tools/sync-directory-to-d1.mjs --apply --verify --hierarchy-json $HIERARCHY_JSON" >&2
-  exit 1
+  echo "==> 1/5. Переношу справочник адресов в D1 (НП, черги, привязки)"
+  HIERARCHY_JSON=".cache/address-hierarchy/chernihiv.json"
+  if [ ! -s "$HIERARCHY_JSON" ]; then
+    echo "ОШИБКА: отсутствует PDF-иерархия $HIERARCHY_JSON; адресный деплой остановлен." >&2
+    echo "    Сначала сформируйте snapshot: python3 tools/import-address-hierarchy.py" >&2
+    echo "    Или пропустите шаг: SKIP_ADDRESS_IMPORT=1 ./deploy-cf.sh" >&2
+    exit 1
+  fi
+  if node tools/sync-directory-to-d1.mjs --apply --verify --hierarchy-json "$HIERARCHY_JSON"; then
+    :
+  else
+    echo "ОШИБКА: перенос справочника/иерархии не удался; деплой остановлен." >&2
+    echo "    Повторить перенос: node tools/sync-directory-to-d1.mjs --apply --verify --hierarchy-json $HIERARCHY_JSON" >&2
+    echo "    Или пропустите шаг: SKIP_ADDRESS_IMPORT=1 ./deploy-cf.sh" >&2
+    exit 1
+  fi
 fi
 
 # ── Шаг 2: чейнджлог ────────────────────────────────────────────────────────
@@ -143,7 +151,7 @@ node tools/gen_changelog.mjs --limit 60 || echo "    (пропущено: git н
 # ── Шаг 3: деплой Worker ────────────────────────────────────────────────────
 # Порядок именно такой: сначала воркер, потому что фронтенд собирается с его URL, и иначе
 # вышел бы билд, указывающий на адрес предыдущей (или несуществующей) версии API.
-echo "==> 3/5. Деплою Worker (API + крон каждые 20 минут)"
+echo "==> 3/5. Деплою Worker (API + крон по расписанию wrangler.toml)"
 # Вывод деплоя сохраняем: wrangler печатает в него адрес воркера, а иначе адрес пришлось бы
 # спрашивать у человека — и скрипт «одной кнопкой» снова требовал бы ручного ввода.
 # Через `if`, а не присваиванием: при `set -e` падение команды сразу оборвало бы скрипт,
@@ -202,6 +210,13 @@ echo "    Worker доступен по адресу: $WORKER_URL"
 # ── Шаг 3: сборка фронтенда на этот адрес ───────────────────────────────────
 # VITE_API_BASE_URL вшивается в бандл на этапе сборки, поэтому фронтенд собираем ПОСЛЕ деплоя
 # воркера и с его фактическим адресом.
+echo "==> 4/5. Собираю статические паки адресов"
+if python3 tools/build-address-packs.py; then
+  :
+else
+  echo "ВНИМАНИЕ: паки адресов не собраны — поиск останется на D1 (фолбэк)." >&2
+fi
+
 echo "==> 4/5. Собираю фронтенд на $WORKER_URL"
 BUILD_ID="$(date -u +%Y%m%d-%H%M)"
 VITE_API_BASE_URL="$WORKER_URL/api/v1" SVITLO_BUILD_ID="$BUILD_ID" build_frontend

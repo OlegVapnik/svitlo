@@ -58,3 +58,6 @@ cf-worker/.wrangler/
 # Python
 __pycache__/
 *.pyc
+
+# Статические паки адресов — генерируются tools/build-address-packs.py перед сборкой Pages.
+/apps/web/public/data/address/
