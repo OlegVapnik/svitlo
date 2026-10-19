@@ -11,3 +11,4 @@ export {
   storage,
   type KeyValueStorage,
 } from './storage';
+export { configureAddressPacks, getAddressPacksBaseUrl } from './api/address-packs';

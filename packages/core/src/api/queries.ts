@@ -24,6 +24,7 @@ import type {
 import type { RegionListResponse, RegionSummary } from '../lib/region';
 import { canonicalQueueCode, canonicalQueueListForRegion } from '../lib/queue';
 import { api } from './client';
+import { fetchPackHouses, fetchPackStreets, resolvePackAddress, searchPackSettlements } from './address-packs';
 import { pickRegionSchedule, writeRegionScheduleSnapshot } from './offline-region-schedules';
 
 type OutageFilters = {
@@ -374,7 +375,12 @@ export const useNewsSources = () =>
     queryFn: () => api.fetchNewsSources(),
   });
 
-/** Подсказки НП области: серверный справочник, когда офлайн-пакет ещё не загружен. */
+/**
+ * Подсказки НП области: сначала статический пак с CDN, затем серверный справочник.
+ *
+ * Статический пак — не кеш, а замена D1-поиску: пока он есть, ввод символов не тратит
+ * `rows_read`. Сервер остаётся фолбэком для областей без паков и на время обновления сборки.
+ */
 export const useAddressSettlements = (region: string, query: string) =>
   useQuery<{
     data: Array<{
@@ -386,7 +392,20 @@ export const useAddressSettlements = (region: string, query: string) =>
     }>;
   }>({
     queryKey: ['addressSettlements', region, query],
-    queryFn: ({ signal }) => api.fetchAddressSettlements({ region, q: query }, signal),
+    queryFn: async ({ signal }) => {
+      const pack = await searchPackSettlements(region, query);
+      if (pack) {
+        return {
+          data: pack.map((item) => ({
+            name: item.name,
+            normalized: item.normalized,
+            queues: item.queues,
+            streetsCount: item.streetsCount,
+          })),
+        };
+      }
+      return api.fetchAddressSettlements({ region, q: query }, signal);
+    },
     enabled: region.length > 0 && query.trim().length >= 2,
     staleTime: 10 * 60_000,
   });
@@ -400,7 +419,11 @@ export const useAddressSettlements = (region: string, query: string) =>
 export const useAddressStreets = (region: string, settlement: string, query: string) =>
   useQuery<AddressStreetsResponse>({
     queryKey: ['addressStreets', region, settlement, query],
-    queryFn: ({ signal }) => api.fetchAddressStreets({ region, settlement, q: query }, signal),
+    queryFn: async ({ signal }) => {
+      const pack = await fetchPackStreets(region, settlement, query);
+      if (pack) return pack;
+      return api.fetchAddressStreets({ region, settlement, q: query }, signal);
+    },
     enabled: region.length > 0 && settlement.trim().length >= 2,
     staleTime: 5 * 60_000,
   });
@@ -409,7 +432,11 @@ export const useAddressStreets = (region: string, settlement: string, query: str
 export const useAddressHouses = (region: string, settlement: string, street: string) =>
   useQuery<AddressHousesResponse>({
     queryKey: ['addressHouses', region, settlement, street],
-    queryFn: ({ signal }) => api.fetchAddressHouses({ region, settlement, street }, signal),
+    queryFn: async ({ signal }) => {
+      const pack = await fetchPackHouses(region, settlement, street);
+      if (pack) return pack;
+      return api.fetchAddressHouses({ region, settlement, street }, signal);
+    },
     enabled: region.length > 0 && settlement.trim().length >= 2 && street.trim().length >= 2,
     staleTime: 5 * 60_000,
   });
@@ -424,7 +451,11 @@ export const useAddressHouses = (region: string, settlement: string, street: str
 export const useAddressLookup = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: AddressResolveInput) => api.resolveAddressQueue(params),
+    mutationFn: async (params: AddressResolveInput) => {
+      const pack = await resolvePackAddress(params.region, params);
+      if (pack) return pack;
+      return api.resolveAddressQueue(params);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['addressSettlements'] });
       void queryClient.invalidateQueries({ queryKey: ['addressStreets'] });
