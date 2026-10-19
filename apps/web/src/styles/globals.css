@@ -272,6 +272,14 @@
     --md-status-soft: rgb(5 150 105 / 0.1);
     --md-status-border: rgb(5 150 105 / 0.25);
   }
+  /* День опубликован без отключений — тот же изумруд, что «світло є»: для человека это
+     одинаково хороший факт. Отличается только повод (нет интервалов), не цвет. */
+  [data-power-state='allClear'] {
+    --md-status: #059669;
+    --md-status-text: #047857;
+    --md-status-soft: rgb(5 150 105 / 0.1);
+    --md-status-border: rgb(5 150 105 / 0.25);
+  }
   [data-power-state='warning'] {
     --md-status: #d97706;
     --md-status-text: #b45309;
@@ -350,7 +358,9 @@
      нужный контраст для текста таймера и линии прогресса. Оба селектора нужны: атрибут стоит
      и на <html> (пишет usePowerState), и на самом Hero внутри тёмной страницы. */
   .dark[data-power-state='on'],
-  .dark [data-power-state='on'] {
+  .dark [data-power-state='on'],
+  .dark[data-power-state='allClear'],
+  .dark [data-power-state='allClear'] {
     --md-status: #10b981;
     --md-status-text: #34d399;
     --md-status-soft: rgb(16 185 129 / 0.12);

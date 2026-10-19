@@ -9,6 +9,7 @@ const LABELS: Record<PowerState, string> = {
   on: 'Світло є',
   warning: 'Скоро вимкнуть',
   off: 'Світла немає',
+  allClear: 'Відключень немає',
   unknown: 'Немає даних',
 };
 
@@ -16,6 +17,7 @@ const ICONS: Record<PowerState, keyof typeof Ionicons.glyphMap> = {
   on: 'sunny-outline',
   warning: 'alert-circle-outline',
   off: 'moon-outline',
+  allClear: 'checkmark-circle-outline',
   unknown: 'help-circle-outline',
 };
 
@@ -41,6 +43,9 @@ export function HeroStatus({ state, summary, queue, today, isLoading, isError }:
   const detail = (() => {
     if (isLoading) return 'Завантажуємо графік…';
     if (isError) return 'Графік недоступний — показано останні дані';
+    // Порожній день із підтвердженням — це норма, а не «графіка немає»: саме цю різницю
+    // раніше губив розрахунок і показував «оператор не опублікував» при живому allClear.
+    if (state === 'allClear') return 'Відключень за графіком на сьогодні немає';
     if (!summary) return 'Оператор не опублікував графік на сьогодні';
     if (state === 'off' && summary.offEndsAt) {
       return `До ${minutesToHm(minutesOfDay(summary.offEndsAt, today))}`;

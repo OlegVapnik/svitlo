@@ -6,21 +6,24 @@ import { StatusDot, type NetworkState } from '../ui/StatusDot.js';
 import { WavyProgressBar, type WaveTone } from '../ui/WavyProgressBar.js';
 import { HeroContextTip } from './HeroContextTip.js';
 import { formatMinutesUk, slotProgress } from '../../lib/scheduleWindow.js';
+import { SOON_MINUTES } from '../../lib/day-status.js';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
 /**
  * Hero главного экрана: один ответ на главный вопрос — «свет сейчас есть?».
  *
- * Три состояния и никаких четвёртых:
+ * Состояния:
  *   on       — есть интервалы, отключения сейчас нет;
  *   soon     — свет есть, но скоро выключат (предупреждение, а не тревога);
  *   off      — света нет;
+ *   allClear — день опубликован, отключений в нём нет (зелёный, но без интервалов);
  *   unknown  — ГРАФИКА НЕТ. Не «свет есть», а «мы не знаем».
  *
- * Последнее — главное правило этого компонента. Зелёное «Світло є» при пустом графике
- * означало бы, что оператор подтвердил отсутствие отключений. На деле у нас просто нет
- * данных, и человек принял бы пустоту за хорошую новость. Поэтому пустой график даёт
- * нейтральный серый и отдельный текст.
+ * Разделение `allClear` и `unknown` — главное правило этого компонента. Зелёное «Світло є»
+ * при пустом графике означало бы, что оператор подтвердил отсутствие отключений. Но когда он
+ * правда опубликовал день без отключений, пустой список — это норма, а не отсутствие данных.
+ * Раньше оба случая схлопывались в серый `unknown`, и Київ показывал «немає даних» при живом
+ * графике. Какое из двух — знает ядро (`dayPowerState`), компонент лишь отображает.
  */
 
 /*
@@ -47,6 +50,11 @@ export interface HeroStatusProps {
   backInMinutes: number | null;
   /** Начало следующего отключения/конца текущего — ISO, для точного времени «о 22:00». */
   nextBoundaryAt: string | null;
+  /**
+   * Оператор опубликовал день, но отключений в нём нет. Тогда пустой `intervals` — норма,
+   * и это зелёный `allClear`, а не серый `unknown`.
+   */
+  allClear?: boolean;
   /** График показан из офлайн-снимка: подписываем это честно. */
   fromCache?: boolean;
   /** Время сохранения офлайн-снимка для бейджа «дані з кешу». */
@@ -63,6 +71,7 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
   nextInMinutes,
   backInMinutes,
   nextBoundaryAt,
+  allClear,
   fromCache,
   cachedAt,
   loading,
@@ -72,11 +81,20 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
   const hasData = intervals.length > 0 && !loading;
   // «Скоро вимкнуть» — это отдельное состояние, а не просто «свет есть»: человек, у которого
   // отключение через 20 минут, должен увидеть это ДО темноты, а не когда уже темно.
-  const SOON_MINUTES = 60;
   const isSoon = !isOff && nextInMinutes != null && nextInMinutes <= SOON_MINUTES;
-  const state: NetworkState = !hasData ? 'unknown' : isOff ? 'off' : isSoon ? 'soon' : 'on';
+  const state: NetworkState =
+    allClear && !loading
+      ? 'allClear'
+      : !hasData
+        ? 'unknown'
+        : isOff
+          ? 'off'
+          : isSoon
+            ? 'soon'
+            : 'on';
   /** Тон волны повторяет статус: форма полосы — часть ответа, а не украшение. */
-  const tone: WaveTone = state === 'off' ? 'off' : state === 'soon' ? 'warning' : state === 'on' ? 'on' : 'unknown';
+  const tone: WaveTone =
+    state === 'off' ? 'off' : state === 'soon' ? 'warning' : state === 'on' || state === 'allClear' ? 'on' : 'unknown';
 
   // Прогресс текущего слота считает lib/scheduleWindow — та же математика и тот же тикающий
   // `now`, что у таймера и полосы суток. Дублировать расчёт здесь нельзя, иначе герой и
@@ -90,11 +108,13 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
   const title =
     state === 'unknown'
       ? t('home.heroUnknown')
-      : state === 'off'
-        ? t('home.heroTitleOff')
-        : state === 'soon'
-          ? t('home.heroTitleSoon')
-          : t('home.heroTitleOn');
+      : state === 'allClear'
+        ? t('home.heroNoOutages')
+        : state === 'off'
+          ? t('home.heroTitleOff')
+          : state === 'soon'
+            ? t('home.heroTitleSoon')
+            : t('home.heroTitleOn');
   const caption = isOff ? t('home.countdownToOn') : t('home.countdownToOff');
 
   return (
@@ -184,8 +204,10 @@ export const HeroStatus: React.FC<HeroStatusProps> = ({
 
         {/* Контекстна підказка: при відключенні — до якого часу, перед ним — що встигнути,
             при світлі — що зарядити. Текст залежить від стану, а не один на всі випадки. */}
+        {/* Подсказка действий живёт в терминах «сеть сейчас»: у подтверждённого дня без
+            отключений поведение то же, что при свете — зарядить и не ждать отключения. */}
         <HeroContextTip
-          state={state}
+          state={state === 'allClear' ? 'on' : state}
           backInMinutes={backInMinutes}
           nextBoundaryAt={nextBoundaryAt}
         />

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, FileQuestion, Zap, ZapOff, type LucideIcon } from 'lucide-react';
+import { BadgeCheck, Clock, FileQuestion, Zap, ZapOff, type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
 import type { NetworkState } from './StatusDot.js';
 
@@ -21,6 +21,8 @@ const ICONS: Record<NetworkState, LucideIcon> = {
   on: Zap,
   soon: Clock,
   off: ZapOff,
+  // Галочка, а не блискавка: подтверждённый день без отключений — это «перевірено», не «сейчас светло».
+  allClear: BadgeCheck,
   unknown: FileQuestion,
 };
 

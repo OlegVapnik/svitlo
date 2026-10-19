@@ -8,7 +8,9 @@
  */
 
 export type ThemeMode = 'light' | 'dark';
-export type PowerState = 'on' | 'warning' | 'off' | 'unknown';
+// `allClear` — день опубликован без отключений: зелёный, но без интервалов. Отличается от
+// `unknown` (данных нет) и от `on` (есть интервалы). Тон совпадает с `on`.
+export type PowerState = 'on' | 'warning' | 'off' | 'allClear' | 'unknown';
 
 export interface StatusTone {
   /** Заливка точки/бейджа. */
@@ -74,6 +76,7 @@ export const lightPalette: Palette = {
   levelHigh: '#65a30d',
   status: {
     on: { color: '#059669', text: '#047857', soft: 'rgba(5, 150, 105, 0.10)', border: 'rgba(5, 150, 105, 0.25)' },
+    allClear: { color: '#059669', text: '#047857', soft: 'rgba(5, 150, 105, 0.10)', border: 'rgba(5, 150, 105, 0.25)' },
     warning: { color: '#d97706', text: '#b45309', soft: 'rgba(217, 119, 6, 0.10)', border: 'rgba(217, 119, 6, 0.25)' },
     off: { color: '#e11d48', text: '#be123c', soft: 'rgba(225, 29, 72, 0.10)', border: 'rgba(225, 29, 72, 0.25)' },
     unknown: { color: '#71717a', text: '#52525b', soft: 'rgba(113, 113, 122, 0.10)', border: 'rgba(113, 113, 122, 0.25)' },
@@ -106,6 +109,7 @@ export const darkPalette: Palette = {
   levelHigh: '#a3e635',
   status: {
     on: { color: '#10b981', text: '#34d399', soft: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.25)' },
+    allClear: { color: '#10b981', text: '#34d399', soft: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.25)' },
     warning: { color: '#f59e0b', text: '#fbbf24', soft: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.25)' },
     off: { color: '#f43f5e', text: '#fb7185', soft: 'rgba(244, 63, 94, 0.12)', border: 'rgba(244, 63, 94, 0.25)' },
     unknown: { color: '#71717a', text: '#a1a1aa', soft: 'rgba(113, 113, 122, 0.12)', border: 'rgba(113, 113, 122, 0.25)' },

@@ -3,7 +3,7 @@ import { useRegion } from './useRegion.js';
 import { useRegionQueue } from './useRegionQueue.js';
 import { useQueueSchedule } from '../api/queries.js';
 import { kyivDateOffsetKey } from '../lib/outage-dates.js';
-import { scheduleWindow } from '../lib/scheduleWindow.js';
+import { dayPowerState, type DayPowerState } from '../lib/day-status.js';
 import type { QueueScheduleData } from '@svitlo/shared';
 
 /**
@@ -19,11 +19,12 @@ import type { QueueScheduleData } from '@svitlo/shared';
  *
  * `warning` = отключение в пределах часа: человек должен увидеть предупреждение ДО темноты
  * (тот же порог, что в HeroStatus — иначе бейдж и фон говорили бы разное).
+ *
+ * `allClear` = день опубликован, отключений в нём нет. Это НЕ `on`: интервалов нет вовсе, но
+ * день подтверждён оператором, поэтому зелёный здесь законен. Отличить его от `unknown` умеет
+ * только общий расчёт `dayPowerState` в ядре.
  */
-export type PowerState = 'on' | 'warning' | 'off' | 'unknown';
-
-/** Порог «скоро вимкнуть», в минутах. Синхронизирован с HeroStatus. */
-const SOON_MINUTES = 60;
+export type PowerState = DayPowerState;
 
 export function usePowerState(): PowerState {
   const { currentRegion, currentRegionData } = useRegion();
@@ -39,16 +40,9 @@ export function usePowerState(): PowerState {
     ? (scheduleResponse as unknown as QueueScheduleData)
     : scheduleResponse?.data;
 
-  const state: PowerState = useMemo(() => {
-    const intervals = schedule?.intervals ?? [];
-    // Пустой график — это «не знаем», а не «свет есть»: зелёный цвет при отсутствии данных
-    // означал бы, что оператор подтвердил отсутствие отключений.
-    if (intervals.length === 0) return 'unknown';
-    const summary = scheduleWindow(intervals, today);
-    if (summary.isOff) return 'off';
-    if (summary.nextInMinutes != null && summary.nextInMinutes <= SOON_MINUTES) return 'warning';
-    return 'on';
-  }, [schedule, today]);
+  // Единый расчёт ядра: он один знает разницу между «день опубликован без отключений»
+  // (allClear) и «графика нет» (unknown). Пустой массив интервалов сам по себе ничего не значит.
+  const state: PowerState = useMemo(() => dayPowerState(schedule, today).state, [schedule, today]);
 
   useEffect(() => {
     // Атрибут на <html>: от него зависят все --md-primary в globals.css. Единственный писатель —

@@ -43,6 +43,7 @@ import {
   OFF_STATE_CODE,
   scheduleWindow,
 } from '../../lib/scheduleWindow.js';
+import { dayPowerState, type DayPowerState } from '../../lib/day-status.js';
 import type { QueueScheduleData, ScheduleIntervalUtc } from '@svitlo/shared';
 import type { DaySchedule } from '../../lib/day-schedule.js';
 import { cn } from '../../lib/cn.js';
@@ -160,6 +161,21 @@ export const HomeHeroSection: React.FC = () => {
   const isOff = Boolean(windowSummary?.isOff);
 
   /**
+   * Статус дня — единственный источник правды для героя, заголовка вкладки и виджета.
+   *
+   * Пустой день считаем подтверждённым (`allClear`) при явном `allClear` графика очереди, а
+   * если слотов нет вовсе — из каталога области (там `allClear` про день «сьогодні»; на «завтра»
+   * обещать «світло за графіком» нельзя). Ядро отличает это от «даних немає».
+   */
+  const allClear =
+    !hasIntervals &&
+    (schedule?.allClear === true || (selectedDayOffset === 0 && currentRegionData.allClear === true));
+  const heroState: DayPowerState = useMemo(() => {
+    if (allClear) return 'allClear';
+    return dayPowerState(schedule, selectedDate, now).state;
+  }, [allClear, schedule, selectedDate, now]);
+
+  /**
    * Дві доби для планувальника: сьогодні й завтра.
    *
    * Основне джерело — `/schedules/upcoming` (там уже обидві дати однією відповіддю). Для вибраної
@@ -200,13 +216,18 @@ export const HomeHeroSection: React.FC = () => {
         : null;
 
   useDynamicChrome({
-    status: !hasIntervals ? 'unknown' : isOff ? 'off' : 'on',
+    status: heroState === 'off' ? 'off' : heroState === 'unknown' ? 'unknown' : 'on',
     theme,
-    statusLabel: !hasIntervals
-      ? t('home.heroUnknown')
-      : isOff
-        ? t('home.heroTitleOff')
-        : t('home.heroTitleOn'),
+    statusLabel:
+      heroState === 'unknown'
+        ? t('home.heroUnknown')
+        : heroState === 'allClear'
+          ? t('home.heroNoOutages')
+          : heroState === 'off'
+            ? t('home.heroTitleOff')
+            : heroState === 'warning'
+              ? t('home.heroTitleSoon')
+              : t('home.heroTitleOn'),
     minutesLabel: chromeMinutes ? t('home.chromeMinutes', { time: chromeMinutes }) : null,
   });
 
@@ -287,7 +308,7 @@ export const HomeHeroSection: React.FC = () => {
       null;
 
     const statusText =
-      !hasIntervals && todayIntervals.length === 0
+      !hasIntervals && todayIntervals.length === 0 && !allClear
         ? t('home.heroNoData')
         : isOffNow
           ? t('home.heroOff')
@@ -333,6 +354,7 @@ export const HomeHeroSection: React.FC = () => {
     hasIntervals,
     selectedDayOffset,
     isOff,
+    allClear,
     t,
   ]);
 
@@ -351,6 +373,7 @@ export const HomeHeroSection: React.FC = () => {
         nextInMinutes={windowSummary?.nextInMinutes ?? null}
         backInMinutes={windowSummary?.backInMinutes ?? null}
         nextBoundaryAt={windowSummary?.offEndsAt ?? windowSummary?.nextStartsAt ?? null}
+        allClear={allClear}
         fromCache={scheduleFromSnapshot}
         cachedAt={schedule?.lastImportedAt ?? null}
         loading={scheduleLoading && !schedule}
