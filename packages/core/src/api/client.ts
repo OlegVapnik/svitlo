@@ -53,6 +53,16 @@ async function fetcher(endpoint: string, options?: RequestInit, useOfflineCache 
   }
 
   if (!res.ok) {
+    // 5xx — сервер не смог ответить (упал, исчерпал квоту БД). Для чтения это тот же случай,
+    // что и пропажа сети: последний успешный ответ полезнее пустого экрана. 4xx не подменяем —
+    // это ответ по существу (валидация, «не найдено»), и старые данные там были бы враньём.
+    if (isRead && useOfflineCache && res.status >= 500) {
+      const cached = readCache(endpoint);
+      if (cached) {
+        noteServedFromCache(cached);
+        return cached.data;
+      }
+    }
     const body = (await res.json().catch(() => null)) as
       | { error?: { code?: string; message?: string; details?: Array<{ path: string; message: string }> } }
       | null;

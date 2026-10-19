@@ -247,6 +247,31 @@ describe('syncNow: что происходит с данными при 200, 304
     expect(JSON.parse(localStorage.getItem(CATALOG_KEY) ?? 'null')?.regions).toHaveLength(1);
   });
 
+  test('пустые settlements/news в новом пакете не стирают офлайн-справочник', async () => {
+    seedBundle();
+    hydrateOfflineStartup();
+    // Так выглядит ответ /sync, когда D1 исчерпала квоту или источник не собрал адреса:
+    // 200, новый etag, но пустые разделы. Пустота не должна означать «удалить у пользователя».
+    const fresh = makeBundle({
+      syncedAt: '2026-10-16T13:00:00.000Z',
+      etag: 'W/"test-3"',
+      settlements: [],
+      settlementsTotal: 0,
+      news: [],
+    });
+    vi.stubGlobal('fetch', async () => jsonResponse({ data: fresh }));
+
+    await syncNow(REGION);
+
+    const stored = readOfflineBundle(REGION)?.bundle;
+    expect(stored?.etag).toBe('W/"test-3"');
+    expect(stored?.settlements).toHaveLength(2);
+    expect(stored?.settlementsTotal).toBe(1311);
+    expect(stored?.news).toHaveLength(1);
+    expect(searchOfflineSettlements(REGION, 'черн').map((item) => item.name)).toEqual(['Чернігів']);
+    expect(getSyncState().settlements).toBe(2);
+  });
+
   test('ответ без пакета не стирает прошлые данные: старый график лучше пустого экрана', async () => {
     seedBundle();
     hydrateOfflineStartup();

@@ -180,6 +180,40 @@ export function mergeRegionCatalog(
   return merged;
 }
 
+/**
+ * Не даёт серверному пакету стереть локальные разделы, которых в ответе не оказалось.
+ *
+ * `/sync` собирает данные из D1. При исчерпанной квоте или сбое источника он может вернуть 200
+ * с пустыми `settlements`/`news` — формально «новый» пакет, фактически «данных не собрали».
+ * Раньше такой ответ переписывал диск, и офлайн-поиск адреса терял весь справочник НП, хотя
+ * вчера он у человека работал. Пустой раздел не считается намеренным удалением: если в прошлом
+ * пакете записи были, сохраняем их до следующего успешного наполнения. Графики так не мержим —
+ * пустой график там означает «оператор не публиковал», и это законное состояние.
+ */
+function preserveOfflineCollections(
+  bundle: SyncBundle,
+  previous: OfflineBundleRecord | null,
+): SyncBundle {
+  const old = previous?.bundle;
+  if (!old) return bundle;
+  const settlements =
+    Array.isArray(bundle.settlements) && bundle.settlements.length > 0
+      ? bundle.settlements
+      : (old.settlements ?? []);
+  const settlementsTotal =
+    (bundle.settlementsTotal ?? 0) > 0 ? bundle.settlementsTotal : (old.settlementsTotal ?? 0);
+  const news =
+    Array.isArray(bundle.news) && bundle.news.length > 0 ? bundle.news : (old.news ?? []);
+  if (
+    settlements === bundle.settlements &&
+    news === bundle.news &&
+    settlementsTotal === bundle.settlementsTotal
+  ) {
+    return bundle;
+  }
+  return { ...bundle, settlements, settlementsTotal, news };
+}
+
 /** Сохраняет пакет области. `null` — не поместилось или хранилище недоступно (данные при этом не теряются). */
 function saveOfflineBundle(region: string, bundle: SyncBundle): OfflineBundleRecord | null {
   const store = storage;
@@ -441,19 +475,21 @@ export async function syncNow(region: string): Promise<void> {
       return;
     }
 
-    const changed = !previous || bundle.etag !== previous.etag;
+    // Пустые разделы не затирают то, что уже лежит на устройстве (см. preserveOfflineCollections).
+    const effective = preserveOfflineCollections(bundle, previous);
+    const changed = !previous || effective.etag !== previous.etag;
     if (changed) {
       // Не поместилось на диск — не повод терять свежие данные: кеш обновляем в любом случае.
-      saveOfflineBundle(clean, bundle);
-      applyBundle(queryClient, clean, bundle);
+      saveOfflineBundle(clean, effective);
+      applyBundle(queryClient, clean, effective);
     }
 
     setSyncState({
       phase: 'fresh',
       region: clean,
-      syncedAt: bundle.syncedAt,
+      syncedAt: effective.syncedAt,
       checkedAt: new Date().toISOString(),
-      settlements: bundle.settlements?.length ?? previousSettlements,
+      settlements: effective.settlements?.length ?? previousSettlements,
       error: null,
     });
   } catch (error) {
