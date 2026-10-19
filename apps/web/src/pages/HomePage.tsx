@@ -64,66 +64,169 @@ const MiniStat: React.FC<{
 );
 
 /**
- * Карточка ближайшего отключения одной группы: код черги, интервалы «10:00–11:00», статус
- * (идёт сейчас / запланировано) и — если источник её отдал — привязанные к группе населённые
- * пункты и улицы. Пустые списки НЕ заполняем вымышленными районами: зеркало ГПВ номера групп
- * с районами не связывает, и догадка здесь опаснее пустоты (AGENTS.md).
+ * Одна строка «Найближчих відключень».
+ *
+ * Раньше это была двухэтажная карточка на всю ширину: дата в каждом заголовке, огромная
+ * пустота справа и все слоты суток, включая давно прошедшие. Блок называется «найближчі»,
+ * поэтому здесь остаётся только то, что ещё впереди: актуальный слот и следующий за ним.
+ * Прошедшие не выбрасываем бесследно — они свёрнуты в «Минулі слоти», если человеку нужно
+ * свериться.
+ *
+ * Группы с ОДИНАКОВЫМ набором слотов склеиваются в одну строку: у «1/1» и «1/2» часто одно и
+ * то же окно 13:00–16:30, и две одинаковые карточки подряд — шум, а не информация.
  */
-const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
+interface UpcomingGroup {
+  date: string;
+  queues: string[];
+  intervals: GroupOutageSummary['intervals'];
+  isActiveNow: boolean;
+  settlements: string[];
+  streetNames: string[];
+}
+
+const compareQueue = (a: string, b: string): number => {
+  const parse = (value: string): [number, number] => {
+    const [major, minor] = value.split('/');
+    return [Number(major) || 0, Number(minor ?? 0) || 0];
+  };
+  const [aMajor, aMinor] = parse(a);
+  const [bMajor, bMinor] = parse(b);
+  return aMajor - bMajor || aMinor - bMinor;
+};
+
+const mergeUpcomingGroups = (items: GroupOutageSummary[]): UpcomingGroup[] => {
+  const merged = new Map<string, UpcomingGroup>();
+  for (const item of items) {
+    const signature = item.intervals
+      .map((interval) => `${interval.startsAt}-${interval.endsAt}`)
+      .sort()
+      .join(',');
+    const key = `${item.date}|${signature}`;
+    const existing = merged.get(key);
+    if (existing) {
+      if (!existing.queues.includes(item.queue)) existing.queues.push(item.queue);
+      existing.isActiveNow = existing.isActiveNow || item.isActiveNow;
+      for (const name of item.streetNames) {
+        if (!existing.streetNames.includes(name)) existing.streetNames.push(name);
+      }
+      for (const name of item.settlements) {
+        if (!existing.settlements.includes(name)) existing.settlements.push(name);
+      }
+      continue;
+    }
+    merged.set(key, {
+      date: item.date,
+      queues: [item.queue],
+      intervals: item.intervals,
+      isActiveNow: item.isActiveNow,
+      streetNames: [...item.streetNames],
+      settlements: [...item.settlements],
+    });
+  }
+  return [...merged.values()].map((group) => ({
+    ...group,
+    queues: [...group.queues].sort(compareQueue),
+  }));
+};
+
+/** «Сьогодні, 19 жовтня» — дата один раз на всю секцию, а не в каждой карточке. */
+const formatUpcomingDay = (date: string, now: Date): string => {
+  const day = new Intl.DateTimeFormat('uk-UA', {
+    timeZone: 'Europe/Kyiv',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date(`${date}T12:00:00+03:00`));
+  const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(now);
+  const tomorrowKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(
+    new Date(now.getTime() + 24 * 60 * 60 * 1000),
+  );
+  if (date === todayKey) return `Сьогодні, ${day}`;
+  if (date === tomorrowKey) return `Завтра, ${day}`;
+  return day;
+};
+
+const GroupOutageCard: React.FC<{ group: UpcomingGroup }> = ({ group }) => {
   const { t } = useTranslation();
+  const nowMs = Date.now();
+  const future = group.intervals.filter((interval) => Date.parse(interval.endsAt) > nowMs);
+  const past = group.intervals.filter((interval) => Date.parse(interval.endsAt) <= nowMs);
+
   return (
-    <article className="rounded-2xl border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-bold',
-              item.isActiveNow ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary',
-            )}
-          >
-            {item.isActiveNow ? <ZapOff className="h-3.5 w-3.5" aria-hidden /> : <Zap className="h-3.5 w-3.5" aria-hidden />}
-            {t('home.queueGroup', { queue: item.queue })}
-          </span>
-          <span className="text-xs font-semibold text-muted-foreground">
-            {item.isActiveNow ? t('home.groupOutageActive') : t('home.groupOutagePlanned')}
-          </span>
-        </div>
-        <span className="text-xs font-semibold text-muted-foreground">{item.date}</span>
+    <article className="rounded-2xl border border-border bg-card px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={cn(
+            'inline-flex min-h-8 flex-wrap items-center gap-1.5 rounded-full px-2.5 text-xs font-bold',
+            group.isActiveNow ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary',
+          )}
+        >
+          {group.isActiveNow ? (
+            <ZapOff className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <Zap className="h-3.5 w-3.5" aria-hidden />
+          )}
+          {group.queues.map((queue) => (
+            <span key={queue} className="whitespace-nowrap">
+              {t('home.queueGroup', { queue })}
+            </span>
+          ))}
+        </span>
+        <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
+          {group.isActiveNow ? t('home.groupOutageActive') : t('home.groupOutagePlanned')}
+        </span>
       </div>
 
-      <ul className="mt-3 flex flex-wrap gap-2">
-        {item.intervals.map((interval, index) => {
-          // Слот, который уже закончился, гасим: ночью первым в списке светился красный
-          // «00:00–01:00», и взгляд цеплялся за прошлое вместо предстоящего «07:30–11:00».
-          // Красную точку убираем — у прошедшего времени её быть не должно.
-          const ended = Date.parse(interval.endsAt) < Date.now();
-          return (
-          <li
-            key={`${interval.startsAt}-${index}`}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold tabular',
-              ended ? 'bg-muted/30 text-muted-foreground line-through opacity-55' : 'bg-muted/60 text-foreground',
-            )}
-          >
-            {!ended && (
-              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: interval.stateColor }} aria-hidden />
-            )}
-            {interval.localTimeFrom}–{interval.localTimeTo}
-          </li>
-          );
-        })}
-      </ul>
+      {/* Только актуальное и следующее: прошедшее окно в «найближчих» — шум. */}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {future.length === 0 ? (
+          <span className="text-xs text-muted-foreground">{t('home.groupNothingAhead')}</span>
+        ) : (
+          future.slice(0, 2).map((interval, index) => (
+            <span
+              key={`${interval.startsAt}-${index}`}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold tabular',
+                index === 0 ? 'bg-primary/10 text-foreground' : 'bg-muted/60 text-foreground',
+              )}
+            >
+              <span
+                className="h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: interval.stateColor }}
+                aria-hidden
+              />
+              {interval.localTimeFrom}–{interval.localTimeTo}
+            </span>
+          ))
+        )}
+      </div>
 
-{/* Розкриття списку вулиць групи. Показуємо тільки реальні назви зі street_queues/settlements:
-          якщо джерело географію не віддало — блоку немає, а не «ймовірно, сусідні райони». */}
-      {item.streetNames.length > 0 && (
-        <details className="group/places mt-3 border-t border-border/60 pt-3">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground">
-            <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/places:rotate-180" aria-hidden />
-            {t('home.groupStreetsToggle', { n: item.streetNames.length })}
+      {past.length > 0 && (
+        <details className="group/past mt-1.5">
+          <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground">
+            <ChevronDown className="h-3 w-3 transition-transform group-open/past:rotate-180" aria-hidden />
+            {t('home.groupPastSlots', { n: past.length })}
           </summary>
-          <ul className="mt-2 grid gap-1 sm:grid-cols-2">
-            {item.streetNames.map((name) => (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {past.map((interval, index) => (
+              <span
+                key={`${interval.startsAt}-${index}`}
+                className="rounded-lg bg-muted/30 px-2 py-0.5 text-[11px] font-semibold tabular text-muted-foreground line-through opacity-70"
+              >
+                {interval.localTimeFrom}–{interval.localTimeTo}
+              </span>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {group.streetNames.length > 0 && (
+        <details className="group/places mt-1.5 border-t border-border/60 pt-1.5">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground">
+            <ChevronDown className="h-3 w-3 transition-transform group-open/places:rotate-180" aria-hidden />
+            {t('home.groupStreetsToggle', { n: group.streetNames.length })}
+          </summary>
+          <ul className="mt-1.5 grid gap-1 sm:grid-cols-2">
+            {group.streetNames.map((name) => (
               <li key={name} className="flex items-center gap-1.5 text-xs text-foreground">
                 <MapPin className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
                 {name}
@@ -136,11 +239,11 @@ const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
         </details>
       )}
 
-      {item.settlements.length > 0 && (
-        <div className="mt-3 border-t border-border/60 pt-3">
+      {group.settlements.length > 0 && (
+        <div className="mt-1.5 border-t border-border/60 pt-1.5">
           <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {item.settlements.map((name) => (
+            {group.settlements.map((name) => (
               <span key={name} className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-foreground">
                 {name}
               </span>
@@ -384,7 +487,31 @@ export const HomePage: React.FC = () => {
   // Показываем 6 групп, решта — за кнопкою «показати ще N груп» (усі 12 не вміщуються на
   // першому екрані, але ховати їх назавжди теж неправильно: людина шукає СВЕЮ чергу).
   const [allGroupsShown, setAllGroupsShown] = useState(false);
-  const visibleGroupOutages = allGroupsShown ? groupOutages : groupOutages.slice(0, VISIBLE_GROUPS_LIMIT);
+  // Склеиваем очередь с одинаковым расписанием и выбрасываем группы, у которых все окна уже
+  // прошли: блок «Найближчі» не должен показывать утренние слоты вечером.
+  const upcomingGroups = useMemo(() => {
+    const nowMs = Date.now();
+    return mergeUpcomingGroups(
+      groupOutages.filter((item) =>
+        item.intervals.some((interval) => Date.parse(interval.endsAt) > nowMs),
+      ),
+    );
+  }, [groupOutages]);
+
+  const visibleGroupOutages = allGroupsShown
+    ? upcomingGroups
+    : upcomingGroups.slice(0, VISIBLE_GROUPS_LIMIT);
+
+  // Дата один раз на секцию: карточки уже не повторяют «2026-10-19» каждая.
+  const upcomingByDate = useMemo(() => {
+    const byDate = new Map<string, UpcomingGroup[]>();
+    for (const group of visibleGroupOutages) {
+      const list = byDate.get(group.date) ?? [];
+      list.push(group);
+      byDate.set(group.date, list);
+    }
+    return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [visibleGroupOutages]);
   const { data: incidentsData } = useIncidents();
 
   const status = statusData?.data;
@@ -535,7 +662,7 @@ export const HomePage: React.FC = () => {
             {/* Групи без відключень на найближчі дні — не показуємо: блок про відключення, а не про график. */}
             {groupOutagesLoading ? (
               <Skeleton className="h-28 w-full rounded-2xl" />
-            ) : groupOutages.length === 0 ? (
+            ) : upcomingGroups.length === 0 ? (
               outages.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 rounded-2xl border border-hairline bg-surface-container-high/50 px-6 py-8 text-sm text-on-surface-variant">
                   <ZapOff className="h-4 w-4" aria-hidden />
@@ -544,10 +671,22 @@ export const HomePage: React.FC = () => {
               ) : null
             ) : (
               <>
-                {visibleGroupOutages.map((item) => (
-                  <GroupOutageCard key={`${item.date}-${item.queue}`} item={item} />
+                {upcomingByDate.map(([date, groups]) => (
+                  <div key={date} className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {formatUpcomingDay(date, new Date())}
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {groups.map((group) => (
+                        <GroupOutageCard
+                          key={`${group.date}-${group.queues.join(',')}-${group.intervals[0]?.startsAt ?? ''}`}
+                          group={group}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 ))}
-                {groupOutages.length > VISIBLE_GROUPS_LIMIT && (
+                {upcomingGroups.length > VISIBLE_GROUPS_LIMIT && (
                   <button
                     type="button"
                     onClick={() => setAllGroupsShown((value) => !value)}
@@ -556,7 +695,7 @@ export const HomePage: React.FC = () => {
                   >
                     {allGroupsShown
                       ? t('home.hideAllGroups')
-                      : t('home.showAllGroups', { n: groupOutages.length - VISIBLE_GROUPS_LIMIT })}
+                      : t('home.showAllGroups', { n: upcomingGroups.length - VISIBLE_GROUPS_LIMIT })}
                   </button>
                 )}
               </>

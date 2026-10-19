@@ -7,7 +7,11 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.RemoteViews;
 
 /**
@@ -120,6 +124,57 @@ public class SvitloWidgetProvider extends AppWidgetProvider {
         return Size.MEDIUM;
     }
 
+    /**
+     * Рисует 24-часовую полосу в Bitmap: тёмная подложка, зелёные часы со светом, красные
+     * окна отключений и белая риска «сейчас».
+     *
+     * RemoteViews не поддерживает Canvas, поэтому график готовится здесь и отдаётся как
+     * ImageView. Ширина 600px с запасом перекрывает 4 колонки на любом экране, а fitXY
+     * масштабирует её до 22dp по высоте.
+     */
+    private static Bitmap renderDayStrip(
+        Context context,
+        WidgetSnapshot state,
+        long nowMs,
+        boolean hasData
+    ) {
+        final int width = 600;
+        final int height = 44;
+        final float top = 6f;
+        final float bottom = height - 6f;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        paint.setColor(context.getColor(R.color.svitlo_widget_track));
+        canvas.drawRoundRect(0, top, width, bottom, 10f, 10f, paint);
+        if (!hasData || state.dayEndMs <= state.dayStartMs) {
+            return bitmap;
+        }
+
+        // База «света»: зелёный лежит под красными окнами, поэтому полоса читается как сутки,
+        // а не как набор разрозненных отрезков.
+        paint.setColor(0x3334D399);
+        canvas.drawRoundRect(0, top, width, bottom, 10f, 10f, paint);
+
+        paint.setColor(context.getColor(R.color.svitlo_widget_danger));
+        float span = state.dayEndMs - state.dayStartMs;
+        for (WidgetSnapshot.Interval interval : state.today) {
+            long start = Math.max(interval.startMs, state.dayStartMs);
+            long end = Math.min(interval.endMs, state.dayEndMs);
+            if (end <= start) continue;
+            float left = (start - state.dayStartMs) / span * width;
+            float right = (end - state.dayStartMs) / span * width;
+            canvas.drawRoundRect(left, top, right, bottom, 4f, 4f, paint);
+        }
+
+        long clampedNow = Math.max(state.dayStartMs, Math.min(nowMs, state.dayEndMs));
+        float x = (clampedNow - state.dayStartMs) / span * width;
+        paint.setColor(context.getColor(R.color.svitlo_widget_text));
+        canvas.drawRoundRect(x - 1.5f, 0f, x + 1.5f, height, 1.5f, 1.5f, paint);
+        return bitmap;
+    }
+
     private static RemoteViews buildViews(Context context, Size size) {
         int layout;
         if (size == Size.SMALL) {
@@ -147,6 +202,8 @@ public class SvitloWidgetProvider extends AppWidgetProvider {
             ? context.getString(R.string.widget_default_next)
             : state.nextChangeLabel;
 
+        long nowMs = System.currentTimeMillis();
+
         views.setTextViewText(
             R.id.widget_queue,
             hasState
@@ -156,18 +213,77 @@ public class SvitloWidgetProvider extends AppWidgetProvider {
                     : context.getString(R.string.widget_default_queue))
         );
         views.setTextViewText(R.id.widget_status, statusText);
-        views.setTextViewText(R.id.widget_next, nextLabel);
+        if (size != Size.LARGE) {
+            views.setTextViewText(R.id.widget_next, nextLabel);
+        }
 
         if (size != Size.SMALL) {
             views.setTextViewText(R.id.widget_region, regionName);
-            views.setTextViewText(R.id.widget_hours, hasState ? state.hoursLabel() : "");
         }
-        if (size == Size.LARGE) {
-            String schedule = state.todayScheduleLabel();
+        if (size == Size.MEDIUM) {
+            // «без світла 5 год 30 хв» вместо «−5 год 30 хв»: минус рядом со «Світло є»
+            // читался как ошибка таймера, хотя это суммарные часы за сутки.
             views.setTextViewText(
-                R.id.widget_schedule,
-                schedule.isEmpty() ? context.getString(R.string.widget_schedule_empty) : schedule
+                R.id.widget_hours,
+                hasState ? context.getString(R.string.widget_hours_short, state.hoursLabel()) : ""
             );
+        }
+
+        if (size == Size.LARGE) {
+            // Крупный акцент: «До 20:00» / «Увімкнуть о 13:00». Подпись отвечает, какое это
+            // окно, чтобы цифра не висела без контекста.
+            WidgetSnapshot.Interval current = state.currentOff(nowMs);
+            WidgetSnapshot.Interval upcoming = current != null ? current : state.nextOff(nowMs);
+            views.setTextViewText(
+                R.id.widget_hero,
+                hasState ? state.heroCountdown(nowMs) : context.getString(R.string.widget_hero_default)
+            );
+            String window = hasState ? state.nextWindowLabel(nowMs) : "";
+            views.setTextViewText(
+                R.id.widget_hero_sub,
+                window.isEmpty()
+                    ? ""
+                    : context.getString(
+                        current != null ? R.string.widget_off_window : R.string.widget_next_window,
+                        window
+                    )
+            );
+
+            // Чипы: прошедшее окно приглушено, следующее — акцентное с длительностью.
+            WidgetSnapshot.Interval past = state.lastEndedToday(nowMs);
+            if (past != null && hasState) {
+                views.setTextViewText(
+                    R.id.widget_chip_1,
+                    context.getString(R.string.widget_chip_past, state.chipLabel(past))
+                );
+                views.setViewVisibility(R.id.widget_chip_1, View.VISIBLE);
+            } else {
+                views.setViewVisibility(R.id.widget_chip_1, View.GONE);
+            }
+            if (upcoming != null && hasState) {
+                views.setTextViewText(
+                    R.id.widget_chip_2,
+                    context.getString(
+                        R.string.widget_chip_duration,
+                        context.getString(R.string.widget_chip_next, state.chipLabel(upcoming)),
+                        state.durationLabel(upcoming)
+                    )
+                );
+                views.setViewVisibility(R.id.widget_chip_2, View.VISIBLE);
+            } else {
+                views.setViewVisibility(R.id.widget_chip_2, View.GONE);
+            }
+
+            views.setTextViewText(
+                R.id.widget_hours_line,
+                hasState ? context.getString(R.string.widget_no_power_for_day, state.hoursLabel()) : ""
+            );
+            String updated = state.updatedLabel();
+            views.setTextViewText(
+                R.id.widget_updated,
+                updated.isEmpty() ? "" : context.getString(R.string.widget_updated_at, updated)
+            );
+            views.setImageViewBitmap(R.id.widget_graph, renderDayStrip(context, state, nowMs, hasState));
         }
 
         int dot = !hasState

@@ -37,6 +37,8 @@ export interface NativeWidgetState {
   upcomingIntervals: NativeUpcomingInterval[];
   /** Только сегодняшние окна: панель 4×2 показывает их списком и считает часы без света. */
   todayIntervals: NativeUpcomingInterval[];
+  /** Когда снимок получен: виджет пишет «Оновлено о 16:24», чтобы было видно, что он живой. */
+  updatedAt: string;
 }
 
 export function useNativeWidgetSync(state: NativeWidgetState | null): void {

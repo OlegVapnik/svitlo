@@ -51,6 +51,11 @@ final class WidgetSnapshot {
     String nextChangeLabel = "";
     String nextChangeTime = "";
     double todayOutageHours;
+    /** Когда снимок получен (ISO): виджет показывает «Оновлено о 16:24». */
+    String updatedAt = "";
+    /** Границы киевских суток для отрисовки 24-часовой полосы. */
+    long dayStartMs;
+    long dayEndMs;
 
     final List<Interval> today = new ArrayList<>();
     final List<Interval> upcoming = new ArrayList<>();
@@ -69,6 +74,7 @@ final class WidgetSnapshot {
             snapshot.nextChangeLabel = state.optString("nextChangeLabel", "");
             snapshot.nextChangeTime = state.optString("nextChangeTime", "");
             snapshot.todayOutageHours = state.optDouble("todayOutageHours", 0);
+            snapshot.updatedAt = state.optString("updatedAt", "");
             readIntervals(state.optJSONArray("todayIntervals"), snapshot.today);
             readIntervals(state.optJSONArray("upcomingIntervals"), snapshot.upcoming);
         } catch (JSONException ignored) {
@@ -101,6 +107,7 @@ final class WidgetSnapshot {
             state.put("nextChangeTime", nextChangeTime);
             state.put("nextChangeLabel", nextChangeLabel);
             state.put("todayOutageHours", todayOutageHours);
+            state.put("updatedAt", updatedAt);
             state.put("upcomingIntervals", toArray(upcoming));
             state.put("todayIntervals", toArray(today));
         } catch (JSONException ignored) {
@@ -134,6 +141,8 @@ final class WidgetSnapshot {
         LocalDate todayDate = LocalDate.now(KYIV);
         long dayStart = todayDate.atStartOfDay(KYIV).toInstant().toEpochMilli();
         long dayEnd = todayDate.plusDays(1).atStartOfDay(KYIV).toInstant().toEpochMilli();
+        dayStartMs = dayStart;
+        dayEndMs = dayEnd;
 
         long offMinutes = 0;
         for (Interval interval : today) {
@@ -265,13 +274,96 @@ final class WidgetSnapshot {
         return String.join(", ", parts);
     }
 
-    /** «−6 год 11 хв» — те же единицы, что в интерфейсе, без десятых долей часа. */
+    /**
+     * «5 год 30 хв» — без знака минус.
+     *
+     * Раньше здесь стояло «−5 год 30 хв», и в одной строке со «Світло є» это читалось как
+     * «время ушло в минус на пять с половиной часов» или как «осталось 5 ч 30 мин». На самом
+     * деле это суммарные часы без света за сутки. Минус убран, а подпись говорит явно.
+     */
     String hoursLabel() {
         int total = (int) Math.round(Math.max(0, todayOutageHours) * 60);
         if (total <= 0) return "0 хв";
-        if (total < 60) return "−" + total + " хв";
+        if (total < 60) return total + " хв";
         int wholeHours = total / 60;
         int rest = total % 60;
-        return rest == 0 ? "−" + wholeHours + " год" : "−" + wholeHours + " год " + rest + " хв";
+        return rest == 0 ? wholeHours + " год" : wholeHours + " год " + rest + " хв";
+    }
+
+    /** Отключение, которое идёт прямо сейчас, либо null. */
+    Interval currentOff(long nowMs) {
+        Interval found = null;
+        for (Interval interval : upcoming) {
+            if (interval.startMs <= nowMs && nowMs < interval.endMs) {
+                if (found == null || interval.endMs > found.endMs) found = interval;
+            }
+        }
+        return found;
+    }
+
+    /** Ближайшее ещё не начавшееся отключение, либо null. */
+    Interval nextOff(long nowMs) {
+        Interval found = null;
+        for (Interval interval : upcoming) {
+            if (interval.startMs > nowMs) {
+                if (found == null || interval.startMs < found.startMs) found = interval;
+            }
+        }
+        return found;
+    }
+
+    /** Последнее уже закончившееся окно за сегодня (для приглушённого чипа «минуло»). */
+    Interval lastEndedToday(long nowMs) {
+        Interval found = null;
+        for (Interval interval : today) {
+            if (interval.endMs <= nowMs) {
+                if (found == null || interval.endMs > found.endMs) found = interval;
+            }
+        }
+        return found;
+    }
+
+    /** Крупная строка виджета: «До 20:00» либо «Увімкнуть о 13:00». */
+    String heroCountdown(long nowMs) {
+        Interval current = currentOff(nowMs);
+        if (current != null) return "Увімкнуть о " + HM.format(Instant.ofEpochMilli(current.endMs).atZone(KYIV));
+        Interval next = nextOff(nowMs);
+        if (next != null) return "До " + HM.format(Instant.ofEpochMilli(next.startMs).atZone(KYIV));
+        return "Змін не заплановано";
+    }
+
+    /** Подпись под крупной строкой: «наступне відключення 20:00–22:00». */
+    String nextWindowLabel(long nowMs) {
+        Interval window = currentOff(nowMs);
+        if (window == null) window = nextOff(nowMs);
+        if (window == null) return "";
+        return HM.format(Instant.ofEpochMilli(window.startMs).atZone(KYIV))
+            + "–"
+            + HM.format(Instant.ofEpochMilli(window.endMs).atZone(KYIV));
+    }
+
+    /** «✓ 09:30–13:00» — чип прошедшего окна. */
+    String chipLabel(Interval interval) {
+        if (interval == null) return "";
+        return HM.format(Instant.ofEpochMilli(interval.startMs).atZone(KYIV))
+            + "–"
+            + HM.format(Instant.ofEpochMilli(interval.endMs).atZone(KYIV));
+    }
+
+    /** Длительность окна словами: «2 год» / «3 год 30 хв». */
+    String durationLabel(Interval interval) {
+        if (interval == null) return "";
+        int total = (int) Math.max(0, Math.round((interval.endMs - interval.startMs) / 60_000.0));
+        if (total < 60) return total + " хв";
+        int hours = total / 60;
+        int rest = total % 60;
+        return rest == 0 ? hours + " год" : hours + " год " + rest + " хв";
+    }
+
+    /** «Оновлено о 16:24» из ISO-метки снимка; пустая строка, если метки нет. */
+    String updatedLabel() {
+        long ms = parseInstant(updatedAt);
+        if (ms <= 0) return "";
+        return HM.format(Instant.ofEpochMilli(ms).atZone(KYIV));
     }
 }

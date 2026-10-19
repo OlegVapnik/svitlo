@@ -13,6 +13,15 @@
     <string name="widget_schedule_title">Сьогодні без світла</string>
     <string name="widget_schedule_empty">Відключень на сьогодні немає</string>
     <string name="widget_refresh">Оновити графік</string>
+    <string name="widget_no_power_for_day">Без світла за добу: %1$s</string>
+    <string name="widget_hours_short">без світла %1$s</string>
+    <string name="widget_next_window">наступне відключення %1$s</string>
+    <string name="widget_off_window">відключення %1$s</string>
+    <string name="widget_updated_at">Оновлено о %1$s</string>
+    <string name="widget_hero_default">Немає даних</string>
+    <string name="widget_chip_duration">%1$s · %2$s</string>
+    <string name="widget_chip_past">✓ %1$s</string>
+    <string name="widget_chip_next">● %1$s</string>
     <string name="notification_channel_outages">Відключення та повернення світла</string>
     <string name="notification_channel_outages_desc">Попередження за 15 хвилин до відключення і коли світло повертається</string>
     <string name="update_download_title">Оновлення Svitlo</string>

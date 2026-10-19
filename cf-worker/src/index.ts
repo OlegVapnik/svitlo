@@ -1425,6 +1425,24 @@ async function materializeGpvEvents(env: Env, dates: string[]): Promise<number> 
   const list = rows.results ?? [];
   if (list.length === 0) return 0;
 
+  // Фингерпринт набора слотов. Без него крон каждые 20 минут делал INSERT OR REPLACE по
+  // всем ~1900 событиям за сегодня и завтра: OR REPLACE в SQLite — это DELETE+INSERT даже
+  // если не изменилось ни одно значение, и D1 считал обе строки написанными. Так за сутки
+  // сгорало ~77k из 100k лимита записи, хотя данные не менялись ни на байт.
+  const fingerprint = list.length + '·' + list
+    .map((row) => `${row.region}:${row.queue}:${row.date}:${row.time_from}-${row.time_to}`)
+    .sort()
+    .join('|');
+  const previous = await env.DB.prepare(
+    `SELECT value FROM snapshot_meta WHERE key = 'gpv_fingerprint'`,
+  ).first<{ value: string }>();
+  if (previous?.value === fingerprint) {
+    return -list.length;
+  }
+  await env.DB.prepare(`INSERT OR REPLACE INTO snapshot_meta (key, value, updated_at) VALUES (?, ?, ?)`)
+    .bind('gpv_fingerprint', fingerprint, new Date().toISOString())
+    .run();
+
   const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / EVENT_COLUMNS));
   const fetchedAt = new Date().toISOString();
   for (let start = 0; start < list.length; start += CHUNK) {
@@ -1710,6 +1728,9 @@ export async function scheduled(_event: ScheduledEvent, env: Env, ctx: Execution
   let gpvEvents = 0;
   try {
     gpvEvents = await materializeGpvEvents(env, [today, tomorrow]);
+    // Отрицательное число означает «отпечаток совпал, писать было нечего»: молчание на
+    // спокойном графике — норма, а не поломка. Это нужно видеть при разборе лимита D1.
+    if (gpvEvents < 0) console.log(`scheduled: ГПВ без изменений (${Math.abs(gpvEvents)} событий пропущено)`);
   } catch (error) {
     console.log(`scheduled: не удалось перенести ГПВ в outage_events (${String(error)})`);
   }

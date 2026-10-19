@@ -209,21 +209,6 @@ export const HomeHeroSection: React.FC = () => {
         : t('home.heroTitleOn'),
     minutesLabel: chromeMinutes ? t('home.chromeMinutes', { time: chromeMinutes }) : null,
   });
-  // (deleted_duplicate)
-  // Формування підсумкового рядка-відліку
-  const statusHeadline = useMemo(() => {
-    if (!windowSummary || !hasIntervals) return '';
-    if (isOff && windowSummary.offEndsAt) {
-      const nowOff = t('home.heroOffNow', { time: formatKyivTime(windowSummary.offEndsAt) });
-      return windowSummary.backInMinutes != null
-        ? `${nowOff} · ${t('home.heroBackIn', { time: formatMinutesUk(windowSummary.backInMinutes) })}`
-        : nowOff;
-    }
-    if (windowSummary.nextInMinutes != null) {
-      return t('home.heroNextOff', { time: formatMinutesUk(windowSummary.nextInMinutes) });
-    }
-    return t('home.heroNoNext');
-  }, [windowSummary, hasIntervals, isOff, t]);
 
   /**
    * Снимок для нативного Android-виджета и фоновых уведомлений.
@@ -326,6 +311,7 @@ export const HomeHeroSection: React.FC = () => {
       upcomingIntervals,
       // Сегодняшние окна целиком (включая уже прошедшие): панель 4×2 показывает их списком, а
       // сумма часов без света за сутки должна совпадать с графиком, а не с «остатком».
+      updatedAt: schedule?.lastImportedAt ?? new Date(nowMs).toISOString(),
       todayIntervals: todayIntervals
         .filter((interval) => interval.stateCode === OFF_STATE_CODE)
         .map((interval) => ({
@@ -506,50 +492,42 @@ export const HomeHeroSection: React.FC = () => {
           а рядок «У закладки + Сьогодні/Завтра» не сжимався, і коли сумарна ширина
           перевищувала ширину hero, флекс-строка виходила за межі секції та
           заїжджала на сусідній картці стану енергосистеми. */}
-      {/* Панель управления занимает два ряда, а не шесть.
-          Выбор очереди и «У закладки» стоят на ОДНОЙ строке: очередь тянется на всю
-          оставшуюся ширину, кнопка не сжимается. Раньше это были два отдельных этажа, и
-          первый экран уезжал вниз графиком. */}
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="flex w-full min-w-0 items-end gap-2 sm:flex-1 sm:flex-row sm:items-center">
-          {/* Вибір черги (запам'ятовується для кожної області) */}
-          <QueueSelector
-            queues={availableQueues}
-            selectedQueue={selectedQueue}
-            onSelect={selectQueue}
-            disabled={scheduleLoading}
-            className="min-w-0 flex-1"
-          />
+      {/* Панель управления. Сетка 12 групп обязана занимать всю ширину: рядом с широкой
+          кнопкой «У закладки» она сжималась до пары пикселей, и группы наезжали друг на друга.
+          Поэтому закладка переехала компактной звёздочкой в заголовок «Черга:», а ряд остался
+          один: сетка + переключатель даты. */}
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+        <QueueSelector
+          queues={availableQueues}
+          selectedQueue={selectedQueue}
+          onSelect={selectQueue}
+          disabled={scheduleLoading}
+          className="w-full min-w-0 sm:flex-1"
+          headerAction={
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full p-0"
+              disabled={!selectedQueue}
+              onClick={saveCurrentAsBookmark}
+              aria-label={t('home.addToBookmarks')}
+              title={t('home.addToBookmarks')}
+            >
+              <Star className="h-4 w-4" aria-hidden />
+            </Button>
+          }
+        />
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
-            disabled={!selectedQueue}
-            onClick={saveCurrentAsBookmark}
-            aria-label={t('home.addToBookmarks')}
-            title={t('home.addToBookmarks')}
-          >
-            <Star className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span className="truncate">{t('home.addBookmarkShort')}</span>
-          </Button>
-        </div>
-
-        {/* На телефоне кнопка и переключатель даты идут друг под другом, на десктопе — в ряд.
-            Раньше контейнер был `grid-cols-2`, а оба ребёнка несли `col-span-2`: сетка
-            получала 4 колонки вместо двух, и элементы наезжали друг на друга. */}
-        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:justify-end">
-          {/* Перемикач дати: Сьогодні / Завтра. Прежний был 28px высотой и ролью tablist
-              без реальных панелей — мелкая цель для пальца и роли враньё. Новый — 44px. */}
-          <DaySegment
-            value={selectedDayOffset === 0 ? 'today' : 'tomorrow'}
-            today={t('outages.today')}
-            tomorrow={t('outages.tomorrow')}
-            onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
-            className="w-full sm:w-auto"
-          />
-        </div>
+        {/* Перемикач дати: Сьогодні / Завтра. Прежний был 28px высотой и ролью tablist
+            без реальных панелей — мелкая цель для пальца и роли враньё. Новый — 44px. */}
+        <DaySegment
+          value={selectedDayOffset === 0 ? 'today' : 'tomorrow'}
+          today={t('outages.today')}
+          tomorrow={t('outages.tomorrow')}
+          onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
+          className="w-full sm:w-auto"
+        />
       </div>
 
       {/* Деликатная линия вместо волнистого разделителя: 1px и 6% белого — секция «управление»
@@ -658,51 +636,39 @@ export const HomeHeroSection: React.FC = () => {
                 />
               )}
 
-              {/* Великий заголовок "Світло є" / "Зараз без світла" */}
-              <h2
-                className={cn(
-                  'font-display mt-1 text-4xl font-bold tracking-tight sm:text-5xl',
-                  isOff ? 'text-destructive' : 'text-success',
-                )}
-              >
-                {isOff ? t('home.heroOff') : t('home.heroOn')}
-              </h2>
-
-              {statusHeadline && (
-                <p className="mt-1 text-sm font-semibold text-foreground sm:text-base">
-                  {statusHeadline}
-                </p>
-              )}
+              {/* Статус и таймер живут только в HeroStatus сверху. Здесь раньше стояли
+                  второй огромный «Світло є» и повтор «Наступне відключення через 3 год 35 хв»:
+                  на одном экране два одинаковых ответа, и человек не понимал, какой из них
+                  главный. Нижняя карточка отвечает на другой вопрос — «когда именно». */}
             </div>
+          </div>
 
-            {/* Статистичний бейдж загального часу без світла */}
-            {windowSummary && (
-              <div className="rounded-xl border border-border bg-card p-3 text-right shadow-xs">
-                <span className="block text-[11px] font-semibold text-muted-foreground">
-                  {t('home.offTodayLabel')}
-                </span>
-                <span className="block text-base font-bold text-foreground tabular">
+          {/* Сводка суток и «Поділитися» — одной строкой, как заголовок шкалы. */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {windowSummary ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface-container-high px-3 py-1.5 text-xs font-semibold text-on-surface-variant">
+                {t('home.offTodayLabel')}:
+                <span className="tabular text-sm font-bold text-foreground">
                   {formatMinutesUk(windowSummary.offMinutes)}
                 </span>
-              </div>
+              </span>
+            ) : (
+              <span />
+            )}
+            {selectedQueue && (
+              <ShareScheduleButton
+                queue={selectedQueue}
+                regionName={currentRegionData.nameUa ?? currentRegion}
+                date={selectedDate}
+                intervals={intervals}
+                className="w-full sm:w-auto"
+              />
             )}
           </div>
 
           {/* 24-годинний горизонтальний таймлайн із півгодинними комірками */}
           <div className="pt-1">
-            <Timeline24h
-              intervals={intervals}
-              date={selectedDate}
-              action={selectedQueue ? (
-                <ShareScheduleButton
-                  queue={selectedQueue}
-                  regionName={currentRegionData.nameUa ?? currentRegion}
-                  date={selectedDate}
-                  intervals={intervals}
-                  className="w-full sm:w-auto"
-                />
-              ) : undefined}
-            />
+            <Timeline24h intervals={intervals} date={selectedDate} />
 
             {/* Компактні інструменти: планувальник приладів і порівняння черг за пігулками.
                 Під таймлайном і кнопкою «Поділитися» — там, де людина вже побачила вікна зі

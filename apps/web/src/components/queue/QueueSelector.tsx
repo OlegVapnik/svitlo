@@ -11,6 +11,8 @@ interface QueueSelectorProps {
   onSelect: (queue: string) => void;
   className?: string;
   disabled?: boolean;
+  /** Компактная кнопка справа от подписи «Черга:» (например, «У закладки»). */
+  headerAction?: React.ReactNode;
 }
 
 export const QueueSelector: React.FC<QueueSelectorProps> = ({
@@ -19,6 +21,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
   onSelect,
   className,
   disabled = false,
+  headerAction,
 }) => {
   const { t } = useTranslation();
 
@@ -34,10 +37,13 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
 
   return (
     <div className={cn('space-y-2', className)}>
-      <span className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
-        <Layers className="h-3.5 w-3.5" aria-hidden />
-        {t('queues.queueLabel')}:
-      </span>
+      <div className="flex min-h-9 items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
+          <Layers className="h-3.5 w-3.5" aria-hidden />
+          {t('queues.queueLabel')}:
+        </span>
+        {headerAction}
+      </div>
 
       {isLargeList ? (
         <div className="relative inline-flex items-center">
@@ -69,7 +75,10 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
           // Строгая сетка 6×2 с ячейками одной ширины и высоты: выбор читается цветом, а не
           // деформацией формы. Морфинг «пузырей» (сквирклы, сжатие при нажатии) убран совсем —
           // от него интерфейс выглядел игрушечным, а границы ячеек «плыли» при каждом тапе.
-          className="grid w-78 max-w-full grid-cols-6 gap-1.5"
+          // w-full, а не фиксированные w-78: рядом с кнопкой «У закладки» сетка сжималась
+          // до ширины иконки, и 12 групп превращались в нечитаемую кашу «1/1 2/1 3/1…».
+          // min-w-11 держит палец: ячейка не может стать уже цели нажатия.
+          className="grid w-full min-w-0 grid-cols-6 gap-1.5"
         >
           {options.map((q) => {
             const isSelected = selectedQueue === q;
@@ -85,7 +94,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
                   onSelect(q);
                 }}
                 className={cn(
-                  'h-11 rounded-xl border text-xs font-semibold tabular transition-colors duration-150',
+                  'h-11 min-w-11 whitespace-nowrap rounded-xl border px-1 text-xs font-semibold tabular transition-colors duration-150',
                   'focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
                   isSelected
                     ? 'border-transparent bg-foreground font-bold text-background shadow-sm'

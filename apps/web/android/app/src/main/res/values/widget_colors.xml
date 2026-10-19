@@ -10,4 +10,6 @@
     <color name="svitlo_widget_danger">#F87171</color>
     <color name="svitlo_widget_success">#34D399</color>
     <color name="svitlo_widget_badge_bg">#1C1C24</color>
+    <color name="svitlo_widget_chip_accent_bg">#1B2740</color>
+    <color name="svitlo_widget_track">#262631</color>
 </resources>
