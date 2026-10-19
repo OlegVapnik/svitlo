@@ -2753,7 +2753,17 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
 
   if (path === '/status') {
     const statusKeys = mirrorReadKeys(snapshot, requestedRegion, today);
-    return json({ data: mirrorStatusPayload(snapshot, statusKeys, today) }, 200, headers);
+    return json(
+      {
+        data: {
+          ...mirrorStatusPayload(snapshot, statusKeys, today),
+          d1QuotaExceeded: d1UnavailableAt !== null,
+          d1UnavailableAt,
+        },
+      },
+      200,
+      headers,
+    );
   }
 
   // `/sync`: один пакет из тех же снимков. Новости и справочник адресов в зеркале отсутствуют,
