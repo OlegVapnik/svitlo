@@ -12,6 +12,10 @@ import { hapticTick } from '../../lib/haptics.js';
  * по разделам, а выбор одного из двух наборов данных, поэтому роль группы честнее.
  *
  * Высота 44px: палец, а не курсор.
+ *
+ * Подписи не обрезаются: `truncate` здесь превращал «Сьогодні» в «Сього…», и человек
+ * переставал различать дни. Переключатель не сжимается (`shrink-0`), а в узком экране
+ * растягивается до ширины контейнера — места для двух коротких слов там хватает всегда.
  */
 export interface DaySegmentProps {
   /** Ключ выбранного дня: YYYY-MM-DD. */
@@ -30,7 +34,9 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
     <div
       role="group"
       aria-label={t('timeline.daySegmentLabel')}
-      className={cn('inline-flex h-11 min-w-0 rounded-lg border border-border bg-surface-container p-0.5', className)}
+      className={// `flex`, а не `inline-flex`: в блочном родителе `w-full` у inline-flex отрабатывает
+      // по-разному, и переключатель вылезал за границу секции.
+      cn('flex h-11 min-w-0 shrink-0 rounded-lg border border-border bg-surface-container p-0.5', className)}
     >
       <button
         type="button"
@@ -40,7 +46,7 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
           onChange('today');
         }}
         className={cn(
-          'min-h-10 min-w-0 flex-1 rounded-md px-2 text-xs font-semibold transition-colors sm:px-3.5 sm:text-sm',
+          'min-h-10 min-w-0 flex-1 whitespace-nowrap rounded-md px-2 text-center text-xs font-semibold transition-colors sm:px-3.5 sm:text-sm',
           value === 'today'
             ? 'bg-primary text-primary-foreground'
             : 'text-muted-foreground hover:bg-muted',
@@ -56,7 +62,7 @@ export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, 
           onChange('tomorrow');
         }}
         className={cn(
-          'min-h-10 min-w-0 flex-1 rounded-md px-2 text-xs font-semibold transition-colors sm:px-3.5 sm:text-sm',
+          'min-h-10 min-w-0 flex-1 whitespace-nowrap rounded-md px-2 text-center text-xs font-semibold transition-colors sm:px-3.5 sm:text-sm',
           value === 'tomorrow'
             ? 'bg-primary text-primary-foreground'
             : 'text-muted-foreground hover:bg-muted',

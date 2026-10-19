@@ -10,7 +10,7 @@
  * а фронтенд показывает EmptyState. Подставлять «похожий» график хуже, чем не показать ничего.
  */
 
-import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeHouseNumber, normalizeQueue } from './address.js';
+import { isQueueCode, matchHouseNumber, normalizeAddress, normalizeHouseNumber, normalizeQueue, parseHouseNumber } from './address.js';
 import { collectChernihivOutages, fetchCityIds, type ChernihivOutage } from './chernihiv.js';
 // Разбор ГПВ из открытых Telegram-каналов операторов. Модуль — копия проверенного
 // `apps/api/src/services/telegram-schedule.service.ts`, чтобы оба сервера читали один пост одинаково.
@@ -332,14 +332,19 @@ async function canonicalDirectorySettlement(env: Env, regions: string[], value: 
        WHERE ${filter.clause} AND substr(normalized, -length(?)) = ?
        LIMIT 2`,
     ).bind(...filter.bindings, suffix, suffix).all<{ name: string }>();
-    if (qualified.results?.length === 1) return qualified.results[0]!.name;
-    if ((qualified.results?.length ?? 0) > 1) return input;
+    // Возвращаем НОРМИЛИЗОВАННЫЙ КЛЮЧ, а не отображаемое имя каталога. Раньше здесь
+    // возвращали `name` («м. Бровари»), и вызывающая сторона нормализовала его второй раз —
+    // получалось «м бровари», тогда как в `directory_streets.settlement_normalized` лежит
+    // «броварі». Сравнение не сходилось, и `/streets` отдавал пустоту для любого НП.
+    // Отдельные разновидности нормализации в разных слоях — источник этой ошибки.
+    if (qualified.results?.length === 1) return normalized;
+    if ((qualified.results?.length ?? 0) > 1) return normalized;
 
     const exact = await env.DB.prepare(
-      `SELECT name FROM directory_settlements
+      `SELECT normalized FROM directory_settlements
        WHERE ${filter.clause} AND normalized = ? LIMIT 1`,
-    ).bind(...filter.bindings, normalized).first<{ name: string }>();
-    return exact?.name ?? input;
+    ).bind(...filter.bindings, normalized).first<{ normalized: string }>();
+    return exact?.normalized ?? input;
   }, AGGREGATE_CACHE_TTL_MS);
 }
 
@@ -1953,6 +1958,26 @@ interface MirrorSnapshot {
   names: Record<string, string>;
   /** Все ключи фида, которые реально пришли. */
   cpus: string[];
+  /**
+   * Слоты, собранные нами сами и лежащие в `schedule_slots` (`source = energy-ua`).
+   *
+   * Зачем: зеркало отдаёт не все области и не все дни — у Киева расписания пустые. Раньше
+   * маршруты `/regions`, `/queues`, `/schedules` работали ТОЛЬКО от зеркала, поэтому собранные
+   * Scrapling графики лежали в D1 и не были видны ни в одном ответе. Теперь снимок включает
+   * оба источника, а приоритет у зеркала: наши слоты добавляются, если по этому ключу зеркало
+   * ничего не дало на эту дату.
+   */
+  d1Slots?: Record<string, SlotRow[]>;
+  /**
+   * Покрытие, собранное нашим собственным парсером (`schedule_coverage`).
+   *
+   * Для областей, которые мы разбираем сами, ЭТО источник истины. Внешнее зеркало отдаёт
+   * для них пустые таблицы как «свет есть по графику»: 48 ячеек со статусом «світло є»
+   * при полном отсутствии данных у оператора. Показывать человеку зелёный там, где висит
+   * `class="no_data"`, — худшая ошибка монитора отключений, поэтому при наличии своих
+   * данных покрытие берётся только из них, а зеркало используется лишь там, где своих нет.
+   */
+  d1Coverage?: Record<string, Array<{ queue: string; hasOutages: boolean }>>;
   /** Метка времени источника (не время нашего запроса). */
   timestamp: string | null;
   /** Когда снимок получен этим изолятом (ms). */
@@ -2035,7 +2060,8 @@ async function fetchMirror(env: Env): Promise<MirrorSnapshot> {
 
   mirrorSnapshotInflight = request;
   try {
-    const snapshot = await request;
+    const base = await request;
+    const snapshot = { ...base, d1Slots: await loadOwnSlots(env), d1Coverage: await loadOwnCoverage(env) };
     // Неудачный ответ тоже кэшируем на 5 минут: иначе каждый запрос при недоступном зеркале
     // будет ждать сеть и жечь CPU, пока D1 тоже недоступен.
     mirrorSnapshotCache = { expiresAt: Date.now() + MIRROR_SNAPSHOT_TTL_MS, snapshot };
@@ -2045,13 +2071,83 @@ async function fetchMirror(env: Env): Promise<MirrorSnapshot> {
   }
 }
 
-/** Слоты зеркала по ключам области. Ключи, которых нет в фиде, просто ничего не дают. */
+/**
+ * Слоты, собранные нашим собственным сборщиком и сохранённые в `schedule_slots`.
+ *
+ * Окно широкое намеренно: зеркало отдаёт не все области, а собранные нами графики не должны
+ * исчезать из ответа из-за того, что попали в соседний день. Всё равно отдаёт только
+ * `today`/`tomorrow`, поэтому лишнее окно не влияет на выдачу.
+ */
+async function loadOwnSlots(env: Env): Promise<Record<string, SlotRow[]>> {
+  try {
+    const result = await env.DB.prepare(
+      `SELECT region, queue, date, time_from, time_to, source FROM schedule_slots
+       WHERE date >= ? AND date <= ?`,
+    ).bind(addDays(kyivToday(), -1), addDays(kyivToday(), 7)).all<SlotRow>();
+    const grouped: Record<string, SlotRow[]> = {};
+    for (const row of result.results ?? []) {
+      (grouped[row.region] ??= []).push(row);
+    }
+    return grouped;
+  } catch {
+    // Нет D1 или таблицы — маршруты просто остаются на данных зеркала, как и раньше.
+    return {};
+  }
+}
+
+/** Покрытие по области на сегодня из `schedule_coverage` — только из проверенных источников. */
+async function loadOwnCoverage(env: Env): Promise<Record<string, Array<{ queue: string; hasOutages: boolean }>>> {
+  const grouped: Record<string, Array<{ queue: string; hasOutages: boolean }>> = {};
+  try {
+    const today = kyivToday();
+    const result = await env.DB.prepare(
+      `SELECT region, queue, has_outages FROM schedule_coverage
+       WHERE date = ? AND source <> 'mirror'`,
+    ).bind(today).all<{ region: string; queue: string; has_outages: number }>();
+    for (const row of result.results ?? []) {
+      (grouped[row.region] ??= []).push({
+        queue: normalizeQueue(row.queue),
+        hasOutages: Number(row.has_outages) > 0,
+      });
+    }
+  } catch {
+    return {};
+  }
+  return grouped;
+}
+
+/**
+ * Слоты по ключам области: сначала зеркало, затем наши собственные.
+ *
+ * Раньше ключ, которого нет в фиде, отбрасывался целиком (`present.has(key)`), из-за чего
+ * области без фида показывали пустые графики, хотя данные лежали в D1. Теперь отсутствие в
+ * зеркале не причина отбрасывать ключ — просто добавляем то, что собрали сами.
+ */
+/** Статус отключения из времени: идёт / запланировано / завершено. */
+function outageStatus(startsAt: string, endsAt: string): 'active' | 'scheduled' | 'finished' {
+  const now = Date.now();
+  const from = Date.parse(startsAt);
+  const to = Date.parse(endsAt);
+  if (Number.isFinite(from) && from <= now && Number.isFinite(to) && now < to) return 'active';
+  if (Number.isFinite(from) && from > now) return 'scheduled';
+  return 'finished';
+}
+
 function mirrorSlotsFor(snapshot: MirrorSnapshot, keys: string[]): Slot[] {
-  if (!snapshot.payload) return [];
   const present = new Set(snapshot.cpus);
+  const own = snapshot.d1Slots ?? {};
   const slots: Slot[] = [];
-  for (const key of [...new Set(keys)].filter((key) => present.has(key))) {
-    slots.push(...extractSlots(snapshot.payload, key));
+  const seen = new Set<string>();
+  for (const key of [...new Set(keys)]) {
+    if (present.has(key) && snapshot.payload) slots.push(...extractSlots(snapshot.payload, key));
+    if (key in own) {
+      for (const row of own[key]!) {
+        const id = `${row.region}|${row.queue}|${row.date}|${row.time_from}|${row.time_to}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        slots.push({ region: row.region, queue: row.queue, date: row.date, timeFrom: row.time_from, timeTo: row.time_to });
+      }
+    }
   }
   return mergeSlots(slots);
 }
@@ -2097,10 +2193,22 @@ interface MirrorFact {
  */
 function mirrorFacts(snapshot: MirrorSnapshot, today: string): Map<string, MirrorFact> {
   const facts = new Map<string, MirrorFact>();
-  if (!snapshot.payload) return facts;
-  for (const cpu of snapshot.cpus) {
+  // Раньше при пустом payload функция выходила сразу, а обход шёл только по ключам зеркала.
+  // В итоге области, для которых есть только собственные слоты в D1, вообще не попадали в
+  // `/regions` — выглядело как «графиков нет», хотя слоты в базе лежали.
+  const ownRegions = Object.keys(snapshot.d1Slots ?? {});
+  if (!snapshot.payload && ownRegions.length === 0) return facts;
+  for (const cpu of new Set([...snapshot.cpus, ...ownRegions])) {
     const slots = mirrorSlotsFor(snapshot, [cpu]);
-    const coverageToday = mirrorCoverageFor(snapshot, [cpu]).filter((entry) => entry.date === today);
+    // Своё покрытие имеет приоритет: если мы сами разобрали область и там стоит
+    // «Немає даних», зеркало не имеет права превратить это в «світло є за графіком».
+    const ownCoverageToday = snapshot.d1Coverage?.[cpu];
+    const coverageToday =
+      ownCoverageToday && ownCoverageToday.length > 0
+        ? ownCoverageToday
+        : snapshot.payload
+          ? mirrorCoverageFor(snapshot, [cpu]).filter((entry) => entry.date === today)
+          : [];
     const fact: MirrorFact = {
       queues: new Set<string>(),
       slots: slots.length,
@@ -2113,11 +2221,37 @@ function mirrorFacts(snapshot: MirrorSnapshot, today: string): Map<string, Mirro
       fact.queues.add(normalizeQueue(slot.queue));
       if (!fact.lastDate || slot.date > fact.lastDate) fact.lastDate = slot.date;
     }
+
+    // Очереди, у которых сегодня есть настоящие слоты. Покрытие по слотам — единственный
+    // источник права считать область покрытой, когда оператор обещает отключения.
+    const queuesWithSlotsToday = new Set<string>();
+    for (const slot of slots) {
+      if (slot.date === today) queuesWithSlotsToday.add(normalizeQueue(slot.queue));
+    }
+
     for (const entry of coverageToday) {
       const queue = normalizeQueue(entry.queue);
-      if (queue !== ALL_CLEAR_QUEUE) fact.todayCovered.add(queue);
+      // Строка покрытия с `has_outages = 1`, за которой нет ни одного слота, — это фантом:
+      // источник пообещал отключения и не отдал графика. Раньше она давала `covered: true`
+      // при `todaySlots: 0`, и область светилась зелёным при полном отсутствии данных.
+      // Публикация дня БЕЗ отключений (`has_outages = 0`) — законный allClear, его уважаем.
+      const backedBySlots = queuesWithSlotsToday.has(queue);
+      const publishedWithoutOutages = !entry.hasOutages;
+      if (queue !== ALL_CLEAR_QUEUE && (backedBySlots || publishedWithoutOutages)) {
+        fact.todayCovered.add(queue);
+      }
       if (entry.hasOutages) fact.todayOff.add(queue);
     }
+    // Дата публикации. Слоты её уже дали. Но когда оператор опубликовал график БЕЗ отключений,
+    // слотов нет, а покрытие есть — и дата жила только в `schedule_coverage`. Раньше она
+    // терялась, и покрытая область показывалась с пустой датой, что читалось как «не посчитали».
+    //
+    // Условие на `ownCoverageToday` было слишком узким: собственное покрытие есть не у всех
+    // источников, и области, покрытые зеркалом, оставались с `lastDate: null` — то есть их
+    // опубликованный allContinueDay выглядел как отсутствие данных. Врать нельзя только там,
+    // где покрытия нет вовсе, а оно здесь уже проверено перебором `coverageToday`.
+    if (!fact.lastDate && coverageToday.length > 0) fact.lastDate = today;
+
     facts.set(cpu, fact);
   }
   return facts;
@@ -2142,7 +2276,7 @@ function mirrorReadKeys(snapshot: MirrorSnapshot, requestedRegion: string, date:
   if (requestedRegion && requestedRegion !== canonical && FEED_KEYS.has(requestedRegion)) {
     return [requestedRegion];
   }
-  const feedKeys = dbRegions.filter((key) => snapshot.cpus.includes(key));
+  const feedKeys = dbRegions.filter((key) => snapshot.cpus.includes(key) || key in (snapshot.d1Slots ?? {}));
   if (feedKeys.length <= 1) return feedKeys.length > 0 ? feedKeys : dbRegions;
 
   const slots = feedKeys.map((key) => ({ key, slots: mirrorSlotsFor(snapshot, [key]) }));
@@ -2633,8 +2767,15 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
   for (const row of coverageRows.results ?? []) {
     const key = sourceKey(row.region, row.source);
     const entry = coverageByRegion.get(key) ?? { covered: new Set<string>(), off: new Set<string>() };
-    entry.covered.add(normalizeQueue(row.queue));
-    if (row.has_outages) entry.off.add(normalizeQueue(row.queue));
+    const queue = normalizeQueue(row.queue);
+    // Если у области сегодня НОЛЬ слотов, то ни одной очереди с отключениями там быть не может:
+    // источник не отдал графика. Строка покрытия, которая при этом обещает отключения, — фантом
+    // (так проявлялись ЦЕК, ДнЕМ, Днепропетровщина и Ивано-Франковщина: `covered: true` при
+    // `todaySlots: 0`, то есть область светилась зелёным, не имея ни одной цифры графика).
+    // Публикацию дня БЕЗ отключений (`has_outages = 0`) уважаем — это честный allClear.
+    const backedBySlots = (todaySlotsByRegion.get(key) ?? 0) > 0;
+    if (backedBySlots || !row.has_outages) entry.covered.add(queue);
+    if (row.has_outages) entry.off.add(queue);
     coverageByRegion.set(key, entry);
   }
 
@@ -2701,6 +2842,13 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
     // Область считаем покрытой, только когда день опубликовали ВСЕ её источники (у области с одной
     // сетью — она сама): молчащая сеть — это «не знаем», а не «график есть».
     const covered = activeKeys.length > 0 && coveredNetworks === activeKeys.length;
+
+    // Дата публикации для опубликованного дня БЕЗ отключений. Слотов у такого дня нет по
+    // определению (мы храним только тёмные часы), поэтому `MAX(date)` по слотам даёт null, и
+    // область отвечала `covered: true` при `lastDate: null`. Фронт читает `lastDate` как «график
+    // есть» и показывал «не посчитали» — то есть честный allClear выглядел как отсутствие
+    // данных. Здесь `covered` уже доказан покрытием, значит день действительно опубликован.
+    const effectiveLastDate = covered && lastDate === null ? today : lastDate;
     rows.push({
       cpu: entry.cpu,
       nameUa: canonicalRegionName(entry.cpu, mirrorNames),
@@ -2711,9 +2859,10 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
       // «сколько слотов когда-либо лежало в БД». Может быть 0 при `covered`: график вышел без
       // отключений — это «світло за графіком», а не «немає даних».
       todaySlots,
-      // null, пока область не импортирована. Подставлять сегодняшнюю дату значило бы врать:
-      // фронтенд по `lastDate` решает, есть ли график, и увидел бы «есть» у пустой области.
-      lastDate,
+      // null, пока область не импортирована. Подставлять сегодняшнюю дату можно только там, где
+      // покрытие доказано строкой `schedule_coverage`: у области, которую никто не импортировал,
+      // даты по-прежнему нет, и фронт честно скажет «не знаем».
+      lastDate: effectiveLastDate,
       feedKeys: [...entry.feedKeys],
       isActive: true,
       // `covered` — график на сегодня опубликован хотя бы по одной очереди;
@@ -2739,7 +2888,9 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
           queues: [...fact.queues].sort(compareQueueCodes),
           slots: fact.slots,
           todaySlots: keySource ? todaySlotsByRegion.get(sourceKey(key, keySource)) ?? 0 : 0,
-          lastDate: fact.lastDate,
+          // Тот же случай, что и у канонической области: у опубликованного дня без отключений
+          // слотов нет, а покрытие есть. Без даты такой allClear читался как «данных нет».
+          lastDate: coveredNetwork && fact.lastDate === null ? today : fact.lastDate,
           feedKeys: [key],
           parentCpu: entry.cpu,
           isActive: true,
@@ -2770,7 +2921,9 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
       queues: [...fact.queues].sort(compareQueueCodes),
       slots: fact.slots,
       todaySlots: cpuSource ? todaySlotsByRegion.get(sourceKey(cpu, cpuSource)) ?? 0 : 0,
-      lastDate: fact.lastDate,
+      // Как и в каталоге: покрытие без слотов = опубликованный день без отключений, и его дата
+      // равна сегодняшней. `null` здесь читался фронтом как «графика нет».
+      lastDate: coveredToday && fact.lastDate === null ? today : fact.lastDate,
       feedKeys: [cpu],
       isActive: cpu in REGION_NAMES || cpu in mirrorNames,
       covered: coveredToday,
@@ -2991,28 +3144,12 @@ async function resolveAddress(
   const streetHouses = housesFromJson(directoryStreet?.houses_json);
 
   // Уровень 1: конкретный дом на конкретной улице.
+  //
+  // Раньше здесь был запасной SELECT из `directory_houses`. Таблица намеренно оставлена пустой
+  // (все дома переехали в компактный `directory_streets.houses_json`), и запрос к пустой таблице
+  // на каждом промахе по номеру только тратил rows_read на Free Tier. Источник истины теперь
+  // один — `houses_json` улицы, читается ниже через `loadDirectoryStreet`.
   if (streetNormalized && input.house) {
-    const catalogHouses = await env.DB.prepare(
-      `SELECT house_number, queue, source FROM directory_houses
-       WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
-         AND house_normalized = ?
-       LIMIT 1`,
-    )
-      .bind(...filter.bindings, settlementNormalized, streetNormalized, normalizeHouseNumber(input.house))
-      .all<{ house_number: string; queue: string | null; source: string }>();
-    const exactCatalogHouse = catalogHouses.results?.[0];
-    if (exactCatalogHouse?.queue && isQueueCode(normalizeQueue(exactCatalogHouse.queue))) {
-      return {
-        queue: normalizeQueue(exactCatalogHouse.queue),
-        reason: 'exact-house',
-        source: exactCatalogHouse.source,
-        options: [],
-      };
-    }
-    // Строка с `queue = NULL` означает «дом обслуживают несколько подгрупп», а не «дом без
-    // группы»: нельзя обрывать поиск, ниже может быть точная карта `houses_json` или одна
-    // группа на всю улицу.
-
     // Дом из `houses_json`: номер ищем по шаблону, поэтому «12» находится и в диапазоне «1-19».
     // Диапазоны схлопнуты синхронизатором, и разворачивать их в отдельные строки не нужно.
     const exactStreetHouse = streetHouses.find((entry) => matchHouseNumber(input.house, entry.housePattern));
@@ -3136,16 +3273,22 @@ async function resolveAddress(
   };
 }
 
-/** Убирает повторы вариантов «дома → очередь», сохраняя порядок. */
+/** Убирает повторы «дом → очередь» за нормалізованим ключем і сортує числово: «2» перед «18». */
 function dedupeQueues(options: Array<{ housePattern: string; queue: string }>): Array<{ housePattern: string; queue: string }> {
   const seen = new Set<string>();
   const result: Array<{ housePattern: string; queue: string }> = [];
   for (const option of options) {
-    const key = `${option.housePattern}|${option.queue}`;
+    const key = `${normalizeHouseNumber(option.housePattern)}|${option.queue}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(option);
   }
+  result.sort((left, right) => {
+    const leftNum = parseHouseNumber(left.housePattern) ?? Number.MAX_SAFE_INTEGER;
+    const rightNum = parseHouseNumber(right.housePattern) ?? Number.MAX_SAFE_INTEGER;
+    if (leftNum !== rightNum) return leftNum - rightNum;
+    return left.housePattern.localeCompare(right.housePattern, 'uk');
+  });
   return result;
 }
 
@@ -3174,17 +3317,6 @@ interface AddressVoteTally {
  * IP жителя — для подсчёта голосов достаточно несвязанного с личностью отпечатка. Первые
  * 16 символов SHA-256 (64 бита) дают достаточную уникальность и короткий первичный ключ.
  */
-async function addressVoterHash(request: Request, payload: Record<string, unknown>): Promise<string> {
-  const ip = request.headers.get('CF-Connecting-IP') ?? '';
-  const agent = request.headers.get('User-Agent') ?? '';
-  const installId = String(payload['clientInstallId'] ?? '').trim().slice(0, 64);
-  const bytes = new TextEncoder().encode(`${ip}|${agent}|${installId}`);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 16);
-}
 
 /**
  * Текущее распределение голосов по дому.
@@ -3192,18 +3324,21 @@ async function addressVoterHash(request: Request, payload: Record<string, unknow
  * `verified` — тот самый кворум. Если голоса разделились (например 2/2 и 2/1), лидер без 70%
  * остаётся `community_pending`: показывать его как проверенный факт нельзя.
  */
+/**
+ * Голосование и кворум удалены по решению владельца продукта (18.10.2026).
+ *
+ * Функция оставлена как честный заглушечный слой: источник официальных данных больше нельзя
+ * переопределить голосованием, поэтому подтверждённой кем-то группы не существует.
+ * Удалять её целиком опасно: на неё ссылается код формирования ответа `/addresses/resolve`.
+ */
 async function readAddressVotes(
   env: Env,
   key: AddressVoteKey,
   fallbackQueue = '',
 ): Promise<AddressVoteTally> {
-  const rows = await env.DB.prepare(
-    `SELECT queue, COUNT(*) AS votes FROM address_queue_votes
-     WHERE region = ? AND settlement_norm = ? AND street_norm = ? AND house_norm = ?
-     GROUP BY queue ORDER BY votes DESC, queue ASC`,
-  )
-    .bind(key.region, key.settlementNorm, key.streetNorm, key.houseNorm)
-    .all<{ queue: string; votes: number }>();
+  void env;
+  void key;
+  const rows: { results?: Array<{ queue: string; votes: number }> } = { results: [] };
 
   const tallies = (rows.results ?? []).map((row) => ({
     queue: normalizeQueue(row.queue),
@@ -3229,26 +3364,6 @@ async function readAddressVotes(
  * а не добавляет второй. `WHERE queue <> excluded.queue` не тратит `rows_written`, когда
  * человек нажал «Підтвердити» повторно с той же группой.
  */
-async function recordAddressVote(
-  env: Env,
-  key: AddressVoteKey,
-  queue: string,
-  voterHash: string,
-  updatedAt: string,
-): Promise<AddressVoteTally> {
-  await env.DB.prepare(
-    `INSERT INTO address_queue_votes
-       (region, settlement_norm, street_norm, house_norm, voter_hash, queue, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(region, settlement_norm, street_norm, house_norm, voter_hash) DO UPDATE SET
-       queue = excluded.queue,
-       updated_at = excluded.updated_at
-     WHERE address_queue_votes.queue <> excluded.queue`,
-  )
-    .bind(key.region, key.settlementNorm, key.streetNorm, key.houseNorm, voterHash, queue, updatedAt)
-    .run();
-  return readAddressVotes(env, key, queue);
-}
 
 /**
  * Подтверждённый жителем адрес → голос за очередь и, после кворума, общий справочник D1.
@@ -3267,169 +3382,12 @@ async function recordAddressVote(
  * бесплатном тарифе считает каждую запись, а повторные нажатия «Це моя група» не должны
  * расходовать лимит.
  */
-async function handleAddressConfirm(request: Request, env: Env): Promise<Response> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується JSON' } }, 400);
-  }
-  if (typeof body !== 'object' || body === null) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Очікується об’єкт' } }, 400);
-  }
-
-  const payload = body as Record<string, unknown>;
-  const requestedRegion = String(payload['region'] ?? '').trim();
-  const region = canonicalRegionCpu(requestedRegion);
-  if (!REGION_CATALOG.some((entry) => entry.cpu === region)) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: `Невідомий регіон «${requestedRegion}»` } }, 400);
-  }
-
-  const settlementInput = String(payload['settlement'] ?? '').trim();
-  const street = String(payload['street'] ?? '').trim();
-  const house = String(payload['house'] ?? '').trim();
-  const queue = normalizeQueue(String(payload['queue'] ?? ''));
-
-  if (settlementInput.length < 2 || settlementInput.length > 80) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Населений пункт — від 2 до 80 символів' } }, 400);
-  }
-  if (street.length < 2 || street.length > 80) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Вулиця — від 2 до 80 символів' } }, 400);
-  }
-  if (house.length < 1 || house.length > 16) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Будинок — від 1 до 16 символів' } }, 400);
-  }
-  if (!isQueueCode(queue)) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: `Невірний код черги «${queue}»` } }, 400);
-  }
-
-  const settlement = await canonicalDirectorySettlement(env, [region], settlementInput);
-  const settlementNormalized = normalizeAddress(settlement);
-  const streetNormalized = normalizeAddress(street);
-  const housePattern = normalizeHouseNumber(house);
-  if (!settlementNormalized || !streetNormalized || !housePattern) {
-    return json({ error: { code: 'VALIDATION_ERROR', message: 'Адреса не нормалізується' } }, 400);
-  }
-
-  // Официальная привязка дома неприкосновенна. Раньше здесь стоял `INSERT ... DO UPDATE`
-  // без проверки источника: один клик мог переписать выгрузку ОСР, и «2/2 из справочника»
-  // молча превращалось в «2/1 от соседа». Теперь голос возвращает официальную группу и не
-  // трогает строку справочника.
-  const existing = await env.DB.prepare(
-    `SELECT queue, source FROM address_queues
-     WHERE region = ? AND settlement_normalized = ? AND street_normalized = ? AND house_pattern = ?`,
-  )
-    .bind(region, settlementNormalized, streetNormalized, housePattern)
-    .first<{ queue: string; source: string }>();
-
-  if (existing && existing.source !== 'community') {
-    return json({
-      data: {
-        saved: false,
-        region,
-        queue: normalizeQueue(existing.queue),
-        source: existing.source,
-        housePattern,
-        confidence: 'official',
-        votesCount: 0,
-        protected: true,
-      },
-    }, 200);
-  }
-
-  const updatedAt = new Date().toISOString();
-  const voteKey = {
-    region,
-    settlementNorm: settlementNormalized,
-    streetNorm: streetNormalized,
-    houseNorm: housePattern,
-  };
-  const voterHash = await addressVoterHash(request, payload);
-  const tally = await recordAddressVote(env, voteKey, queue, voterHash, updatedAt);
-
-  // Названия населённого пункта и улицы нужны подсказкам. `source` существующей строки не
-  // понижаем: справочник `curated` остаётся справочником, даже если его дополнил житель.
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO directory_settlements (region, name, normalized, source)
-       VALUES (?, ?, ?, 'community')
-       ON CONFLICT(region, normalized) DO UPDATE SET
-         name = excluded.name
-       WHERE directory_settlements.name <> excluded.name`,
-    ).bind(region, settlement, settlementNormalized),
-    env.DB.prepare(
-      `INSERT INTO directory_streets (region, settlement_normalized, name, normalized, source)
-       VALUES (?, ?, ?, ?, 'community')
-       ON CONFLICT(region, settlement_normalized, normalized) DO UPDATE SET
-         name = excluded.name
-       WHERE directory_streets.name <> excluded.name`,
-    ).bind(region, settlementNormalized, street, streetNormalized),
-  ]);
-
-  // В общий справочник адрес попадает только после кворума. До него голос живёт в
-  // `address_queue_votes`: сосед увидит осторожную подсказку, а не «100% проверенный» факт.
-  if (tally.verified) {
-    await env.DB.prepare(
-      `INSERT INTO address_queues
-         (region, settlement_name, settlement_normalized, street_name, street_normalized,
-          house_pattern, queue, source, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'community', ?)
-       ON CONFLICT(region, settlement_normalized, street_normalized, house_pattern) DO UPDATE SET
-         settlement_name = excluded.settlement_name,
-         street_name = excluded.street_name,
-         queue = excluded.queue,
-         updated_at = excluded.updated_at
-       WHERE address_queues.source = 'community'
-         AND (address_queues.queue <> excluded.queue
-              OR address_queues.settlement_name <> excluded.settlement_name
-              OR address_queues.street_name <> excluded.street_name)`,
-    )
-      .bind(region, settlement, settlementNormalized, street, streetNormalized, housePattern, tally.leaderQueue, updatedAt)
-      .run();
-  } else {
-    // Кворум распался (например, голос переехал на другую группу): убираем community-строку,
-    // иначе список домов улицы показывал бы «подтверждённую» группу, которой больше нет.
-    // Официальные строки этот DELETE не трогает — фильтр по `source = 'community'`.
-    await env.DB.prepare(
-      `DELETE FROM address_queues
-       WHERE region = ? AND settlement_normalized = ? AND street_normalized = ?
-         AND house_pattern = ? AND source = 'community'`,
-    )
-      .bind(region, settlementNormalized, streetNormalized, housePattern)
-      .run();
-  }
-
-  invalidateAddressCache(settlementNormalized);
-
-  return json({
-    data: {
-      saved: true,
-      region,
-      queue: tally.leaderQueue,
-      source: 'community',
-      housePattern,
-      confidence: tally.verified ? 'community_verified' : 'community_pending',
-      votesCount: tally.leaderVotes,
-      totalVotes: tally.totalVotes,
-    },
-  }, 201);
-}
 
 /**
  * Сбрасывает справочные ответы по конкретному НП: подсказки улиц, домов и `resolve`.
  * Ключи `memoryCache` содержат нормализованный НП, а готовые HTTP-ответы — путь `/addresses/`;
  * после подтверждения сосед должен увидеть новый дом без ожидания TTL.
  */
-function invalidateAddressCache(settlementNormalized: string): void {
-  for (const key of memoryCache.keys()) {
-    if (key.startsWith('address-') && key.includes(settlementNormalized)) {
-      memoryCache.delete(key);
-    }
-  }
-  for (const key of httpMemoryCache.keys()) {
-    if (key.includes('/addresses/')) httpMemoryCache.delete(key);
-  }
-}
 
 /**
  * Хеш содержимого офлайн-пакета (FNV-1a, 32 бита) в форме weak-ETag.
@@ -4292,18 +4250,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       // чипов: именно эти данные приходят из живого графика, а `directory_houses` — старый импорт.
       const streetDirectory = await loadDirectoryStreet(env, filter, settlementNormalized, streetNormalized);
       const streetHouses = housesFromJson(streetDirectory?.houses_json);
-      const directoryRows = await env.DB.prepare(
-        `SELECT house_number AS house_pattern, queue FROM directory_houses
-         WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
-         ORDER BY house_number
-         LIMIT 200`,
-      )
-        .bind(...filter.bindings, settlementNormalized, streetNormalized)
-        .all<{ house_pattern: string; queue: string | null }>();
-      const knownHouseNumbers = new Set([
-        ...streetHouses.map((row) => row.housePattern),
-        ...(directoryRows.results ?? []).map((row) => row.house_pattern),
-      ]);
+      // Раньше сюда же подмешивался SELECT из `directory_houses`. Таблица намеренно пуста:
+      // все дома живут в `houses_json` улицы, и запрос к пустой таблице на каждом открытии
+      // списка домов только съедал rows_read на Free Tier. Убрано осознанно.
+      const knownHouseNumbers = new Set(streetHouses.map((row) => row.housePattern));
       const legacyRows = await env.DB.prepare(
         `SELECT house_pattern, queue FROM address_queues
          WHERE ${filter.clause} AND settlement_normalized = ? AND street_normalized = ?
@@ -4315,11 +4265,6 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
       const entries = [
         ...streetHouses.map((row) => ({ ...row, source: 'directory' })),
-        ...(directoryRows.results ?? []).map((row) => ({
-          housePattern: row.house_pattern,
-          queue: row.queue,
-          source: 'directory',
-        })),
         ...(legacyRows.results ?? [])
           .filter((row) => !knownHouseNumbers.has(row.house_pattern))
           .map((row) => ({ housePattern: row.house_pattern, queue: row.queue, source: 'legacy' })),
@@ -4438,10 +4383,8 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     });
   }
 
-  if (path === '/addresses/confirm') return handleAddressConfirm(request, env);
   // Старый маршрут ведёт в тот же кворум: раньше он делал `INSERT OR REPLACE` поверх
   // официальных привязок, и один запрос мог молча переписать справочник оператора.
-  if (path === '/addresses/contribute') return handleAddressConfirm(request, env);
 
   // Остальные разделы зеркало не отдаёт, и выдумывать их нельзя. Честная пустая выдача:
   // фронтенд на ней показывает свой EmptyState, а не рисует вымышленные отключения.
@@ -4466,6 +4409,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       addressesNormalized: row['addresses_raw']!,
       streets: [],
       kind: row['kind'] === 'emergency' ? ('repair' as const) : (row['kind'] as 'repair' | 'gpv'),
+      // Статус не хранится колонкой: он выводится из времени. Раньше поле просто не
+      // отдавалось, и фронтенд собирал ключ `outages.${status}` из `undefined` — в интерфейсе
+      // это выглядело как «outages.undefined».
+      status: outageStatus(row['starts_at']!, row['ends_at']!),
       reason: row['reason'] ?? null,
       queue: null,
       regionCpu: row['region']!,

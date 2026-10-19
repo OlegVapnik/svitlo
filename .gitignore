@@ -2,6 +2,8 @@ node_modules/
 dist/
 .turbo/
 .env
+.env.local
+.env.*.local
 *.log
 nohup.out
 .DS_Store

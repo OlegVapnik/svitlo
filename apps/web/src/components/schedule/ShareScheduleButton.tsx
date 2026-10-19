@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Loader2, Share2, TriangleAlert } from 'lucide-react';
+import { Check, Loader2, Minimize2, Share2, SquareDashed, TriangleAlert } from 'lucide-react';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { shareScheduleCard, type ShareCardLabels } from '../../lib/share-card.js';
 import { OFF_STATE_CODE } from '../../lib/scheduleWindow.js';
@@ -27,6 +27,13 @@ export interface ShareScheduleButtonProps {
   date: string;
   intervals: ScheduleIntervalUtc[];
   className?: string;
+  /**
+   * Палитра карточки. Если не задана, берётся текущая тема приложения: тёмно-серая
+   * картинка в светлом интерфейсе выглядит вклеенной из чужого приложения.
+   */
+  theme?: 'dark' | 'light';
+  /** 'compact' убирает список окон: та же шкала на 480 px ниже. */
+  variant?: 'full' | 'compact';
 }
 
 export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
@@ -35,9 +42,14 @@ export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
   date,
   intervals,
   className,
+  theme,
+  variant,
 }) => {
   const { t } = useTranslation();
   const [state, setState] = useState<ShareState>('idle');
+  // Выбор варианта живёт здесь, а не в настройках: это разовое решение перед отправкой,
+  // и просить человека сначала сходить в настройки ради «картинка пониже» — лишний шаг.
+  const [cardVariant, setCardVariant] = useState<'full' | 'compact'>(variant ?? 'full');
 
   // Итог («Надіслано» / «Картинку збережено») — подсказка на пару секунд, а не новый статус кнопки.
   useEffect(() => {
@@ -87,6 +99,11 @@ export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
           ? 'on'
           : 'unknown';
 
+    // Тему читаем в момент нажатия, а не в рендере: пользователь мог переключить её
+    // после того, как кнопка появилась на экране.
+    const activeTheme =
+      theme ?? (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+
     const result = await shareScheduleCard({
       queue,
       regionName,
@@ -95,6 +112,8 @@ export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
       labels,
       statusLabel,
       statusTone,
+      theme: activeTheme,
+      variant: cardVariant,
     });
     if (result === 'cancelled') {
       setState('idle');
@@ -118,18 +137,39 @@ export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
   const Icon =
     state === 'busy' ? Loader2 : state === 'failed' ? TriangleAlert : state === 'idle' ? Share2 : Check;
 
+  const isCompact = cardVariant === 'compact';
+
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      onClick={() => void handleShare()}
-      disabled={state === 'busy'}
-      aria-live="polite"
-      className={cn('gap-2', state === 'failed' && 'text-destructive', className)}
-    >
-      <Icon className={cn('h-4 w-4', state === 'busy' && 'animate-spin')} aria-hidden />
-      {text}
-    </Button>
+    <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => void handleShare()}
+        disabled={state === 'busy'}
+        aria-live="polite"
+        className={cn('gap-2', state === 'failed' && 'text-destructive', className)}
+      >
+        <Icon className={cn('h-4 w-4', state === 'busy' && 'animate-spin')} aria-hidden />
+        {text}
+      </Button>
+
+      {/* Переключатель высоты карточки. Иконки, а не текст: рядом с кнопкой уже есть
+          подпись результата, и третья надпись здесь превращалась бы в мешанину. */}
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={() => setCardVariant(isCompact ? 'full' : 'compact')}
+        aria-pressed={isCompact}
+        aria-label={isCompact ? t('share.variantFull') : t('share.variantCompact')}
+        title={isCompact ? t('share.variantFull') : t('share.variantCompact')}
+        className="shrink-0 px-2 text-muted-foreground"
+      >
+        {isCompact
+          ? <SquareDashed className="h-4 w-4" aria-hidden />
+          : <Minimize2 className="h-4 w-4" aria-hidden />}
+      </Button>
+    </div>
   );
 };

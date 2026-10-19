@@ -491,8 +491,12 @@ export const HomeHeroSection: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Панель керування: перемикач дати та вибір черги області */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* 2. Панель керування: вибір черги та перемикач дати.
+          `sm:flex-wrap` і `min-w-0` — не косметика: вибір черги зафіксовано на w-78,
+          а рядок «У закладки + Сьогодні/Завтра» не сжимався, і коли сумарна ширина
+          перевищувала ширину hero, флекс-строка виходила за межі секції та
+          заїжджала на сусідній картці стану енергосистеми. */}
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         {/* Вибір черги (запам'ятовується для кожної області) */}
         <QueueSelector
           queues={availableQueues}
@@ -501,12 +505,15 @@ export const HomeHeroSection: React.FC = () => {
           disabled={scheduleLoading}
         />
 
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center sm:justify-end">
+        {/* На телефоне кнопка и переключатель даты идут друг под другом, на десктопе — в ряд.
+            Раньше контейнер был `grid-cols-2`, а оба ребёнка несли `col-span-2`: сетка
+            получала 4 колонки вместо двух, и элементы наезжали друг на друга. */}
+        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="col-span-2 w-full gap-1.5 rounded-lg px-2 text-xs sm:col-span-1 sm:w-auto sm:px-3 sm:text-sm"
+            className="min-w-0 w-full gap-1.5 rounded-lg px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
             disabled={!selectedQueue}
             onClick={saveCurrentAsBookmark}
             aria-label={t('home.addToBookmarks')}
@@ -523,7 +530,7 @@ export const HomeHeroSection: React.FC = () => {
             today={t('outages.today')}
             tomorrow={t('outages.tomorrow')}
             onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
-            className="col-span-2 w-full sm:col-span-1 sm:w-auto"
+            className="w-full sm:w-auto"
           />
         </div>
       </div>

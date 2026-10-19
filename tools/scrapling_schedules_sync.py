@@ -241,6 +241,9 @@ def periods_to_slots(periods: list[dict[str, Any]]) -> dict[str, list[tuple[str,
     return grouped
 
 
+
+
+
 def extract_days(html: str, queue: str, today: str, tomorrow: str) -> list[DayResult]:
     """Return today/tomorrow intervals plus an honest coverage flag for each."""
     periods_match = PERIODS_RE.search(html)
@@ -259,15 +262,31 @@ def extract_days(html: str, queue: str, today: str, tomorrow: str) -> list[DayRe
         tomorrow_block = block_between(html, "Відключення завтра", ("</main>",))
     slots_by_date = periods_to_slots(periods + tomorrow_periods)
 
-    # "Немає даних" means the operator has not published a schedule for that day.
-    # An empty periods array without that marker is a published all-clear day.
-    # A published day always renders the half-hour scale; an unpublished day has
-    # only the "Немає даних" placeholder (the scale itself may still contain a
-    # nested no_data block for an empty periods list — that is an all-clear day).
-    today_covered = ("scale_hours" in today_block) if today_block else bool(slots_by_date.get(today))
-    tomorrow_covered = ("scale_hours" in tomorrow_block) if tomorrow_block else bool(
-        slots_by_date.get(tomorrow)
-    )
+
+def is_day_published(block: str, slots: list) -> bool:
+    """Опубликован ли день по разметке Energy-UA.
+
+    Правило ровно одно, и оно проверяется тестами в `tests/test_scrapling_schedules.py`:
+    побеждает наличие заполненной ячейки `class="hour_status <класс>"` либо интервалов.
+    Это страхует ОБРАТНУЮ ошибку: день без отключений — это зелёные ячейки, а не пустота,
+    и внутри такого блока может лежать вложенный `no_data` (так помечается пустой список
+    периодов). Если судить только по `no_data`, честный «світло є за графіком» был бы
+    выброшен как «немає даних» — тоже ложь, просто противоположная.
+    Отсутствие публикации фиксируем, только когда ячеек нет вовсе И оператор показал
+    заглушку «Немає даних».
+
+    Отдельно: сам блок `scale_hours` рендерится ВСЕГДА (48 ячеек), поэтому его наличие
+    ничего не доказывает. Именно на этом ошиблись первые версии парсера: они объявляли
+    покрытой область, у которой на странице висел `class="no_data"`.
+    """
+    if slots or re.search(r'class="hour_status [a-z_]+', block or ""):
+        return True
+    return not ("no_data" in (block or "") or "Немає даних" in (block or "")) and False
+
+    # Правило вынесено в `is_day_published` и покрыто тестами: не дублируем его здесь,
+    # иначе тесты проверяли бы копию, а не рабочий код.
+    today_covered = is_day_published(today_block, slots_by_date.get(today, []))
+    tomorrow_covered = is_day_published(tomorrow_block, slots_by_date.get(tomorrow, []))
     if slots_by_date.get(today):
         today_covered = True
     if slots_by_date.get(tomorrow):

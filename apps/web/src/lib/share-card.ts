@@ -2,6 +2,7 @@ import type { ScheduleIntervalUtc } from '@svitlo/shared';
 import { OFF_STATE_CODE, kyivOffset, minutesOfDay, minutesToHm } from './scheduleWindow.js';
 import { UNCERTAIN_STATE_CODE } from './day-schedule.js';
 import { kyivDateKey } from './outage-dates.js';
+import { mergeIntervals } from './intervals.js';
 
 /**
  * Картка графіка у PNG (1080×1350) для Telegram/Viber.
@@ -20,8 +21,17 @@ import { kyivDateKey } from './outage-dates.js';
 
 export const CARD_WIDTH = 1080;
 export const CARD_HEIGHT = 1350;
+/** Компактная карточка: шкала и подпись без списка окон — на 480 px ниже. */
+export const CARD_HEIGHT_COMPACT = 870;
 
-const COLORS = {
+/** Высота холста под выбранный вариант карточки. */
+export function cardHeight(input: Pick<ShareCardInput, 'variant'>): number {
+  return input.variant === 'compact' ? CARD_HEIGHT_COMPACT : CARD_HEIGHT;
+}
+
+type CardPalette = typeof DARK_COLORS;
+
+const DARK_COLORS = {
   background: '#09090B',
   panel: '#121216',
   panelBorder: '#27272A',
@@ -33,7 +43,35 @@ const COLORS = {
   off: '#F43F5E',
   uncertain: '#F59E0B',
   hairline: '#3F3F46',
+  glow: 'rgba(16,185,129,0.16)',
+  lightFill: 'rgba(16,185,129,0.35)',
 };
+
+/** Светлая палитра: те же четыре состояния сети, но на белом фоне. */
+const LIGHT_COLORS: CardPalette = {
+  background: '#FAFAFA',
+  panel: '#FFFFFF',
+  panelBorder: '#E4E4E7',
+  text: '#09090B',
+  muted: '#52525B',
+  faint: '#71717A',
+  track: '#E4E4E7',
+  on: '#059669',
+  off: '#E11D48',
+  uncertain: '#D97706',
+  hairline: '#D4D4D8',
+  glow: 'rgba(16,185,129,0.10)',
+  lightFill: 'rgba(16,185,129,0.22)',
+};
+
+/**
+ * Активная палитра текущей отрисовки.
+ *
+ * Сделано переменной модуля, а не параметром каждой функции: палитра нужна двадцати
+ * вызовам ниже, и протаскивать её через все сигнатуры значило бы только шум. Карточка
+ * рисуется синхронно и целиком, поэтому смены палитры на re-render не всплывают.
+ */
+let COLORS: CardPalette = DARK_COLORS;
 
 const FONT_STACK = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
@@ -60,6 +98,17 @@ export interface ShareCardInput {
   statusTone?: 'on' | 'off' | 'unknown';
   labels: ShareCardLabels;
   generatedAt?: Date;
+  /**
+   * Палитра карточки. По умолчанию тёмная (Obsidian Dark), но в светлой теме приложения
+   * картинка со тёмным фоном выглядит чужеродно — поэтому тема выбирается по текущей.
+   */
+  theme?: 'dark' | 'light';
+  /**
+   * 'full' — карточка со списком окон отключений (по умолчанию).
+   * 'compact' — только шкала и подпись: та же информация на 60% высоты, для чатов,
+   * где длинная картинка всё равно приходится долистывать.
+   */
+  variant?: 'full' | 'compact';
 }
 
 /** Відрізок на шкалі картки. */
@@ -84,13 +133,19 @@ export function cardSegments(intervals: readonly ScheduleIntervalUtc[], date: st
   return segments.sort((left, right) => left.from - right.from);
 }
 
-/** Отключения для списка под шкалой: только реальные (код 3), по порядку. */
+/**
+ * Окна отключений для списка под шкалой: только реальные (код 3), и **склеенные**.
+ *
+ * Источник отдаёт получасовые слоты, поэтому в сыром виде список читался как «18:00–18:30,
+ * 18:30–19:00, …» — восемь строк об одном шестичасовом перебораз. `mergeIntervals` собирает
+ * их в непрерывные окна, и человек видит «18:00 – 00:00 · 6 год».
+ */
 export function cardOutages(intervals: readonly ScheduleIntervalUtc[], date: string): CardSegment[] {
-  return intervals
+  const slots = intervals
     .filter((interval) => interval.stateCode === OFF_STATE_CODE)
-    .map((interval) => ({ from: minutesOfDay(interval.startsAt, date), to: minutesOfDay(interval.endsAt, date), tone: 'off' as const }))
-    .filter((segment) => segment.to > segment.from)
-    .sort((left, right) => left.from - right.from);
+    .map((interval) => ({ startsAt: interval.startsAt, endsAt: interval.endsAt }))
+    .filter((slot) => minutesOfDay(slot.startsAt, date) < minutesOfDay(slot.endsAt, date));
+  return mergeIntervals(slots).map((window) => ({ from: window.startMin, to: window.endMin, tone: 'off' as const }));
 }
 
 /** Дата карточки по-украински: «17 жовтня 2026 р.» — месяцы берём из Intl, не из своих таблиц. */
@@ -180,11 +235,14 @@ function nowMinutesFor(date: string, now: Date): number | null {
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D): void {
+  // Высота берётся из самого canvas: у компактной карточки она меньше, и жёстко
+  // зашитый CARD_HEIGHT оставил бы снизу пустое поле во всю высоту тёмной плашки.
+  const height = ctx.canvas.height;
   ctx.fillStyle = COLORS.background;
-  ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+  ctx.fillRect(0, 0, CARD_WIDTH, height);
   // Мягкое изумрудное свечение сверху: акцент Obsidian Dark без второго цвета палитры.
   const glow = ctx.createLinearGradient(0, 0, 0, 520);
-  glow.addColorStop(0, 'rgba(16,185,129,0.16)');
+  glow.addColorStop(0, COLORS.glow);
   glow.addColorStop(1, 'rgba(9,9,11,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, CARD_WIDTH, 520);
@@ -209,11 +267,16 @@ function drawHeader(ctx: CanvasRenderingContext2D, input: ShareCardInput): void 
   ctx.fillStyle = COLORS.muted;
   ctx.fillText(cardDateLabel(input.date), right, 112);
 
-  // Чип со числом отключений: главный ответ карточки виден раньше, чем шкала.
+  // Чип с числом окон отключений: главный ответ карточки виден раньше, чем шкала.
+  // Считаем именно окна, а не строки в базе: «2 відключення» вместо «12 відключень».
   const outages = cardOutages(input.intervals, input.date);
-  const chipText = outages.length > 0 ? `${outages.length} ${input.labels.outages.toLowerCase()}` : input.labels.empty;
+  const totalOffMinutes = outages.reduce((sum, segment) => sum + (segment.to - segment.from), 0);
+  const chipText =
+    outages.length > 0
+      ? `${outages.length} ${input.labels.outages.toLowerCase()} · ${durationLabel(totalOffMinutes)}`
+      : input.labels.empty;
   setFont(ctx, 22, 600);
-  const chipWidth = Math.min(560, ctx.measureText(chipText).width + 48);
+  const chipWidth = Math.min(620, ctx.measureText(chipText).width + 48);
   ctx.fillStyle = outages.length > 0 ? 'rgba(244,63,94,0.16)' : 'rgba(16,185,129,0.16)';
   roundRectPath(ctx, right - chipWidth, 136, chipWidth, 46, 23);
   ctx.fill();
@@ -286,7 +349,7 @@ function drawTimeline(
   ctx.save();
   roundRectPath(ctx, trackX, trackY, trackWidth, trackHeight, 16);
   ctx.clip();
-  ctx.fillStyle = 'rgba(16,185,129,0.35)';
+  ctx.fillStyle = COLORS.lightFill;
   ctx.fillRect(trackX, trackY, trackWidth, trackHeight);
   for (const segment of segments) {
     const left = trackX + (segment.from / (24 * 60)) * trackWidth;
@@ -311,7 +374,9 @@ function drawTimeline(
   const nowMinutes = nowMinutesFor(input.date, now);
   if (nowMinutes != null) {
     const px = trackX + (nowMinutes / (24 * 60)) * trackWidth;
-    ctx.fillStyle = 'rgba(250,250,250,0.9)';
+    // Цвет линии «сейчас» берём из палитры: в тёмной карточке рисуем светлую,
+    // в светлой — тёмную, иначе на белом фоне она просто исчезнет.
+    ctx.fillStyle = input.theme === 'light' ? 'rgba(9,9,11,0.9)' : 'rgba(250,250,250,0.9)';
     ctx.fillRect(px - 1.5, trackY - 12, 3, trackHeight + 24);
     ctx.beginPath();
     ctx.arc(px, trackY - 12, 6, 0, Math.PI * 2);
@@ -372,29 +437,38 @@ function drawOutages(ctx: CanvasRenderingContext2D, input: ShareCardInput, outag
 function drawFooter(ctx: CanvasRenderingContext2D, input: ShareCardInput, now: Date): void {
   const left = 80;
   const right = CARD_WIDTH - 80;
+  // Подвал прижат к низу карточки, а не к координате полной высоты: иначе у
+  // компактного варианта подпись уезжала бы за пределы холста.
+  const footerY = ctx.canvas.height - 68;
+  const ruleY = footerY - 67;
 
   ctx.fillStyle = COLORS.hairline;
-  ctx.fillRect(left, 1215, CARD_WIDTH - 160, 2);
+  ctx.fillRect(left, ruleY, CARD_WIDTH - 160, 2);
 
   setFont(ctx, 28, 600);
   ctx.fillStyle = COLORS.muted;
   ctx.textAlign = 'left';
-  ctx.fillText(input.labels.footer, left, 1282);
+  ctx.fillText(input.labels.footer, left, footerY);
 
   setFont(ctx, 24, 500);
   ctx.fillStyle = COLORS.faint;
   ctx.textAlign = 'right';
-  ctx.fillText(`${input.labels.updated} ${cardGeneratedLabel(now)}`, right, 1282);
+  ctx.fillText(`${input.labels.updated} ${cardGeneratedLabel(now)}`, right, footerY);
   ctx.textAlign = 'left';
 }
 
 /** Рисует карточку в готовый 2D-контекст (экспортировано для повторного использования). */
 export function drawScheduleCard(ctx: CanvasRenderingContext2D, input: ShareCardInput): void {
   const now = input.generatedAt ?? new Date();
+  COLORS = input.theme === 'light' ? LIGHT_COLORS : DARK_COLORS;
   drawBackground(ctx);
   drawHeader(ctx, input);
   drawTimeline(ctx, input, cardSegments(input.intervals, input.date), now);
-  drawOutages(ctx, input, cardOutages(input.intervals, input.date));
+  // В компактном варианте список окон не рисуется: в чате длинная картинка всё равно
+  // не читается без прокрутки, а шкала уже отвечает на вопрос «когда нет света».
+  if (input.variant !== 'compact') {
+    drawOutages(ctx, input, cardOutages(input.intervals, input.date));
+  }
   drawFooter(ctx, input, now);
 }
 
@@ -403,7 +477,7 @@ export async function buildScheduleCardPng(input: ShareCardInput): Promise<Blob>
   if (typeof document === 'undefined') throw new Error('canvas unavailable');
   const canvas = document.createElement('canvas');
   canvas.width = CARD_WIDTH;
-  canvas.height = CARD_HEIGHT;
+  canvas.height = cardHeight(input);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('canvas 2d context unavailable');
   drawScheduleCard(ctx, input);
@@ -416,8 +490,11 @@ export async function buildScheduleCardPng(input: ShareCardInput): Promise<Blob>
 export type ShareCardResult = 'shared' | 'downloaded' | 'cancelled' | 'failed';
 
 /** Имя файла без «/» из кода очереди: «svitlo-2026-10-17-2-2.png». */
-export function shareCardFileName(input: Pick<ShareCardInput, 'date' | 'queue'>): string {
-  return `svitlo-${input.date}-${input.queue.replace(/[^a-zA-Z0-9]+/g, '-')}.png`;
+export function shareCardFileName(input: Pick<ShareCardInput, 'date' | 'queue' | 'variant'>): string {
+  // Вариант в имени: полная и компактная карточки одного дня — разные картинки,
+  // и без суффикса они бы перетирали друг друга в «Загрузках».
+  const variant = input.variant === 'compact' ? '-short' : '';
+  return `svitlo-${input.date}-${input.queue.replace(/[^a-zA-Z0-9]+/g, '-')}${variant}.png`;
 }
 
 function downloadBlob(blob: Blob, fileName: string): boolean {

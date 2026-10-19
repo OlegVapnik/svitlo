@@ -136,32 +136,6 @@ export const api = {
    * Пустые street/house не отправляем: бэкенд трактует их как «уточните адрес» и отвечает
    * либо группой на всё село, либо списком вариантов по улице.
    */
-  /**
-   * Голос «це моя черга»: очередь дома, которой нет в официальном справочнике.
-   *
-   * Безопасность: имя и телефон не передаём, только адрес, код черги и случайный id установки.
-   * Один голос на человека и дом; официальные привязки воркер не перезаписывает и возвращает
-   * `protected: true` с группой из справочника.
-   */
-  confirmAddressQueue: async (
-    params: { region: string; settlement: string; street?: string; house?: string; queue: string },
-  ): Promise<AddressConfirmResult> => {
-    const body: Record<string, string> = {
-      region: params.region,
-      settlement: params.settlement,
-      queue: params.queue,
-      clientInstallId: getClientInstallId(),
-    };
-    if (params.street?.trim()) body['street'] = params.street.trim();
-    if (params.house?.trim()) body['house'] = params.house.trim();
-    const res = (await fetcher('/addresses/confirm', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })) as { data: AddressConfirmResult };
-    return res.data;
-  },
-
   resolveAddressQueue: async (
     params: { region: string; settlement: string; street?: string; house?: string },
     signal?: AbortSignal,
@@ -185,7 +159,15 @@ export const api = {
       limit: String(params.limit ?? 8),
     });
     return fetcher(`/addresses/settlements?${query}`, { signal }) as Promise<{
-      data: Array<{ name: string; normalized?: string }>;
+      // `defaultQueue` заполнен, когда весь населённый пункт обслуживает одна очередь.
+      // `queues` — все очереди НП; длина 1 означает, что различать улицы не нужно.
+      data: Array<{
+        name: string;
+        normalized?: string;
+        defaultQueue?: string | null;
+        queues?: string[];
+        streetsCount?: number;
+      }>;
     }>;
   },
   /** Улицы выбранного населённого пункта: быстрые чипы в мастере адреса. */

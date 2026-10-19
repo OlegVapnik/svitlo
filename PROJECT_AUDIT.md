@@ -1,3 +1,22 @@
+## Обновлено 18.10.2026 — что аудит уже не учитывает
+
+- **Контактов и голосования в продукте нет.** Удалены `/contacts`, `/addresses/confirm`,
+  `/addresses/contribute`, `address_queue_votes`, кворум и `protected`. Всё, что ниже про
+  контакты и модерацию голосов, историческое.
+- **Адреса сжаты в `directory_streets.houses_json`**; `directory_houses` пуста и из кода убрана.
+  Оценки объёма «сотни тысяч строк домов» больше не применимы — данные лежат одной строкой на улицу.
+- **Источник графиков — D1, не зеркало.** Проверки «зеркало живо / мертво» вторичны: снимок
+  дополняется `schedule_slots` и `schedule_coverage`.
+- **Лимиты D1 (5 млн rows_read / 100 тыс. rows_written в сутки)** — не упомянуты ниже, и это
+  операционно важнее любого пункта аудита: полный `d1 export` съедает суточный лимит,
+  `DELETE FROM` тарифицируется построчно. Бэкапить селективно, сносить большие таблицы через DDL.
+- **Воркер на `D1_ERROR` отвечает HTTP 200** (молчаливый фолбэк). Квота выглядит рабочей —
+  это дефект наблюдаемости, задача на флаг `d1QuotaExceeded` в `/status`.
+- **Главный инвариант данных:** зелёный при отсутствии данных запрещён. Ложное покрытие у
+  11 областей уже ловили по `class="no_data"`.
+
+---
+
 # Svitlo — полный аудит и план улучшений (v2.0)
 
 > Дата исходной версии: 2026-10-09[cite: 1]. **Актуальная ревизия: 2026-10-14 (коммит `6cbe3ff`, ветка `redesign/wow-ui`)**[cite: 1].
@@ -108,7 +127,7 @@
    * В `docker/nginx.conf` прописать `resolver 127.0.0.11 valid=10s; set $upstream http://api:3001; proxy_pass$upstream;`, чтобы `nginx` не падал при перезапуске `api`[cite: 1].
    * В `docker-compose.yml` добавить `restart: unless-stopped`, `healthcheck` для `api` и убрать жёсткое переопределение переменных `.env` в `x-api-env`[cite: 1, 2].
    * В `docker/Dockerfile.api` добавить директиву `USER node`[cite: 1].
-3. **Пробы и бэкапы:** разделить `/api/v1/health` (процесс жив) и `/api/v1/ready` (`SELECT 1` + возврат 503 при `dataStale`), настроить ночной `pg_dump` для `street_queues`, `schedule_slots`, `contacts`, `settlements`[cite: 1, 2].
+3. **Пробы и бэкапы:** разделить `/api/v1/health` (процесс жив) и `/api/v1/ready` (`SELECT 1` + возврат 503 при `dataStale`), настроить ночной бэкап `street_queues`, `schedule_slots`, `settlements` (`contacts` удалены)[cite: 1, 2].
 
 ### Этап 2: Полный переход на `outage_events` (2–3 дня)
 1. **Backfill и переключение чтения:** перенести данные из `outages` в `outage_events` и `outage_event_addresses`, перевести `/outages`, `/incidents`, `/status`, `/reliability` и `/outages/stats` на чтение из `outage_events`, удалить `mergeDuplicateOutages` и лимит `MAX_ROWS_FOR_GROUPING=1000`[cite: 1, 2].

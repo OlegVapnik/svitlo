@@ -188,9 +188,16 @@ def parse_pdf(path: Path, page_limit: int | None = None) -> dict[str, Any]:
                     and settlement_text == settlement_text.upper()
                 )
                 if settlement_match:
+                    # ГРАНИЦА КОЛОНОК. Раньше дільниця склеивалась с НП через «·», и в базу
+                    # уезжало «Ічнянська дільниця · ІЧНЯ» / «АТ ЧЕРНІГІВОБЛЕНЕРГО · БАТУРИН».
+                    # Из-за этого `settlement_normalized` не совпадал с каталогом НП, а
+                    # `settlement_name` писался как строка «null» — каскад адресов не работал
+                    # ни для одного села области. Дільниця — это контекст страницы, а НП —
+                    # самостоятельная сущность; смешивать их в одной колонке нельзя.
                     current_settlement = settlement_text.strip()
-                    if current_district:
-                        current_settlement = f"{current_district} · {current_settlement}"
+                    if current_district and current_district in current_settlement:
+                        # Заголовок таблицы PDF несёт имя организации, а не дільницю.
+                        current_district = ""
 
                 # The first address in a page can sit a line above the queue/settlement cells
                 # because those PDF cells span several rows. Hold it briefly and bind it once
@@ -271,6 +278,25 @@ def parse_pdf(path: Path, page_limit: int | None = None) -> dict[str, Any]:
             (sorted(entry["settlements"])[0], sorted(entry["streets"])[0], sorted(entry["labels"])[0], entry["queues"])
         ]
     ]
+    # Дома, для которых PDF не напечатал очередь, но улица целиком сидит на одной очереди.
+    # Это НЕ догадка: очередь взята из остальных домов этой же улицы, где она указана.
+    # Если у улицы очередей несколько или ни одной — оставляем дом без группы и пишем его в
+    # `conflicts`, потому что выдумывать очередь там нельзя.
+    street_queues: dict[tuple[str, str], set[str]] = {}
+    for row in house_rows:
+        if row["queue"]:
+            street_queues.setdefault((row["settlementNormalized"], row["streetNormalized"]), set()).add(row["queue"])
+
+    recovered = 0
+    for row in house_rows:
+        if row["queue"] is not None:
+            continue
+        key = (row["settlementNormalized"], row["streetNormalized"])
+        known = street_queues.get(key, set())
+        if len(known) == 1:
+            row["queue"] = next(iter(known))
+            recovered += 1
+
     rows = [row for row in house_rows if row["queue"] is not None]
     conflicts = [row for row in house_rows if row["queue"] is None]
     return {
@@ -282,6 +308,7 @@ def parse_pdf(path: Path, page_limit: int | None = None) -> dict[str, Any]:
         "rows": rows,
         "houseRows": house_rows,
         "conflicts": conflicts,
+        "recoveredFromStreet": recovered,
         "unresolved": unresolved,
     }
 
@@ -371,6 +398,52 @@ def build_sql(result: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def check_remote_freshness() -> int:
+    """Есть ли на сайте оператора PDF свежее того, что мы уже разобрали.
+
+    Справочник Чернигова собран из `Grafik_obmezhen.pdf`, и оператор выкладывает новые выпуски
+    по той же ссылке. Мы узнаём об этом только тогда, когда очереди в приложении перестают
+    совпадать с реальностью, — а это заметит пользователь, а не разработчик. Здесь сравниваем
+    `Last-Modified`/`Content-Length` с тем, что лежит в локальном снимке.
+
+    Возвращает код процесса: 2 — документ устарел (нужен пересбор), 0 — свежий, 1 — не смогли.
+    """
+    import urllib.request
+
+    snapshot = Path(__file__).resolve().parents[1] / ".cache" / "address-hierarchy" / "chernihiv.json"
+    local_info: dict[str, Any] = {}
+    if snapshot.exists():
+        try:
+            local_info = json.loads(snapshot.read_text(encoding="utf-8")).get("remote", {}) or {}
+        except (OSError, ValueError):
+            local_info = {}
+
+    request = urllib.request.Request(PDF_URL, method="HEAD", headers={"User-Agent": "svitlo-address-sync"})
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    try:
+        with urllib.request.urlopen(request, timeout=30, context=context) as response:
+            remote_modified = response.headers.get("Last-Modified", "")
+            remote_size = response.headers.get("Content-Length", "")
+    except Exception as error:  # noqa: BLE001 — HEAD может быть отвергнут, это не повод падать
+        print(f">>> Не удалось опросить PDF оператора: {error}")
+        return 1
+
+    print(f">>> PDF оператора: Last-Modified={remote_modified or '?'} Content-Length={remote_size or '?'}")
+    if local_info.get("lastModified") and local_info.get("lastModified") != remote_modified:
+        print("!!! Документ оператора ИЗМЕНИЛСЯ — пересоберите: "
+              f"tools/import-address-hierarchy.py --insecure-tls --json ... --sql ...")
+        return 2
+    if not local_info:
+        print(">>> ВНИМАНИЕ: в локальном снимке нет метаданных, сравнить не с чем. "
+              "Это не означает, что снимок актуален. Пересоберите один раз с --json, "
+              "и дальше проверка станет точной.")
+        return 1
+    print(">>> Снимок актуален.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pdf", type=Path, help="Use an existing PDF instead of downloading")
@@ -379,7 +452,14 @@ def main() -> int:
     parser.add_argument("--url", default=PDF_URL, help="Override the public PDF URL")
     parser.add_argument("--pages", type=int, help="Parse only the first N pages for a quick review")
     parser.add_argument("--insecure-tls", action="store_true", help="Download despite an invalid source certificate")
+    parser.add_argument(
+        "--check-remote",
+        action="store_true",
+        help="Только спросить у сайта оператора, не обновился ли PDF. Ничего не скачивает и не пишет.",
+    )
     args = parser.parse_args()
+    if args.check_remote:
+        return check_remote_freshness()
 
     pdf_path = args.pdf or Path(".cache/address-hierarchy/chernihiv.pdf")
     try:

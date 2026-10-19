@@ -1,6 +1,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Users } from 'lucide-react';
+
+/** Статусы, для которых в `uk.json` есть подпись. Всё остальное — аварийный запасной путь. */
+const OUTAGE_STATUS_KEYS = new Set(['active', 'scheduled', 'finished', 'cancelled', 'planned']);
 import { Badge } from '../ui/Badge.js';
 import { EventCard } from '../events/EventCard.js';
 import { formatDateTime, formatTimeRange, isActive } from '../../lib/date.js';
@@ -35,7 +38,12 @@ export const OutageCard: React.FC<OutageCardProps> = ({ outage }) => {
     ? t('incidents.kindOutage')
     : currentlyActive
       ? t('outages.active')
-      : t(`outages.${outage.status}`, outage.status);
+      // Ключ статуса строим только из заранее известного набора. Раньше здесь было
+      // t(`outages.${outage.status}`), и запись без статуса превращалась в текст
+      // «outages.undefined» прямо в карточке отключения.
+      : OUTAGE_STATUS_KEYS.has(outage.status)
+        ? t(`outages.${outage.status}`)
+        : t('outages.scheduled');
 
   const badgeVariant = isIncidentWork || currentlyActive
     ? ('destructive' as const)

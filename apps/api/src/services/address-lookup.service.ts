@@ -2,7 +2,7 @@ import { db } from '../db/connection.js';
 import { addressQueues } from '../db/schema.js';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { normalizeQueueCode } from '../providers/intervals.js';
-import { matchHouseNumber, parseHouseNumber, describeHousePattern } from './house-number.js';
+import { matchHouseNumber, normalizeHouseNumber, parseHouseNumber, describeHousePattern } from './house-number.js';
 
 /**
  * Поиск своей группы ГПВ по адресу: область → населённый пункт → улица → дом.
@@ -213,7 +213,7 @@ export async function suggestStreets(
       );
 
   const rows = await db
-    .selectDistinct({ name: addressQueues.streetName, source: addressQueues.source })
+    .selectDistinct({ name: addressQueues.streetName, normalized: addressQueues.streetNormalized, source: addressQueues.source })
     .from(addressQueues)
     .where(where)
     .orderBy(asc(addressQueues.streetName))
@@ -234,7 +234,7 @@ export async function suggestStreets(
 
   return rows
     .filter((row) => row.name !== '')
-    .map((row) => ({ name: row.name, wholeSettlementQueue: wholeSettlement[0] ? canonicalQueue(wholeSettlement[0].queue) : null }));
+    .map((row) => ({ name: row.name, normalized: row.normalized, wholeSettlementQueue: wholeSettlement[0] ? canonicalQueue(wholeSettlement[0].queue) : null }));
 }
 
 /**
@@ -272,11 +272,20 @@ export async function listAddressHouses(input: {
   for (const row of rows) {
     if (row.housePattern === '*' || row.housePattern === '') continue;
     const queue = canonicalQueue(row.queue);
-    const key = `${row.housePattern}|${queue}`;
+    // «100/А», «100а», «100A» — один дім: дедуп за нормалізованим ключем, а не за сирим рядком.
+    const key = `${normalizeHouseNumber(row.housePattern)}|${queue}`;
     if (seen.has(key)) continue;
     seen.add(key);
     data.push({ housePattern: row.housePattern, queue });
   }
+
+  // Числове сортування чипами: «2» перед «18», а не лексикографічно «100» перед «18».
+  data.sort((left, right) => {
+    const leftNum = parseHouseNumber(left.housePattern) ?? Number.MAX_SAFE_INTEGER;
+    const rightNum = parseHouseNumber(right.housePattern) ?? Number.MAX_SAFE_INTEGER;
+    if (leftNum !== rightNum) return leftNum - rightNum;
+    return left.housePattern.localeCompare(right.housePattern, 'uk');
+  });
 
   return { data: data.slice(0, 200), wholeStreetQueue: whole ? canonicalQueue(whole.queue) : null };
 }

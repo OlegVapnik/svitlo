@@ -43,5 +43,6 @@
     "**/__pycache__/**": true,
     "**/apps/web/android/**/build/**": true
   },
-  "java.configuration.updateBuildConfiguration": "interactive"
+  "java.configuration.updateBuildConfiguration": "interactive",
+  "CodeGPT.apiKey": "CodeGPT Plus Beta"
 }

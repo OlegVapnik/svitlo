@@ -347,7 +347,15 @@ export const useNewsSources = () =>
 
 /** Подсказки НП области: серверный справочник, когда офлайн-пакет ещё не загружен. */
 export const useAddressSettlements = (region: string, query: string) =>
-  useQuery<{ data: Array<{ name: string; normalized?: string }> }>({
+  useQuery<{
+    data: Array<{
+      name: string;
+      normalized?: string;
+      defaultQueue?: string | null;
+      queues?: string[];
+      streetsCount?: number;
+    }>;
+  }>({
     queryKey: ['addressSettlements', region, query],
     queryFn: ({ signal }) => api.fetchAddressSettlements({ region, q: query }, signal),
     enabled: region.length > 0 && query.trim().length >= 2,
@@ -396,26 +404,4 @@ export const useAddressLookup = () => {
   });
 };
 
-/**
- * Голос за очередь дома (POST /api/v1/addresses/confirm).
- *
- * После успеха обновляем и справочные списки, и график: при кворуме дом попадает в
- * `address_queues`, поэтому соседи должны увидеть его без ожидания TTL кэша. Сам resolve —
- * mutation без кэша, его мастер вызовет заново, чтобы показать актуальный `votesCount`.
- */
-export const useConfirmAddress = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (params: { region: string; settlement: string; street?: string; house?: string; queue: string }) =>
-      api.confirmAddressQueue(params),
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ['addressSettlements'] });
-      void queryClient.invalidateQueries({ queryKey: ['addressStreets'] });
-      void queryClient.invalidateQueries({ queryKey: ['addressHouses'] });
-      if (!result?.saved) return;
-      void queryClient.invalidateQueries({ queryKey: ['upcomingGroupOutages'] });
-      void queryClient.invalidateQueries({ queryKey: ['upcomingSchedules'] });
-      void queryClient.invalidateQueries({ queryKey: ['queueSchedule'] });
-    },
-  });
-};
+

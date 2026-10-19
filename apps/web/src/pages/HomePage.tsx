@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { Timeline24h } from '../components/schedule/Timeline24h.js';
+import { getKyivNowMinutes } from '../lib/timeline.js';
+import { kyivDateOffsetKey } from '../lib/outage-dates.js';
+import { formatDuration, formatMinutes, mergeIntervals, toIsoIntervals, type MinuteInterval } from '../lib/intervals.js';
+
+/** Минуты от полуночи по Киеву для указанной даты — чтобы понять, какое окно «сейчас». */
+const kyivNowMinutesFor = (date: string): number | null => getKyivNowMinutes(date, new Date());
 import { ArrowRight, CalendarDays, ChevronDown, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff, type LucideIcon } from 'lucide-react';
 import { StatusIndicator } from '../components/status/StatusIndicator.js';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
@@ -13,7 +20,6 @@ import { HomeHeroSection } from '../components/status/HomeHeroSection.js';
 import { ConnectionProblem } from '../components/region/ConnectionProblem.js';
 import { OfflineBanner, BuildStamp } from '../components/offline/OfflineBanner.js';
 import { IncidentBanner } from '../components/incidents/IncidentBanner.js';
-import { OutageCard } from '../components/outages/OutageCard.js';
 import { Skeleton } from '../components/ui/Skeleton.js';
 import { Button } from '../components/ui/Button.js';
 import { cn } from '../lib/cn.js';
@@ -136,6 +142,117 @@ const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
 };
 
 
+/** Сколько мест показываем до кнопки «показать все». */
+const PLACES_PREVIEW = 5;
+
+interface ReasonBucket {
+  key: string;
+  reason: string;
+  items: Outage[];
+  /** Склеенные непрерывные окна в минутах от полуночи по Киеву. */
+  windows: MinuteInterval[];
+  /** Дата, к которой относятся окна — для 24-часовой шкалы. */
+  date: string;
+}
+
+/**
+ * Внутри одного места записи одного оператора отличаются только получасовым слотом ГПВ.
+ * Раньше каждая запись рисовалась отдельной карточкой, и блок из 277 записей превращался в
+ * кладбище одинаковых плиток. Теперь записи склеиваются по причине, а внутри — по времени:
+ * смежные получасовки объединяются в непрерывное окно (`mergeIntervals`), потому что
+ * человеку нужно «6 год без світла», а не 12 кнопок `18:00–18:30`, `18:30–19:00`, …
+ */
+function groupReasonBuckets(items: Outage[]): ReasonBucket[] {
+  const buckets = new Map<string, ReasonBucket>();
+  for (const item of items) {
+    const reason = item.reason?.trim() || '';
+    const key = `${item.kind ?? ''}|${reason}`;
+    const existing = buckets.get(key);
+    if (existing) existing.items.push(item);
+    else buckets.set(key, { key, reason, items: [item], windows: [], date: '' });
+  }
+
+  for (const bucket of buckets.values()) {
+    bucket.date = kyivDateOffsetKey(0);
+    bucket.windows = mergeIntervals(bucket.items);
+  }
+
+  // Больше всего повторов — первым, чтобы развернутая группа была осмысленной.
+  return [...buckets.values()].sort((a, b) => b.windows.length - a.windows.length);
+}
+
+/**
+ * Компактная замена 277 полноразмерных карточек: 24-часовая шкала плюс один-два акцентных
+ * окна с длительностью и статусом. Счётчик в шапке группы уже назван числом записей, поэтому
+ * здесь показываем число окон, а не сырых строк из базы.
+ */
+const PointOutageBucket: React.FC<{ bucket: ReasonBucket }> = ({ bucket }) => {
+  const { t } = useTranslation();
+  const [nowMin] = useState(() => kyivNowMinutesFor(bucket.date));
+  const offStateName = t('home.heroOff');
+
+  const intervals = useMemo(
+    () => toIsoIntervals(bucket.windows, bucket.date).map((interval) => ({ ...interval, stateName: offStateName })),
+    [bucket.windows, bucket.date, offStateName],
+  );
+  const totalOffMinutes = bucket.windows.reduce((sum, w) => sum + (w.endMin - w.startMin), 0);
+
+  return (
+    <div className="space-y-2.5 rounded-xl border border-border/60 bg-muted/40 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <span className="text-sm font-semibold text-foreground">
+          {bucket.reason || t('home.unknownPlace')}
+        </span>
+        <span className="text-xs font-semibold text-muted-foreground tabular">
+          {t('home.pointOutagesTotalOff', {
+            duration: formatDuration(totalOffMinutes),
+          })}
+        </span>
+      </div>
+
+      {intervals.length > 0 && (
+        <Timeline24h intervals={intervals} date={bucket.date} className="space-y-2" />
+      )}
+
+      {/* Плашки окон, а не сетка пополам: за день отключение обычно одно, и в сетке на две
+          колонки оно одиноко висело бы слева от пустоты. Одна окно — строка во всю ширину,
+          несколько — перенос по flex. */}
+      <ul className={cn('flex gap-2', bucket.windows.length > 1 && 'flex-wrap')}>
+        {bucket.windows.map((window) => {
+          const active = nowMin !== null && nowMin >= window.startMin && nowMin < window.endMin;
+          const past = nowMin !== null && nowMin >= window.endMin;
+          return (
+            <li
+              key={`${window.startMin}-${window.endMin}`}
+              className={cn(
+                'flex flex-wrap items-baseline gap-x-2 rounded-lg border px-3 py-2',
+                active ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-background',
+                // Единственное окно занимает всю строку — так суммарное время читается
+                // как заголовок, а не как одна из двух одинаковых плиток.
+                bucket.windows.length === 1 && 'w-full',
+              )}
+            >
+              <span className="text-sm font-bold text-foreground tabular">
+                {formatMinutes(window.startMin)} – {formatMinutes(window.endMin)}
+              </span>
+              <span className="text-xs font-semibold text-muted-foreground tabular">
+                {formatDuration(window.endMin - window.startMin)}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {active
+                  ? t('home.pointOutagesNow')
+                  : past
+                    ? t('home.pointOutagesFinished')
+                    : t('home.pointOutagesUpcoming')}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};
+
 /**
  * Точкові ремонтні відключення, згруповані за місцем (вулиці з `outage_event_addresses`,
  * назва НП як запасний варіант). Без групування всі записи одного.operator мають одну й ту саму
@@ -143,26 +260,51 @@ const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
  */
 const PointOutagesByPlace: React.FC<{ outages: Outage[] }> = ({ outages }) => {
   const { t } = useTranslation();
+  const [allPlacesShown, setAllPlacesShown] = useState(false);
   const groups = new Map<string, { label: string; items: Outage[] }>();
   for (const outage of outages) {
     const streets = outage.streets ?? [];
-    // Ключ групи — перша вулиця: вулиці конкретні, тож це точніше, ніж одне НП на всю область.
+    // Ключ групи — первая улица из `outage_event_addresses`. Для ремонта это настоящий адрес
+    // («вул. Шевченка»), а не область: иначе все работы области слипались в одну плашку.
     const key = streets[0] ?? (outage.areaName || t('home.unknownPlace'));
     const existing = groups.get(key);
     if (existing) existing.items.push(outage);
     else groups.set(key, { label: key, items: [outage] });
   }
 
+  const places = [...groups.values()].sort((a, b) => b.items.length - a.items.length);
+  // Первыми открываем места с самыми близкими работами, а не самые многочисленные:
+  // человеку важнее то, что происходит сейчас на его улице.
+  const bySoonest = [...places].sort((a, b) => {
+    const firstA = Math.min(...a.items.map((item) => Date.parse(item.startsAt) || Infinity));
+    const firstB = Math.min(...b.items.map((item) => Date.parse(item.startsAt) || Infinity));
+    return firstA - firstB;
+  });
+  const visible = allPlacesShown ? bySoonest : bySoonest.slice(0, PLACES_PREVIEW);
+
   return (
-    <div className="space-y-2 pt-1">
+    <div className="space-y-2 pt-3">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {t('home.pointOutages')}
       </p>
-      {[...groups.values()].map((group) => {
+      <p className="text-xs text-muted-foreground">
+        {t('home.pointOutagesSummary', { n: outages.length, places: places.length })}
+      </p>
+
+      {visible.map((group) => {
         // Улицы всего события, а не только первой: у группы они общие по сутям.
         const streets = group.items[0]?.streets ?? [];
+        const buckets = groupReasonBuckets(group.items);
+        // Счётчик в шапке — это число непрерывных окон, а не число строк в базе.
+        // Раньше здесь стояли 277 сырых записей, и человек думал, что у него 277 отключений.
+        const windowsCount = buckets.reduce((sum, bucket) => sum + bucket.windows.length, 0);
         return (
-          <details key={group.label} className="group/place rounded-2xl border border-border bg-card p-4 shadow-xs" open={group.items.length === 1}>
+          <details
+            key={group.label}
+            className="group/place rounded-2xl border border-border bg-card p-4 shadow-xs"
+            // Свёрнуто по умолчанию: ремонтов бывает много, и раскрытая простыня
+            // снова превращается в «кладбище» — человек сам откроет своё место.
+          >
             <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-sm font-bold text-foreground">
                 <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -170,7 +312,7 @@ const PointOutagesByPlace: React.FC<{ outages: Outage[] }> = ({ outages }) => {
               </span>
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
                 <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/place:rotate-180" aria-hidden />
-                {t('home.pointOutagesCount', { n: group.items.length })}
+                {t('home.pointOutagesCount', { n: windowsCount })}
               </span>
             </summary>
 
@@ -185,13 +327,26 @@ const PointOutagesByPlace: React.FC<{ outages: Outage[] }> = ({ outages }) => {
             )}
 
             <div className="mt-2.5 space-y-2">
-              {group.items.map((outage) => (
-                <OutageCard key={outage.id} outage={outage} />
+              {buckets.map((bucket) => (
+                <PointOutageBucket key={bucket.key} bucket={bucket} />
               ))}
             </div>
           </details>
         );
       })}
+
+      {places.length > PLACES_PREVIEW && (
+        <button
+          type="button"
+          onClick={() => setAllPlacesShown((value) => !value)}
+          aria-expanded={allPlacesShown}
+          className="mx-auto block rounded-full border border-border px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-muted"
+        >
+          {allPlacesShown
+            ? t('home.hideAllPlaces')
+            : t('home.showAllPlaces', { n: places.length - PLACES_PREVIEW })}
+        </button>
+      )}
     </div>
   );
 };
@@ -225,7 +380,7 @@ export const HomePage: React.FC = () => {
   const activeIncidents = (incidentsData?.data ?? []).filter((incident) => incident.status === 'active');
 
   // Карточка отключения на главной показывает нормализованный адрес.
-  const outages = (outagesData?.data ?? []).map((item) => ({
+  const allOutages = (outagesData?.data ?? []).map((item) => ({
     ...item,
     addressesRaw: item.addressesNormalized,
     sourceId: '',
@@ -233,6 +388,16 @@ export const HomePage: React.FC = () => {
     firstSeenAt: item.startsAt,
     updatedAt: item.startsAt,
   })) as Outage[];
+
+  /**
+   * Блок «Найближчі відключення» уже показывает плановые ГПВ по очередям, и всё, что
+   * приходит из `schedule_slots`, — это те же самые слоты. Поэтому в «точечные
+   * відключення» пропускаем только настоящие ремонты и аварии (`kind: 'repair'`).
+   *
+   * Без этой фильтрации блок печатал 277 сырых слотов ГПВ под заголовком про ремонты:
+   * данные подменялись сами собой и выглядели как реальные аварии, которых нет.
+   */
+  const outages = allOutages.filter((item) => item.kind === 'repair');
 
   /**
    * Ручное обновление без перезагрузки страницы: инвалидирует всё, что видно на экране
@@ -389,9 +554,7 @@ export const HomePage: React.FC = () => {
             {/* Точкові ремонтні/аварійні відключення згруповані за вулицями/районами.
                 Раніше всі 28 записів мали одну areaName («Деснянське») і виглядали як одне й
                 те саме відключення; тепер видно реальні вулиці з outage_event_addresses. */}
-            {outages.length > 0 && (
-              <PointOutagesByPlace outages={outages} />
-            )}
+            {outages.length > 0 && <PointOutagesByPlace outages={outages} />}
           </div>
         )}
       </section>

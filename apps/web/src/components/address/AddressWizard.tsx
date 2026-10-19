@@ -21,7 +21,6 @@ import {
   useAddressLookup,
   useAddressSettlements,
   useAddressStreets,
-  useConfirmAddress,
   useQueues,
   useQueueSchedule,
 } from '../../api/queries.js';
@@ -139,10 +138,8 @@ export const AddressWizard: React.FC = () => {
   const [draftIcon, setDraftIcon] = useState<PlaceIcon>('home');
   const [draftPrimary, setDraftPrimary] = useState(true);
   const [saveFeedback, setSaveFeedback] = useState<SaveFeedback | null>(null);
-  const [voteFeedback, setVoteFeedback] = useState<VoteFeedback | null>(null);
 
   const resolve = useAddressLookup();
-  const confirmAddress = useConfirmAddress();
   const streetsQuery = useAddressStreets(currentRegion, settlement, street);
   const housesQuery = useAddressHouses(currentRegion, settlement, street);
   const queuesQuery = useQueues(currentRegion);
@@ -156,7 +153,6 @@ export const AddressWizard: React.FC = () => {
     setConfirmedQueue(null);
     setSaveOpen(false);
     setSaveFeedback(null);
-    setVoteFeedback(null);
   };
 
   // Київ — єдиний НП регіону kyiv-city, тому вибір фіксується без введення назви.
@@ -197,6 +193,15 @@ export const AddressWizard: React.FC = () => {
     setSelectedHouse(null);
     resetAddressResult();
   };
+
+  // НП, у которого на всё поселение одна очередь: `resolve` отдаёт
+  // `reason: "whole-settlement"` вместе с готовым расписанием. Дополнительный шаг
+  // «улица» тут ничего не различает, поэтому сразу показываем подгруппу и график.
+  const wholeSettlementQueue = streetsQuery.data?.wholeSettlementQueue ?? null;
+  useEffect(() => {
+    if (!settlement.trim() || !wholeSettlementQueue || street.trim() || result) return;
+    void submit({ settlement });
+  }, [settlement, wholeSettlementQueue, street, result]);
 
   const chooseStreet = (name: string) => {
     setStreet(name);
@@ -327,45 +332,8 @@ export const AddressWizard: React.FC = () => {
     setManualQueue(groupDraft);
     setConfirmedQueue(null);
     setSaveFeedback(null);
-    setVoteFeedback(null);
   };
 
-  /**
-   * Голос «це моя черга».
-   *
-   * Отправляем только адрес, код черги и случайный id установки — без имени и телефона. Пока
-   * у дома меньше трёх голосов, ответ помечен `community_pending`: сосед увидит осторожную
-   * подсказку, а не «проверенный» факт. Повторное нажатие меняет собственный голос, а не
-   * добавляет второй.
-   */
-  const confirmQueue = async (queueToConfirm: string) => {
-    if (!queueToConfirm || !settlement.trim()) return;
-    setVoteFeedback(null);
-    try {
-      const outcome = await confirmAddress.mutateAsync({
-        region: currentRegion,
-        settlement: settlement.trim(),
-        street: street.trim() || undefined,
-        house: house.trim() || undefined,
-        queue: queueToConfirm,
-      });
-      if (outcome.protected) {
-        setVoteFeedback({ kind: 'protected', queue: outcome.queue });
-        return;
-      }
-      setVoteFeedback({
-        kind: 'saved',
-        verified: outcome.confidence === 'community_verified',
-        votes: outcome.votesCount ?? 0,
-      });
-      hapticTick('confirm');
-      // Перечитываем адрес: кворум мог только что записать дом в справочник, и бейдж должен
-      // показать новое состояние, а не картинку до голоса.
-      void submit();
-    } catch {
-      setVoteFeedback({ kind: 'error' });
-    }
-  };
 
   const operator = operatorLink(currentRegion);
   const showNotFound = Boolean(result && !result.queue && !manualQueue);
@@ -425,78 +393,83 @@ export const AddressWizard: React.FC = () => {
         </div>
       </StepCard>
 
-      <StepCard step={2} title={t('addressWizard.street')} icon={Building2} muted={!settlement.trim()}>
-        <div className="space-y-1.5">
-          <label htmlFor="address-street" className="block text-[11px] font-semibold text-muted-foreground">
-            {t('addressWizard.street')}
-          </label>
-          <input
-            id="address-street"
-            type="text"
-            value={street}
-            placeholder={settlement.trim() ? t('addressWizard.streetPlaceholder') : t('addressWizard.pickSettlementFirst')}
-            autoComplete="off"
-            disabled={!settlement.trim()}
-            onChange={(event) => {
-              setStreet(event.target.value);
-              setSelectedStreet(null);
-              setHouse('');
-              setSelectedHouse(null);
-              resetAddressResult();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit();
-            }}
-            className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-          />
-          <StreetChips
-            options={streetsQuery.data?.data ?? []}
-            query={street}
-            onPick={chooseStreet}
-            loading={streetsQuery.isFetching}
-          />
-          {streetsQuery.data?.wholeSettlementQueue && !street && (
-            <p className="text-[11px] font-semibold text-success">
-              {t('addressWizard.wholeSettlementQueue', {
-                queue: formatQueueLabel(streetsQuery.data.wholeSettlementQueue, currentRegion),
-              })}
-            </p>
+        {/* НП обслуживает одна очередь: шаг «улица» ничего не различает, поэтому прячем его
+            и сразу показываем подгруппу с её графиком. Различать имеет смысл только если
+            наsettlement действительно больше одной очереди. */}
+          {!(wholeSettlementQueue && !street.trim()) && (
+        <StepCard step={2} title={t('addressWizard.street')} icon={Building2} muted={!settlement.trim()}>
+          <div className="space-y-1.5">
+            <label htmlFor="address-street" className="block text-[11px] font-semibold text-muted-foreground">
+              {t('addressWizard.street')}
+            </label>
+            <input
+              id="address-street"
+              type="text"
+              value={street}
+              placeholder={settlement.trim() ? t('addressWizard.streetPlaceholder') : t('addressWizard.pickSettlementFirst')}
+              autoComplete="off"
+              disabled={!settlement.trim()}
+              onChange={(event) => {
+                setStreet(event.target.value);
+                setSelectedStreet(null);
+                setHouse('');
+                setSelectedHouse(null);
+                resetAddressResult();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit();
+              }}
+              className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            />
+            <StreetChips
+              options={streetsQuery.data?.data ?? []}
+              query={street}
+              onPick={chooseStreet}
+              loading={streetsQuery.isFetching}
+            />
+            {streetsQuery.data?.wholeSettlementQueue && !street && (
+              <p className="text-[11px] font-semibold text-success">
+                {t('addressWizard.wholeSettlementQueue', {
+                  queue: formatQueueLabel(streetsQuery.data.wholeSettlementQueue, currentRegion),
+                })}
+              </p>
+            )}
+  
+            <label htmlFor="address-house" className="mt-2 block text-[11px] font-semibold text-muted-foreground">
+              {t('addressWizard.house')}
+            </label>
+            <input
+              id="address-house"
+              type="text"
+              value={house}
+              placeholder={street.trim() ? t('addressWizard.housePlaceholder') : t('addressWizard.pickStreetFirst')}
+              autoComplete="off"
+              disabled={!street.trim()}
+              onChange={(event) => {
+                setHouse(event.target.value);
+                setSelectedHouse(null);
+                setResult(null);
+                setManualQueue(null);
+                setConfirmedQueue(null);
+                setSaveFeedback(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void submit();
+              }}
+              className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            />
+            <HouseChips
+              key={`${settlement}|${street}`}
+              options={housesQuery.data?.data ?? []}
+              query={house}
+              wholeStreetQueue={housesQuery.data?.wholeStreetQueue ?? null}
+              regionCpu={currentRegion}
+              onPick={chooseHouse}
+              loading={housesQuery.isFetching}
+            />
+          </div>
+        </StepCard>
           )}
-
-          <label htmlFor="address-house" className="mt-2 block text-[11px] font-semibold text-muted-foreground">
-            {t('addressWizard.house')}
-          </label>
-          <input
-            id="address-house"
-            type="text"
-            value={house}
-            placeholder={street.trim() ? t('addressWizard.housePlaceholder') : t('addressWizard.pickStreetFirst')}
-            autoComplete="off"
-            disabled={!street.trim()}
-            onChange={(event) => {
-              setHouse(event.target.value);
-              setSelectedHouse(null);
-              setResult(null);
-              setManualQueue(null);
-              setConfirmedQueue(null);
-              setSaveFeedback(null);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit();
-            }}
-            className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-          />
-          <HouseChips
-            key={`${settlement}|${street}`}
-            options={housesQuery.data?.data ?? []}
-            query={house}
-            wholeStreetQueue={housesQuery.data?.wholeStreetQueue ?? null}
-            regionCpu={currentRegion}
-            onPick={chooseHouse}
-            loading={housesQuery.isFetching}
-          />
-        </div>
-      </StepCard>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -645,63 +618,17 @@ export const AddressWizard: React.FC = () => {
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
-                      onClick={() => void confirmQueue(activeQueue)}
-                      disabled={confirmAddress.isPending}
-                      className="gap-1.5"
-                    >
-                      <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
-                      {t('addressWizard.confirmThisQueue')}
-                    </Button>
-                    <Button
-                      size="sm"
                       variant="outline"
                       onClick={() => {
                         // Возвращаемся к ручному выбору группы: человек не согласен с подсказкой.
                         setResult(null);
                         setManualQueue(null);
-                        setVoteFeedback(null);
-                      }}
+                                          }}
                     >
                       {t('addressWizard.specifyOther')}
                     </Button>
                   </div>
                 </div>
-              )}
-              {manualQueue && (
-                <div className="mt-2 space-y-2">
-                  <p className="text-[11px] leading-snug text-warning">
-                    {t('addressWizard.manualVoteHint')}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void confirmQueue(manualQueue)}
-                    disabled={confirmAddress.isPending}
-                    className="gap-1.5"
-                  >
-                    <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
-                    {t('addressWizard.confirmThisQueue')}
-                  </Button>
-                </div>
-              )}
-              {voteFeedback?.kind === 'saved' && (
-                <p role="status" className="mt-1 text-[11px] font-semibold text-success">
-                  {voteFeedback.verified
-                    ? t('addressWizard.voteVerified')
-                    : t('addressWizard.votePending', { count: Math.max(0, 3 - voteFeedback.votes) })}
-                </p>
-              )}
-              {voteFeedback?.kind === 'protected' && (
-                <p role="status" className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {t('addressWizard.voteProtected', {
-                    queue: formatQueueLabel(voteFeedback.queue, currentRegion),
-                  })}
-                </p>
-              )}
-              {voteFeedback?.kind === 'error' && (
-                <p role="alert" className="mt-1 text-[11px] font-semibold text-destructive">
-                  {t('addressWizard.voteError')}
-                </p>
               )}
             </div>
           </div>
@@ -949,9 +876,8 @@ const HouseChips: React.FC<{
 }> = ({ options, query, wholeStreetQueue, regionCpu, onPick, loading }) => {
   const { t } = useTranslation();
   const [showAll, setShowAll] = useState(false);
-  const houses = useMemo(() => options.filter((option) =>
-    isSingleHouse(option.housePattern) || /^\d{1,5}\s*[-–—]\s*\d{1,5}$/u.test(option.housePattern),
-  ), [options]);
+  // Сервер уже прибрав повтори й відсортував числово — тут лише пошук за введеним номером.
+  const houses = useMemo(() => options, [options]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('uk-UA');
     if (!needle) return houses;
