@@ -27,17 +27,6 @@ const LEVEL_STYLES = {
   bad: { text: 'text-red-600 dark:text-red-400', bar: 'bg-red-500', chip: 'bg-red-500/10 text-red-600 dark:text-red-400' },
 } as const;
 
-/** Рядок «сьогодні» — з 00:00 місцевого часу. */
-function TodayRow({ today }: { today?: PowerWindowSummary | null }) {
-  if (!today || !today.hasData) return null;
-  return (
-    <p className="text-[11px] text-muted-foreground">
-      За добу (з 00:00): без світла {formatMinutes(today.outageMinutes)} · зі світлом{' '}
-      {formatMinutes(today.poweredMinutes)} · у середньому по {today.outageCount} групах
-    </p>
-  );
-}
-
 interface PowerSummaryCardProps {
   summary?: PowerSummary | null;
   isLoading?: boolean;
@@ -67,7 +56,7 @@ export const PowerSummaryCard: React.FC<PowerSummaryCardProps> = ({ summary, isL
                 людей; среднее отвечает на вопрос конкретного человека: сколько часов без света
                 у группы, в которую попалёшь ты. */}
             <div className="text-xs text-muted-foreground">
-              Час без світла та зі світлом, у середньому по групах ({window?.outageCount ?? 0})
+              Час без світла та зі світлом, у середньому по {window?.outageCount ?? 0} групах
             </div>
           </div>
         </div>
@@ -96,15 +85,10 @@ export const PowerSummaryCard: React.FC<PowerSummaryCardProps> = ({ summary, isL
         </div>
       </div>
 
-      <TodayRow today={summary?.today} />
-
       {!isLoading && !hasData && (
         <p className="text-[11px] text-muted-foreground">
           За останні 24 години перерв у даних не зафіксовано — або джерело ще не віддало дані.
         </p>
-      )}
-      {!isLoading && hasData && window && (
-        <p className="text-[11px] text-muted-foreground">Записів про перерви за 24 год: {window.outageCount}.</p>
       )}
     </div>
   );

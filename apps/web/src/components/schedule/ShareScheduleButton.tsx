@@ -164,7 +164,9 @@ export const ShareScheduleButton: React.FC<ShareScheduleButtonProps> = ({
         aria-pressed={isCompact}
         aria-label={isCompact ? t('share.variantFull') : t('share.variantCompact')}
         title={isCompact ? t('share.variantFull') : t('share.variantCompact')}
-        className="shrink-0 px-2 text-muted-foreground"
+        // Рамка и высота как у соседней кнопки. Голый icon без рамки в ленте действий
+        // читался как «забытый в разметке SVG», а не как переключатель размера картинки.
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-hairline bg-surface-container px-0 text-muted-foreground hover:bg-surface-container-high hover:text-foreground"
       >
         {isCompact
           ? <SquareDashed className="h-4 w-4" aria-hidden />

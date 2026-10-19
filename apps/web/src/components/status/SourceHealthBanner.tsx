@@ -78,21 +78,20 @@ export const SourceHealthBanner = ({ className }: { className?: string }) => {
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Fact
-              label={t('status.lastUpdated')}
-              value={
-                isLoading && !status
-                  ? t('common.loading')
-                  : status?.lastUpdatedAt
-                    ? formatDateTime(status.lastUpdatedAt)
-                    : t('common.noData')
-              }
-            />
-            <Fact
-              label={t('status.nextAttempt')}
-              value={status?.nextAttemptAt ? formatDateTime(status.nextAttemptAt) : t('status.schedulerOff')}
-            />
+          {/* Колонка «Оновлено» продублировала строку в шапке («13 хвилин тому») абсолютной
+              датой в двух сантиметрах ниже — человек читал одно и то же дважды. Оставляем
+              в шапке относительное время (оно и есть главное), а здесь только то, чего там
+              нет: когда плановая следующая попытка и сколько раз источник подряд не отдал
+              данных. Если `nextAttemptAt` неизвестен (null), колонку не рисуем вовсе — раньше
+              на её месте появлялось обрезанное «автооновлення вим…», прямо противоречащее
+              заголовку «Дані оновлюються за розкладом». */}
+          <div className={cn('grid gap-3', status?.nextAttemptAt ? 'grid-cols-2 sm:grid-cols-2' : 'grid-cols-1')}>
+            {status?.nextAttemptAt ? (
+              <Fact
+                label={t('status.nextAttempt')}
+                value={formatDateTime(status.nextAttemptAt)}
+              />
+            ) : null}
             {status && (status.consecutiveParseFailures ?? 0) > 0 && (
               <Fact
                 label={t('status.failuresInRow')}

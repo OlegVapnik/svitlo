@@ -27,6 +27,9 @@ export interface RegionSummary {
    * графік опублікував (див. `shared/src/index.ts`, `RegionSummary.allClear`).
    */
   allClear?: boolean;
+  /** Оператор опубликовал график на сегодня. Единственный честный признак «живых» данных:
+   * без него весь список полон «Немає даних», и человек листал мимо них до своей области. */
+  covered?: boolean;
   /**
    * `cpu` фіда, під якими лежать дані цієї області (див. shared/regions-catalog.ts). Саме ці коди
    * треба передавати в `?region=`: каталог показує канонічну назву, а графік зберігається під ключем
@@ -242,4 +245,25 @@ export function filterRegions(regions: RegionSummary[], query: string): RegionSu
     if (region.parentCpu && keep.has(region.parentCpu)) keep.add(region.cpu);
   }
   return regions.filter((region) => keep.has(region.cpu));
+}
+
+/**
+ * Области с живыми данными — в начало списка.
+ *
+ * Раньше порядок был исключительно алфавитным, и человек каждое утро прокручивал мимо
+ * «Немає даних» у Вінницької и Волинской, чтобы дойти до своей области с графиком. Мёртвые
+ * регионы уходят вниз, внутри каждой группы порядок алфавитный — иначе список «прыгал» бы
+ * при первом же обновлении данных.
+ */
+export function sortRegionsByDataFreshness(regions: RegionSummary[]): RegionSummary[] {
+  const rank = (region: RegionSummary): number => {
+    if (region.covered) return 0;
+    // Мережа (ЦЕК/ДнЕМ) наследует свежесть родителя: она в списке рядом с ним, и «живая»
+    // область с пустой сетью выглядела бы мёртвой только из-за одной подсети.
+    if (region.parentCpu) return 1;
+    return 2;
+  };
+  return [...regions].sort(
+    (a, b) => rank(a) - rank(b) || a.nameUa.localeCompare(b.nameUa, 'uk'),
+  );
 }

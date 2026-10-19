@@ -381,7 +381,9 @@ export const HomeHeroSection: React.FC = () => {
         <div
           role="group"
           aria-label={t('home.bookmarks')}
-          className="-mx-1 flex snap-x snap-mandatory items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          // Края гасим маской: чипы, обрезанные рамкой контейнера, читаются как «сломанная
+          // вёрстка», а не как намёк, что список листается вбок. Без этого подсказки не видно.
+          className="-mx-1 flex snap-x snap-mandatory items-center gap-2 overflow-x-auto px-1 pb-1 scrollbar-none [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,transparent_0,black_12px,black_calc(100%-12px),transparent_100%)]"
         >
           {(showAllPlaces ? bookmarks : bookmarks.slice(0, PLACE_CHIP_LIMIT)).map((bm) => {
             const isActive = bm.regionCpu === currentRegion && bm.queue === selectedQueue;
@@ -421,25 +423,33 @@ export const HomeHeroSection: React.FC = () => {
                     {bm.queue}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingBookmarkId(bm.id);
-                    setBookmarkDraft(bm.label);
-                  }}
-                  aria-label={t('home.renameBookmark', { label: bm.label })}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-primary"
-                >
-                  <Pencil className="h-3.5 w-3.5" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeBookmark(bm.id)}
-                  aria-label={`${t('common.delete')} ${bm.label}`}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-destructive"
-                >
-                  <X className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
-                </button>
+                {/* Управление закладкой — только у ВЫБРАННОЙ.
+                    Раньше ✎ и × висели у каждого чипа, из-за чего один чип занимал
+                    пол-экрана, а палец целился переключить закладку и промахивался
+                    в удаление. Теперь неактивные чипы — просто иконка, название и группа. */}
+                {isActive ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBookmarkId(bm.id);
+                        setBookmarkDraft(bm.label);
+                      }}
+                      aria-label={t('home.renameBookmark', { label: bm.label })}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-primary"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeBookmark(bm.id)}
+                      aria-label={`${t('common.delete')} ${bm.label}`}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-highest hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+                    </button>
+                  </>
+                ) : null}
               </div>
             );
           })}
@@ -496,33 +506,40 @@ export const HomeHeroSection: React.FC = () => {
           а рядок «У закладки + Сьогодні/Завтра» не сжимався, і коли сумарна ширина
           перевищувала ширину hero, флекс-строка виходила за межі секції та
           заїжджала на сусідній картці стану енергосистеми. */}
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        {/* Вибір черги (запам'ятовується для кожної області) */}
-        <QueueSelector
-          queues={availableQueues}
-          selectedQueue={selectedQueue}
-          onSelect={selectQueue}
-          disabled={scheduleLoading}
-        />
+      {/* Панель управления занимает два ряда, а не шесть.
+          Выбор очереди и «У закладки» стоят на ОДНОЙ строке: очередь тянется на всю
+          оставшуюся ширину, кнопка не сжимается. Раньше это были два отдельных этажа, и
+          первый экран уезжал вниз графиком. */}
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex w-full min-w-0 items-end gap-2 sm:flex-1 sm:flex-row sm:items-center">
+          {/* Вибір черги (запам'ятовується для кожної області) */}
+          <QueueSelector
+            queues={availableQueues}
+            selectedQueue={selectedQueue}
+            onSelect={selectQueue}
+            disabled={scheduleLoading}
+            className="min-w-0 flex-1"
+          />
 
-        {/* На телефоне кнопка и переключатель даты идут друг под другом, на десктопе — в ряд.
-            Раньше контейнер был `grid-cols-2`, а оба ребёнка несли `col-span-2`: сетка
-            получала 4 колонки вместо двух, и элементы наезжали друг на друга. */}
-        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="min-w-0 w-full gap-1.5 rounded-lg px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
+            className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
             disabled={!selectedQueue}
             onClick={saveCurrentAsBookmark}
             aria-label={t('home.addToBookmarks')}
             title={t('home.addToBookmarks')}
           >
-            <Star className="h-3.5 w-3.5" aria-hidden />
-            {t('home.addBookmarkShort')}
+            <Star className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="truncate">{t('home.addBookmarkShort')}</span>
           </Button>
+        </div>
 
+        {/* На телефоне кнопка и переключатель даты идут друг под другом, на десктопе — в ряд.
+            Раньше контейнер был `grid-cols-2`, а оба ребёнка несли `col-span-2`: сетка
+            получала 4 колонки вместо двух, и элементы наезжали друг на друга. */}
+        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:justify-end">
           {/* Перемикач дати: Сьогодні / Завтра. Прежний был 28px высотой и ролью tablist
               без реальных панелей — мелкая цель для пальца и роли враньё. Новый — 44px. */}
           <DaySegment

@@ -694,6 +694,8 @@ async function statusCounters(
   activeOutages: number;
   scheduledOutages: number;
   incidents: number;
+  groupsToday: number;
+  groups24h: number;
   outagesToday: number;
   outages24h: number;
   importedAt: string | null;
@@ -711,6 +713,14 @@ async function statusCounters(
        (SELECT COUNT(*) FROM outage_events WHERE ${where}starts_at <= ? AND ends_at >= ?) AS activeOutages,
        (SELECT COUNT(*) FROM outage_events WHERE ${where}starts_at > ?) AS scheduledOutages,
        (SELECT COUNT(*) FROM outage_events WHERE kind = 'emergency' AND ends_at >= ?) AS incidents,
+       -- Число УНИКАЛЬНЫХ групп за окно, а не число строк. Раньше здесь стоял
+       -- COUNT(*) по outage_events, и в подзаголовке карточки человек читал
+       -- «у середньому по 1901 групах» для Киева, где групп всего 60. Число строк —
+       -- техническая величина хранения, а не количество групп.
+       (SELECT COUNT(DISTINCT queue) FROM outage_events
+         WHERE ${where}substr(starts_at, 1, 10) = ?) AS groupsToday,
+       (SELECT COUNT(DISTINCT queue) FROM outage_events
+         WHERE ${where}starts_at >= ?) AS groups24h,
        (SELECT COUNT(*) FROM outage_events WHERE ${where}substr(starts_at, 1, 10) = ?) AS outagesToday,
        (SELECT COUNT(*) FROM outage_events WHERE ${where}starts_at >= ?) AS outages24h,
        (SELECT updated_at FROM snapshot_meta WHERE key = 'schedule') AS importedAt`,
@@ -729,6 +739,8 @@ async function statusCounters(
     )
     .first<{
       totalQueues: number | null;
+      groupsToday: number | null;
+      groups24h: number | null;
       activeOutages: number | null;
       scheduledOutages: number | null;
       incidents: number | null;
@@ -741,6 +753,8 @@ async function statusCounters(
     activeOutages: row?.activeOutages ?? 0,
     scheduledOutages: row?.scheduledOutages ?? 0,
     incidents: row?.incidents ?? 0,
+    groupsToday: row?.groupsToday ?? 0,
+    groups24h: row?.groups24h ?? 0,
     outagesToday: row?.outagesToday ?? 0,
     outages24h: row?.outages24h ?? 0,
     importedAt: row?.importedAt ?? null,
@@ -2586,7 +2600,7 @@ function mirrorStatusPayload(
     dataStale: false,
     lastError: null,
     pausedUntil: null,
-    nextAttemptAt: null,
+    nextAttemptAt: nextCronAttempt(lastUpdatedAt, Date.parse(lastUpdatedAt)),
     consecutiveParseFailures: 0,
     powerSummary: {
       today: buildWindow('за добу', todayStats.outageMinutes),
@@ -2597,6 +2611,26 @@ function mirrorStatusPayload(
   };
 }
 
+
+/**
+ * Ближайший тик планировщика после последнего обновления.
+ *
+ * Крон воркера работает каждые 20 минут (cron-маска с шагом 20), но `/status` отдавал
+ * `nextAttemptAt: null`.
+ * Фронт читал это как «автооновлення вимкнено» — прямо вопреки заголовку «Дані оновлюються
+ * за розкладом». Данные приходили каждые 20 минут, планировщик был жив, а сообщение врало.
+ * Считаем следующую границу сетки крона от последнего фактического обновления.
+ */
+function nextCronAttempt(lastUpdatedAt: string | null, nowMs: number, stepMinutes = 20): string | null {
+  if (!lastUpdatedAt) return null;
+  const parsed = Date.parse(lastUpdatedAt);
+  if (!Number.isFinite(parsed)) return null;
+  const stepMs = stepMinutes * 60_000;
+  // Следующая граница сетки строго ПОСЛЕ последнего обновления: если апдейт случился ровно
+  // в 03:20, следующий тик — 03:40, а не 03:20 (иначе счётчик показывал бы «0 минут назад»).
+  const next = Math.floor((parsed - 0) / stepMs) * stepMs + stepMs;
+  return new Date(next > nowMs ? next : next + stepMs).toISOString();
+}
 
 /**
  * Аварийный ответ из зеркала для маршрутов, которые упали на D1.
@@ -3775,7 +3809,9 @@ async function upcomingGroupBucketsUncached(
   buckets.sort((a, b) => {
     const dateDiff = String(a.date).localeCompare(String(b.date));
     if (dateDiff !== 0) return dateDiff;
-    return String(a.queue).localeCompare(String(b.queue));
+    // Числовая сортировка кодов групп. Строковая давала «1, 10, 11, 2, 3…»: человек видел
+    // после «Черга 1» сразу «Черга 10» и решал, что список сломан.
+    return compareQueueCodes(String(a.queue), String(b.queue));
   });
   return buckets;
 }
@@ -3878,8 +3914,8 @@ async function buildStatusPayloadUncached(
     nextAttemptAt: null,
     consecutiveParseFailures: 0,
     powerSummary: {
-      today: buildWindow('за добу', 24 * 60, todayStats.outageMinutes, counters.outagesToday),
-      last24h: buildWindow('за 24 години', 24 * 60, yesterdayStats.outageMinutes, counters.outages24h),
+      today: buildWindow('за добу', 24 * 60, todayStats.outageMinutes, counters.groupsToday),
+      last24h: buildWindow('за 24 години', 24 * 60, yesterdayStats.outageMinutes, counters.groups24h),
     },
     // Служебное: сколько всего групп знает воркер. Фронтенд это поле не читает, но оно
     // нужно для диагностики через curl, поэтому не выбрасываем.

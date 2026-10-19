@@ -92,15 +92,26 @@ const GroupOutageCard: React.FC<{ item: GroupOutageSummary }> = ({ item }) => {
       </div>
 
       <ul className="mt-3 flex flex-wrap gap-2">
-        {item.intervals.map((interval, index) => (
+        {item.intervals.map((interval, index) => {
+          // Слот, который уже закончился, гасим: ночью первым в списке светился красный
+          // «00:00–01:00», и взгляд цеплялся за прошлое вместо предстоящего «07:30–11:00».
+          // Красную точку убираем — у прошедшего времени её быть не должно.
+          const ended = Date.parse(interval.endsAt) < Date.now();
+          return (
           <li
             key={`${interval.startsAt}-${index}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-muted/60 px-2.5 py-1 text-xs font-semibold tabular text-foreground"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold tabular',
+              ended ? 'bg-muted/30 text-muted-foreground line-through opacity-55' : 'bg-muted/60 text-foreground',
+            )}
           >
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: interval.stateColor }} aria-hidden />
+            {!ended && (
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: interval.stateColor }} aria-hidden />
+            )}
             {interval.localTimeFrom}–{interval.localTimeTo}
           </li>
-        ))}
+          );
+        })}
       </ul>
 
 {/* Розкриття списку вулиць групи. Показуємо тільки реальні назви зі street_queues/settlements:

@@ -2,7 +2,14 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, ChevronDown, MapPin, Search, X } from 'lucide-react';
 import { useRegion } from '../../hooks/useRegion.js';
-import { filterRegions, regionDataBadge, regionOptions, regionSlotsForBadge, type RegionSummary } from '../../lib/region.js';
+import {
+  filterRegions,
+  regionDataBadge,
+  regionOptions,
+  regionSlotsForBadge,
+  sortRegionsByDataFreshness,
+  type RegionSummary,
+} from '../../lib/region.js';
 import { cn } from '../../lib/cn.js';
 import { hapticTick } from '../../lib/haptics.js';
 
@@ -32,7 +39,10 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
   // Рядки списку з підпорядкуванням: область, яку фід віддає кількома мережами (м. Дніпро: ЦЕК і
   // ДнЕМ), показуємо як заголовок із мережами-варіантами — вибрати «область цілком» неможливо,
   // бо її графіка не існує (див. `regionOptions`).
-  const options = useMemo(() => regionOptions(filterRegions(regions, search)), [regions, search]);
+  const options = useMemo(
+    () => regionOptions(sortRegionsByDataFreshness(filterRegions(regions, search))),
+    [regions, search],
+  );
   // Клавіатурою й кліком вибираються лише реальні області: заголовок групи — не варіант.
   const selectableOptions = useMemo(() => options.filter((option) => !option.isGroup), [options]);
   // Мережі в списку стоять під своїм заголовком, тому індекс активної області мусить рахуватися
@@ -162,7 +172,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
         <div className="flex shrink-0 items-center gap-2">
           {variant === 'prominent' && currentBadge === 'slots' ? (
             <span className="hidden rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-semibold text-success sm:inline-block">
-              {t('regions.slotsAvailable', { count: regionSlotsForBadge(currentRegionData) })}
+              {t('regions.slotsAvailable')}
             </span>
           ) : variant === 'prominent' ? (
             <span
@@ -187,12 +197,27 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
 
       {/* Панель випадаючого пошуку та списку (Command-palette style) */}
       {isOpen && (
+        <>
+        {/* Затемнение только на телефоне: панель уходит в отдельный слой, и без него
+            содержимое страницы под ней просвечивало и спорило со списком. */}
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 z-50 cursor-default bg-black/60 backdrop-blur-xs sm:hidden"
+        />
         <div
           className={cn(
             // У шапці (compact) панель выравнивается по правому краю: кнопка там у правого
             // края экрана, и панель на `left-0 right-0` уезжала бы за границу окна на телефоне.
+            // На телефоне панель больше не «висит» под кнопкой: там она уезжала за край
+            // экрана, справа торчал кусок фоновой карточки, а последняя строка списка
+            // разрезалась нижней границей. Ниже `sm` панель становится отдельным листом на
+            // всю ширину с равными полями и с собственным затемнением фона — контент под ней
+            // перестаёт спорить со списком.
             variant === 'prominent'
-              ? 'absolute left-0 right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-full min-w-75'
+              ? 'absolute left-0 right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-full min-w-75 sm:inset-x-4 sm:left-auto sm:right-auto sm:w-auto sm:min-w-0'
               : 'absolute right-0 z-60 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-pop animate-fade-in w-80 max-w-[90vw]',
           )}
         >
@@ -305,7 +330,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                     <div className="shrink-0 text-right">
                       {badge === 'slots' ? (
                         <span className="inline-block rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
-                          {t('regions.slotsCount', { count: regionSlotsForBadge(region) })}
+                          {t('regions.slotsCount')}
                         </span>
                       ) : (
                         <span
@@ -324,6 +349,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
             )}
           </ul>
         </div>
+        </>
       )}
     </div>
   );

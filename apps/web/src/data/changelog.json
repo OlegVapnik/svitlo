@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-19T00:21:40.364Z",
- "version": "2.23.0",
+ "generatedAt": "2026-10-19T00:48:20.271Z",
+ "version": "2.23.1",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "totalReleases": 16,
  "totalFeatures": 34,
@@ -8,9 +8,9 @@
  "totalOptimizations": 2,
  "releases": [
   {
-   "version": "2.23.0",
+   "version": "2.23.1",
    "date": "2026-10-19",
-   "tag": "Release",
+   "tag": "Update",
    "features": [
     "Покращено пошук адрес у Києві та областях, додано швидкий вибір будинків.",
     "Діліться графіком, перейменовуйте закладки та швидше знаходьте свою адресу."
