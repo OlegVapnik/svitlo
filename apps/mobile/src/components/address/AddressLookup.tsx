@@ -216,6 +216,8 @@ export function AddressLookup() {
             active={settlement}
             title={settlement.trim().length >= 2 ? 'Підказки' : 'Є в офлайн-пакеті'}
           />
+        ) : settlementsQuery.isFetching && settlement.trim().length >= 2 ? (
+          <ActivityIndicator color={palette.mutedForeground} />
         ) : null}
       </StepCard>
 
@@ -280,6 +282,27 @@ export function AddressLookup() {
             </Text>
           ) : null}
         </StepCard>
+      ) : null}
+
+      {settlementsQuery.isError || streetsQuery.isError || housesQuery.isError ? (
+        <View className="gap-2 rounded-2xl border border-border bg-card px-4 py-3">
+          <Text className="text-sm font-semibold text-foreground">Довідник адрес зараз недоступний</Text>
+          <Text className="text-xs text-muted-foreground">
+            Підказки населених пунктів, вулиць і будинків не завантажились. Введіть адресу вручну —
+            пошук групи спробує знайти її на сервері.
+          </Text>
+          <Pressable
+            onPress={() => {
+              void settlementsQuery.refetch();
+              void streetsQuery.refetch();
+              void housesQuery.refetch();
+            }}
+            accessibilityRole="button"
+            className="min-h-9 self-start rounded-full border border-border px-3 py-1.5 active:opacity-70"
+          >
+            <Text className="text-xs font-semibold text-primary">Повторити</Text>
+          </Pressable>
+        </View>
       ) : null}
 
       <Pressable
