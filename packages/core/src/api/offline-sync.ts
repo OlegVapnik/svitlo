@@ -153,6 +153,33 @@ function canonicalizeQueueField<T extends { queue: string }>(region: string, ite
   return items.map((item) => ({ ...item, queue: canonicalQueueCode(region, item.queue) }));
 }
 
+/**
+ * Сводит каталог из пакета `/sync` с уже загруженным каталогом `/regions`.
+ *
+ * Зачем это здесь, а не в экранах. `/regions` — справочник областей для RegionPicker, а `/sync`
+ * несёт собственную копию каталога внутри пакета. Это два независимых снимка: их сводки
+ * (`covered`, `slots`) могут разойтись, и тогда одна и та же область показывает «Є графік» или
+ * «Немає даних» в зависимости от того, какой ответ пришёл последним. Раньше `applyBundle` просто
+ * перезаписывал кеш `['regions']` каталогом из пакета — отсюда и мерцание меток.
+ *
+ * Правило: каталог `/regions` авторитетнее для уже известных областей, пакет только добивает
+ * отсутствующие (холодный старт или офлайн, где `/regions` ещё не приходил). Так данные одинаковы
+ * на вебе и в приложении, без дублирования «склейки» в двух UI.
+ */
+export function mergeRegionCatalog(
+  existing: readonly RegionSummary[] | undefined | null,
+  incoming: readonly RegionSummary[] | undefined | null,
+): RegionSummary[] {
+  const merged = [...(existing ?? [])];
+  const seen = new Set(merged.map((region) => region.cpu));
+  for (const region of incoming ?? []) {
+    if (!region?.cpu || seen.has(region.cpu)) continue;
+    seen.add(region.cpu);
+    merged.push(region);
+  }
+  return merged;
+}
+
 /** Сохраняет пакет области. `null` — не поместилось или хранилище недоступно (данные при этом не теряются). */
 function saveOfflineBundle(region: string, bundle: SyncBundle): OfflineBundleRecord | null {
   const store = storage;
@@ -208,8 +235,15 @@ function applyBundle(client: QueryClient, region: string, bundle: SyncBundle, at
   const options = Number.isFinite(updatedAt) ? { updatedAt } : undefined;
 
   // Коды групп области сводим к канонической форме (Київ: «3» → «3/1»), иначе строка матрицы и
-  // выбранная группа не сходились бы с интервалами пакета.
-  client.setQueryData(['regions'], { data: canonicalizeRegions(bundle.regions) }, options);
+  // выбранная группа не сходились бы с интервалами пакета. Сам каталог не перезаписываем целиком:
+  // `/regions` — авторитетный справочник, пакет лишь добивает области, которых там ещё нет
+  // (см. `mergeRegionCatalog`).
+  const cachedRegions = client.getQueryData<{ data?: RegionSummary[] }>(['regions'])?.data;
+  const regions = mergeRegionCatalog(cachedRegions, canonicalizeRegions(bundle.regions));
+  // Помечаем каталог устаревшим намеренно: `/regions` — авторитетный справочник, и онлайн-запрос
+  // должен обновить засеянные пакетом метки. Иначе `staleTime` считал бы их свежими и оставлял
+  // расхождение «Сумська/Рівненська» на экране до истечения пяти минут.
+  client.setQueryData(['regions'], { data: regions }, { updatedAt: 0 });
   if (bundle.status) client.setQueryData(['status', region], { data: bundle.status }, options);
   if (Array.isArray(bundle.queues)) {
     client.setQueryData(['queues', region], { data: canonicalizeQueueField(region, bundle.queues) }, options);
@@ -286,8 +320,9 @@ export function hydrateOfflineStartup(): string {
   const region = startupRegion();
   if (!hydrateStoredRegion(region)) {
     const catalog = readCatalog();
-    // Записи на диске могли быть сделаны до введения канонизации — прогоняем и их.
-    if (catalog) queryClient.setQueryData(['regions'], { data: canonicalizeRegions(catalog.regions) });
+    // Записи на диске могли быть сделаны до введения канонизации — прогоняем и их. Каталог с диска
+    // тоже не считается свежим: при наличии сети его должен заменить авторитетный `/regions`.
+    if (catalog) queryClient.setQueryData(['regions'], { data: canonicalizeRegions(catalog.regions) }, { updatedAt: 0 });
     setSyncState({ phase: 'idle', region, syncedAt: null, settlements: 0 });
   }
   return region;

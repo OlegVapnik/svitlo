@@ -7,6 +7,7 @@ import {
   hydrateOfflineStartup,
   hydrateStoredRegion,
   isRegionHydrated,
+  mergeRegionCatalog,
   offlineSettlementStats,
   readOfflineBundle,
   searchOfflineSettlements,
@@ -134,6 +135,66 @@ describe('офлайн-пакет: гидратация кеша до перво
     expect(state.settlements).toBe(2);
     expect(isRegionHydrated(REGION)).toBe(true);
     expect(hydrateStoredRegion(REGION)?.syncedAt).toBe(SYNCED_AT);
+  });
+});
+
+describe('каталог регионов: /regions авторитетнее пакета /sync', () => {
+  const region = (over: Record<string, unknown>) =>
+    ({ cpu: '', nameUa: '', nameEn: null, queues: [], slots: 0, lastDate: null, ...over }) as never;
+
+  beforeEach(() => {
+    mockStorage();
+    queryClient.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('сводки известных областей не перетираются ответом /sync', () => {
+    const existing = [
+      region({ cpu: 'sumska-oblast', nameUa: 'Сумська область', covered: true, slots: 124 }),
+      region({ cpu: 'rivnenska-oblast', nameUa: 'Рівненська область', covered: false, slots: 0 }),
+    ];
+    const incoming = [
+      region({ cpu: 'rivnenska-oblast', nameUa: 'Рівненська область', covered: true, slots: 24 }),
+      region({ cpu: 'sumska-oblast', nameUa: 'Сумська область', covered: false, slots: 0 }),
+    ];
+
+    const merged = mergeRegionCatalog(existing, incoming);
+
+    // Порядок и значения — из /regions: вторая копия каталога не должна менять метки покрытия.
+    expect(merged.map((item) => item.cpu)).toEqual(['sumska-oblast', 'rivnenska-oblast']);
+    expect(merged[0]).toMatchObject({ covered: true, slots: 124 });
+    expect(merged[1]).toMatchObject({ covered: false, slots: 0 });
+  });
+
+  test('области, которых в /regions нет, добавляются из пакета (холодный старт/офлайн)', () => {
+    const merged = mergeRegionCatalog(
+      [region({ cpu: REGION, nameUa: 'Чернігівська область', covered: true })],
+      [
+        null,
+        region({ cpu: OTHER_REGION, nameUa: 'Київська область', covered: true, slots: 5 }),
+        region({ cpu: REGION, nameUa: 'Чернігівська область', covered: false }),
+      ] as never,
+    );
+
+    expect(merged.map((item) => item.cpu)).toEqual([REGION, OTHER_REGION]);
+    expect(merged[0]).toMatchObject({ covered: true });
+    expect(merged[1]).toMatchObject({ slots: 5 });
+  });
+
+  test('гидратация пакета не затирает уже загруженный /regions', () => {
+    seedBundle();
+    queryClient.setQueryData(['regions'], {
+      data: [{ cpu: REGION, nameUa: 'Чернігівська область', nameEn: null, queues: [], slots: 99, covered: true, lastDate: null }],
+    });
+
+    hydrateStoredRegion(REGION);
+
+    const cached = queryClient.getQueryData<{ data: Array<Record<string, unknown>> }>(['regions'])?.data ?? [];
+    expect(cached).toHaveLength(1);
+    expect(cached[0]).toMatchObject({ cpu: REGION, slots: 99, covered: true });
   });
 });
 
