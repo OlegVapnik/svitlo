@@ -176,6 +176,13 @@ function isD1Unavailable(error: unknown): boolean {
   );
 }
 
+/**
+ * Момент, когда этот изолят впервые увидел недоступность D1. Живёт до перезапуска изолята
+ * и нужен только для диагностики (`/health`, `/status`): по нему видно, что 5xx у данных —
+ * не случайность, а исчерпанная квота базы.
+ */
+let d1UnavailableAt: string | null = null;
+
 /** URL-ключ HTTP-кэша: без диагностического `timing`, чтобы обычный запрос попадал в ту же запись. */
 function httpCacheKey(url: URL): string {
   const copy = new URL(url.toString());
@@ -4072,6 +4079,7 @@ async function syncBundle(
 
 async function handleApi(request: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/^\/api\/v1/u, '').replace(/\/+$/u, '') || '/';
+
   // Данные в D1 лежат под ключами фида (`kyiv`, `kiivska-oblast`, `dnipro-cek`), а каталог отдаёт
   // канонические `cpu` (`kyiv-city`, `kyivska-oblast`, `dnipropetrovska-oblast`). Плюс у людей в
   // закладках и `localStorage` остались вообще старые коды. Поэтому ключи чтения собирает один
@@ -4092,7 +4100,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
 
   if (path === '/health') {
-    return json({ status: 'ok' });
+    return json({ status: 'ok', d1QuotaExceeded: d1UnavailableAt !== null, d1UnavailableAt });
   }
 
   if (path === '/changelog') {
@@ -4916,7 +4924,17 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       : await buildStatusPayload(env, readRegions, today);
     timer.mark('all', started);
     timer.done('/status');
-    return json({ data: status }, 200, { 'cache-control': 'public, max-age=120' });
+    return json(
+      {
+        data: {
+          ...status,
+          d1QuotaExceeded: d1UnavailableAt !== null,
+          d1UnavailableAt,
+        },
+      },
+      200,
+      { 'cache-control': 'public, max-age=120' },
+    );
   }
 
   if (path === '/sync') {
@@ -5007,6 +5025,7 @@ export default {
       } catch (error) {
         // D1 исчерпал дневной лимит — не отдаём 500, а собираем ответ из живого зеркала.
         if (isD1Unavailable(error)) {
+          d1UnavailableAt = new Date().toISOString();
           const fallback = await mirrorFallbackResponse(path, url, env);
           if (fallback) {
             console.warn(`handleApi ${url.pathname}: D1 недоступен, ответ собран из зеркала`);
