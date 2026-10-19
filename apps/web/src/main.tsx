@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { configureCoreApi } from '@svitlo/core';
+import { configureAddressPacks, configureCoreApi } from '@svitlo/core';
 import { App } from './App';
 import { hydrateOfflineStartup } from './api/offline-sync.js';
 import { installNativeGuards, markNativeShell } from './lib/native-guards.js';
@@ -15,6 +15,11 @@ import './styles/globals.css';
  * явно. Это же место — единственная точка, где веб знает про localStorage.
  */
 configureCoreApi({ apiBaseUrl: import.meta.env['VITE_API_BASE_URL'] || '/api/v1' });
+// Статический справочник адресов лежит в public/data/address и уезжает на Pages вместе с SPA.
+// Абсолютный URL нужен только для отдельного CDN; по умолчанию — тот же origin.
+configureAddressPacks({
+  baseUrl: import.meta.env['VITE_ADDRESS_PACKS_BASE_URL'] || '/data/address',
+});
 installWebStorage();
 
 /**

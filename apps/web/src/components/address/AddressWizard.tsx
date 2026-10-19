@@ -145,6 +145,9 @@ export const AddressWizard: React.FC = () => {
   const queuesQuery = useQueues(currentRegion);
   const today = kyivToday();
   const manualScheduleQuery = useQueueSchedule(manualQueue ?? undefined, today, currentRegion);
+  // Статический пак отдаёт группу без графика: расписание всё равно живёт в D1 и читается
+  // точечно по одной группе, а не поиском по справочнику.
+  const resultScheduleQuery = useQueueSchedule(result?.queue ?? undefined, today, currentRegion);
 
   const resetAddressResult = () => {
     setResult(null);
@@ -230,7 +233,7 @@ export const AddressWizard: React.FC = () => {
   const activeQueue = manualQueue ?? result?.queue ?? null;
   const activeSchedule: QueueScheduleData | null = manualQueue
     ? manualScheduleQuery.data?.data ?? null
-    : result?.schedule ?? null;
+    : result?.schedule ?? resultScheduleQuery.data?.data ?? null;
   const activeSource = manualQueue
     ? t('addressWizard.sourceManual')
     : result?.source ?? null;
