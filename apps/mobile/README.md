@@ -55,6 +55,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/.cache/gradle:/tmp/.gradle" -v "$PWD:/repo" \
   -e ANDROID_HOME=/opt/android-sdk -e ANDROID_SDK_ROOT=/opt/android-sdk \
   -e GRADLE_USER_HOME=/tmp/.gradle -e HOME=/tmp \
+  -e NODE_PATH=/repo/node_modules/.pnpm/node_modules \
   -e ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a \
   svitlo-android-builder:latest \
   bash -c 'cd /repo/apps/mobile/android && ./gradlew --no-daemon assembleDebug'
@@ -63,6 +64,25 @@ docker run --rm --user "$(id -u):$(id -g)" \
 APK: `android/app/build/outputs/apk/debug/app-debug.apk`. Первая сборка ~15–20 мин
 (компиляция C++ модулей), инкрементальная ~4–7 мин. `arm64-v8a` — только для dev-проверок;
 release собирать со всеми ABI (фаза 5).
+
+`NODE_PATH` обязателен для release-сборки: Gradle запускает Metro без Expo CLI, и Babel
+ищет пресеты из `apps/mobile`, куда pnpm не линкует транзитивные пакеты. Без него
+`createBundleReleaseJsAndAssets` падает с `Cannot find module 'babel-preset-expo'` или
+`@babel/plugin-transform-react-jsx`. Debug-сборка не бандлит JS и потому этого не замечает.
+
+Release (подписан debug-ключом, пока нет EAS-профиля):
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/.cache/gradle:/tmp/.gradle" -v "$PWD:/repo" \
+  -e ANDROID_HOME=/opt/android-sdk -e ANDROID_SDK_ROOT=/opt/android-sdk \
+  -e GRADLE_USER_HOME=/tmp/.gradle -e HOME=/tmp \
+  -e NODE_PATH=/repo/node_modules/.pnpm/node_modules \
+  -e EXPO_PUBLIC_ADDRESS_PACKS_BASE_URL="https://svitlo-ua-4ze.pages.dev/data/address" \
+  -e ORG_GRADLE_PROJECT_reactNativeArchitectures=arm64-v8a \
+  svitlo-android-builder:latest \
+  bash -c 'cd /repo/apps/mobile/android && ./gradlew --no-daemon assembleRelease'
+```
 
 ## Фаза 2: Главная
 
