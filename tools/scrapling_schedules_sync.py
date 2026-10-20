@@ -262,6 +262,23 @@ def extract_days(html: str, queue: str, today: str, tomorrow: str) -> list[DayRe
         tomorrow_block = block_between(html, "Відключення завтра", ("</main>",))
     slots_by_date = periods_to_slots(periods + tomorrow_periods)
 
+    # `is_day_published` уже учитывает и слоты, и заполненные ячейки, поэтому флаги берём
+    # из неё напрямую: дублирующие проверки `if slots:` маскировали баг с пустой шкалой.
+    return [
+        DayResult(
+            queue=queue,
+            date=today,
+            covered=is_day_published(today_block, slots_by_date.get(today, [])),
+            intervals=slots_by_date.get(today, []),
+        ),
+        DayResult(
+            queue=queue,
+            date=tomorrow,
+            covered=is_day_published(tomorrow_block, slots_by_date.get(tomorrow, [])),
+            intervals=slots_by_date.get(tomorrow, []),
+        ),
+    ]
+
 
 def is_day_published(block: str, slots: list) -> bool:
     """Опубликован ли день по разметке Energy-UA.
@@ -272,30 +289,19 @@ def is_day_published(block: str, slots: list) -> bool:
     и внутри такого блока может лежать вложенный `no_data` (так помечается пустой список
     периодов). Если судить только по `no_data`, честный «світло є за графіком» был бы
     выброшен как «немає даних» — тоже ложь, просто противоположная.
-    Отсутствие публикации фиксируем, только когда ячеек нет вовсе И оператор показал
-    заглушку «Немає даних».
 
-    Отдельно: сам блок `scale_hours` рендерится ВСЕГДА (48 ячеек), поэтому его наличие
-    ничего не доказывает. Именно на этом ошиблись первые версии парсера: они объявляли
-    покрытой область, у которой на странице висел `class="no_data"`.
+    Пустая шкала без заглушки — тоже «не опубликовано»: оператор рендерит блок `scale_hours`
+    ВСЕГДА (48 ячеек), поэтому его наличие ничего не доказывает. Именно на этом ошиблись
+    первые версии парсера: они объявляли покрытой область, у которой на странице висел
+    `class="no_data"` и пустые `class="hour_status "`.
+
+    Живой случай 2026-10-20 (`dnipro.energy-ua.info`, `prykarpattya.energy-ua.info`):
+    24 ячейки с пустым классом + «Немає даних» на сегодня и ни одной ячейки на завтра —
+    здесь возвращается False.
     """
     if slots or re.search(r'class="hour_status [a-z_]+', block or ""):
         return True
-    return not ("no_data" in (block or "") or "Немає даних" in (block or "")) and False
-
-    # Правило вынесено в `is_day_published` и покрыто тестами: не дублируем его здесь,
-    # иначе тесты проверяли бы копию, а не рабочий код.
-    today_covered = is_day_published(today_block, slots_by_date.get(today, []))
-    tomorrow_covered = is_day_published(tomorrow_block, slots_by_date.get(tomorrow, []))
-    if slots_by_date.get(today):
-        today_covered = True
-    if slots_by_date.get(tomorrow):
-        tomorrow_covered = True
-
-    return [
-        DayResult(queue=queue, date=today, covered=today_covered, intervals=slots_by_date.get(today, [])),
-        DayResult(queue=queue, date=tomorrow, covered=tomorrow_covered, intervals=slots_by_date.get(tomorrow, [])),
-    ]
+    return False
 
 
 def collect_host(host: str, region: str, today: str, tomorrow: str) -> HostResult:
