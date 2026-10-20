@@ -13,19 +13,20 @@ scaffold `apps/mobile`, вынос `packages/core` и статические п�
 | API + крон `*/20` | Worker `svitlo-api.olegvapnik45.workers.dev/api/v1` | основной раздатчик |
 | База | D1 `svitlo` (`e3613ade-704e-480c-924a-c765745ea59c`) | графики, справочник, новости |
 | Web-PWA и паки адресов | Pages `svitlo-ua-4ze.pages.dev` + `/data/address` | основной фронт |
-| APK | R2 `svitlo-apk` → `/download/svitlo-latest.apk` | 34 МБ, только `arm64-v8a`, отдаётся с Range |
+| APK | R2 `svitlo-apk` → `/download/svitlo-latest.apk` | 2.26.0, 35 624 859 байт, только `arm64-v8a`, отдаётся с Range |
 | Android | `apps/mobile` (Expo SDK 58, RN 0.88) | APK 2.26.0 + тихий OTA JS-бандла |
-| Резерв и локальный стенд | `apps/api` (Fastify 5) + `docker compose` | не в прод-пути |
+| Резерв и локальный стенд | `apps/api` (Fastify 5) + `docker compose` | не в прод-пути; контейнеры остановлены, тома `svitlo_pg_data` и `svitlo_api_snapshots` сохранены |
 
-### Прод проверен живыми запросами 2026-10-20
+### Прод проверен живыми запросами 2026-10-20 (после выкладки 2.26.0)
 
 - `/health` → `{"status":"ok","d1QuotaExceeded":false,"d1UnavailableAt":null}`.
-- `/version` → `2.25.0`, sha256 `7e0e537a…`, 107 700 865 байт, `releasedAt 2026-10-20T03:07:53Z`.
-- `/regions` → 27 записей каталога, **12 `covered` с `lastDate: 2026-10-20`**:
-  kyiv-city 400 слотов (240 сегодня), остальные 12–32. У `dnipropetrovska-oblast`,
-  `dnipro-dnem`, `dnipro-cek`, `ivano-frankivska-oblast` — `covered: true` при **0 слотах**.
-- Паки адресов: `manifest.json` → `version: 2`, `generatedAt 2026-10-19T22:18:59Z`,
-  области `chernihivska`, `kyiv-city`, `kyivska`.
+- `/version` → `2.26.0`, sha256 `a55061da…`, 35 624 859 байт, `releasedAt 2026-10-20T14:42:14Z`;
+  тот же файл отдаётся по `/download/svitlo-latest.apk` (`content-length` совпадает).
+- OTA: `svitlo-ua-4ze.pages.dev/ota/version.json` → `2.26.0`,
+  `bundle-9fb636c87abc4e75.gz` (1 899 750 байт).
+- `/status?region=chernihivska-oblast` → `dataStale: false`, `lastUpdatedAt` свежий;
+  D1 писала снапшот в 14:44, то есть квота на запись в тот момент была жива.
+- Паки адресов: `manifest.json` → `version: 2`, области `chernihivska`, `kyiv-city`, `kyivska`.
 
 ### Что появилось после прошлой передачи (2.25.0 → 2.26.0)
 
@@ -44,6 +45,20 @@ scaffold `apps/mobile`, вынос `packages/core` и статические п�
   приводил к `systemd-oomd`, который убивал VS Code.
 
 ### Что осталось за рабочей сессией 2.26.0
+
+- **Подпись синхронизации больше не врёт.** Любая неудача `/sync` считалась офлайном, и шапка
+  писала «Без зв’язку, близько 14 годин тому», хотя связь была, а данные не обновил сервер.
+  Теперь `errorKind` в `SyncState` разделяет сеть и сервер, правило подписи — чистая функция
+  `syncLabelKey` с тестом. Зеркальный `/status` считает `dataStale` по времени снапшота
+  (порог 2 часа), а не всегда `false`. `d1QuotaExceeded` зажигается только по тексту про
+  дневной лимит D1 — раньше хватало любой ошибки базы.
+- **`deploy-cf.sh` падал на чистом кэше:** проверка `apps/web/dist/index.html` стояла до
+  `vite build`. Убрана, осталась проверка после сборки.
+- **`--publish-only` у `tools/build-android-apk.sh`** — залить уже подписанный APK и обновить
+  `version.json`, не пересобирая (`versionCode` зависит от числа коммитов).
+- Локальная уборка: снесены 5 ГБ `.cache/gradle-rn`, образы `svitlo-rn-android` и
+  `svitlo-android-builder` (9,5 ГБ, нужны только `--docker`), тома `energy-monitor_*` и
+  `svitlo-gradle*`, билд-кэш Docker. Release-ключ (`apps/web/android/app/keystore`) на месте.
 
 - `apps/web/public/ota/` — артефакт `tools/build-ota-bundle.sh` (в `.gitignore`).
 - `apps/mobile/android/` и `apps/mobile/android-apk/` — выход `expo prebuild` и сборки APK,
@@ -102,13 +117,13 @@ scaffold `apps/mobile`, вынос `packages/core` и статические п�
 
 ### Что дальше (в этом порядке)
 
-1. **Опубликовать 2.26.0 и проверить OTA на живом устройстве.** APK `2.26.0` (versionCode 197,
-   arm64-v8a, 34 МБ) собран и подписан, но лежит только локально в
-   `apps/mobile/android-apk/`. Публикация — прод-операция (нужно согласие человека):
-   `./tools/build-android-apk.sh` без `--no-publish` зальёт файл в R2 и обновит
-   `version.json`; затем `./tools/build-ota-bundle.sh` + `./deploy-cf.sh`.
-   После выкладки проверить на телефоне: скачивание, применение при следующем запуске,
-   откат по маркеру `.booted`.
+1. **Проверить OTA на живом устройстве.** APK `2.26.0` (versionCode 197, arm64-v8a,
+   35 624 859 байт, sha256 `a55061da…`) опубликован в R2 и отдаётся по
+   `/download/svitlo-latest.apk`; `version.json` обоих бэкендов обновлён. Тихий бандл
+   `bundle-9fb636c87abc4e75.gz` лежит на Pages. Осталось пройти путь на телефоне:
+   скачивание, применение при следующем запуске, откат по маркеру `.booted`.
+   Публикация уже собранного APK без пересборки — `./tools/build-android-apk.sh --publish-only`
+   (`versionCode` считается по числу коммитов, поэтому пересборка подменила бы файл).
 2. **Долги из аудита** (см. `PROJECT_AUDIT.md`, раздел «Бэклог»): backfill `outage_events`
    и отказ от легаси `outages`, CI на `tsc` + тесты, тесты для воркера и мобильного.
 
