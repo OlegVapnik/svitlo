@@ -59,6 +59,8 @@ import {
 
 interface Env {
   DB: D1Database;
+  /** APK-релизы: файл слишком большой для Pages (лимит 25 MiB), поэтому отдаём из R2. */
+  APK_BUCKET?: R2Bucket;
   MIRROR_SCHEDULE_URL: string;
   /**
    * Через запятую — временно ограничить импорт зеркала областями (ключи фида или канонические
@@ -448,15 +450,22 @@ async function resolveReadRegions(
   const stats = await networkDataOn(env, candidates.length > 0 ? candidates : keys, date, queue);
   const pool = candidates.length > 0 ? candidates : keys;
   const statOf = (key: string, source: string) => stats.get(`${key}\u0000${source}`);
-  // Источник выбираем так же, как в каталоге: живой `energy-ua` важнее зеркала. Иначе для Києва
-  // запрос группы `2/2` (есть и там, и там) читал историческое зеркало вместо сегодняшнего графика
-  // города; после перехода города на группы `1…60` это ещё и оставляло без данных группы 7…60.
-  const source = ['energy-ua', 'mirror'].find((candidate) =>
-    pool.some((key) => {
-      const stat = statOf(key, candidate);
-      return (stat?.queueSlots ?? 0) > 0 || (stat?.slots ?? 0) > 0 || (stat?.coverage ?? 0) > 0;
-    }),
-  );
+  // Источник выбираем по силе доказательства, а не просто по факту наличия записи:
+  // слоты запрошенной группы → любые слоты дня → покрытие. Покрытие без слотов — это
+  // «день опубликован», но у живого источника импорт может отставать, и тогда один лишь
+  // `schedule_coverage` перекрывал зеркало с настоящими интервалами: Київ показывал
+  // «Відключень немає» при живом графике в зеркале. Живой `energy-ua` по-прежнему важнее
+  // зеркала, когда слоты есть у обоих.
+  const hasQueueSlots = (candidate: string) =>
+    pool.some((key) => (statOf(key, candidate)?.queueSlots ?? 0) > 0);
+  const hasSlots = (candidate: string) =>
+    pool.some((key) => (statOf(key, candidate)?.slots ?? 0) > 0);
+  const hasCoverage = (candidate: string) =>
+    pool.some((key) => (statOf(key, candidate)?.coverage ?? 0) > 0);
+  const source =
+    ['energy-ua', 'mirror'].find(hasQueueSlots) ??
+    ['energy-ua', 'mirror'].find(hasSlots) ??
+    ['energy-ua', 'mirror'].find(hasCoverage);
   const sourcePool = source ? pool.filter((key) => statOf(key, source)) : pool;
   const pick =
     sourcePool.find((key) => (statOf(key, source ?? '')?.queueSlots ?? 0) > 0) ??
@@ -505,6 +514,13 @@ interface NewsRow {
   summary: string | null;
   published_at: string | null;
   first_seen_at: string;
+  /** Классификация публикации: outage | schedule-change | repair | emergency | ukraine | other. */
+  kind?: string;
+  region_cpu?: string | null;
+  is_ukraine_wide?: number;
+  /** JSON-массив URL изображений поста (графики Чернігівобленерго приходят картинками). */
+  image_urls?: string | null;
+  body?: string | null;
 }
 
 /** Убирает HTML-теги и схлопывает пробелы — из Telegram-страницы приходит размеченный текст. */
@@ -554,6 +570,8 @@ function parseTelegramChannel(html: string, sourceKey: string): Array<Omit<NewsR
     const [firstLine, ...rest] = text.split('\n');
     const title = (firstLine ?? text).slice(0, 300);
     const summary = rest.join('\n').trim().slice(0, 600) || null;
+    // Фото поста: Telegram отдаёт его как background-image у блока с photo.
+    const photo = /tgme_widget_message_photo[\s\S]*?background-image:url\('([^']+)'\)/u.exec(block)?.[1];
     items.push({
       id: `${sourceKey}:${link}`,
       source_key: sourceKey,
@@ -561,6 +579,8 @@ function parseTelegramChannel(html: string, sourceKey: string): Array<Omit<NewsR
       title,
       summary,
       published_at: datetime ?? null,
+      body: text.slice(0, 4000),
+      image_urls: photo ? JSON.stringify([photo]) : null,
     });
     if (items.length >= 40) break;
   }
@@ -1314,6 +1334,46 @@ async function ensureSchema(env: Env): Promise<void> {
   // (`IF NOT EXISTS`), порядок внутри batch сохраняется, а каждый лишний round-trip на холодном
   // изоляте — это CPU, которого при лимите 10 мс и так не хватает.
   await env.DB.batch(prepared);
+  await ensureNewsColumns(env);
+}
+
+/**
+ * Догоняющая миграция новостей: в старой D1 у `news` не было категории и региона, поэтому
+ * фильтры на клиенте было нечем применять. ALTER TABLE ADD COLUMN в D1 идемпотентно не
+ * умеет, поэтому колонки добавляем по результату PRAGMA.
+ */
+async function ensureNewsColumns(env: Env): Promise<void> {
+  const info = await env.DB.prepare(`PRAGMA table_info(news)`).all<{ name: string }>();
+  const existing = new Set((info.results ?? []).map((row) => row.name));
+  const additions: Array<[string, string]> = [
+    ['kind', `TEXT`],
+    ['region_cpu', `TEXT`],
+    ['is_ukraine_wide', `INTEGER NOT NULL DEFAULT 1`],
+    ['image_urls', `TEXT NOT NULL DEFAULT '[]'`],
+    ['body', `TEXT`],
+  ];
+  let added = false;
+  for (const [name, sql] of additions) {
+    if (existing.has(name)) continue;
+    await env.DB.prepare(`ALTER TABLE news ADD COLUMN ${name} ${sql}`).run();
+    added = true;
+  }
+  // Бэкфилл — только в момент миграции: иначе каждый холодный изолят сканировал бы всю ленту.
+  if (!added) return;
+  // Заполняем категорию для уже собранных постов грубыми правилами (только там, где пусто).
+  await env.DB.prepare(
+    `UPDATE news SET kind = CASE
+       WHEN lower(title) LIKE '%авар%' OR lower(title) LIKE '%надзвича%' THEN 'emergency'
+       WHEN lower(title) LIKE '%відключ%' OR lower(title) LIKE '%без світла%' THEN 'outage'
+       WHEN lower(title) LIKE '%графік%' OR lower(title) LIKE '%розклад%' THEN 'schedule-change'
+       WHEN lower(title) LIKE '%ремонт%' OR lower(title) LIKE '%роботи%' THEN 'repair'
+       ELSE 'other' END
+     WHERE kind IS NULL`,
+  ).run();
+  await env.DB.prepare(
+    `UPDATE news SET region_cpu = 'chernihivska-oblast', is_ukraine_wide = 0
+     WHERE source_key LIKE '%chernigiv%' OR source_key LIKE '%chernihiv%'`,
+  ).run();
 }
 
 /**
@@ -1681,27 +1741,60 @@ async function importTelegramSchedules(
   return { slots: slots.length, coverage: coverage.length, events: eventsWritten, channels: TELEGRAM_SCHEDULE_CHANNELS.length };
 }
 
+/** Регион источника: пока зеркалу известен только Черниговский оператор. */
+function newsRegionForSource(sourceKey: string): string | null {
+  if (sourceKey.includes('chernigiv') || sourceKey.includes('chernihiv')) return 'chernihivska-oblast';
+  return null;
+}
+
+/**
+ * Классификация поста по ключевым словам.
+ *
+ * Полноценный классификатор живёт в Node-бэкенде; зеркало не может держать LLM/правила, но
+ * грубые категории нужны, чтобы фильтры «Аварії» и «Зміна графіка» в приложении не были
+ * пустыми. Ошибка классификации здесь дешевле, чем полное отсутствие фильтров.
+ */
+function classifyNewsKind(text: string): string {
+  if (/авар|надзвичай|екстрен/u.test(text)) return 'emergency';
+  if (/відключ|без світла|без електро/u.test(text)) return 'outage';
+  if (/графік|розклад|почергов/u.test(text)) return 'schedule-change';
+  if (/ремонт|роботи/u.test(text)) return 'repair';
+  return 'other';
+}
+
 async function saveNews(env: Env, items: Array<Omit<NewsRow, 'first_seen_at'>>): Promise<void> {
   if (items.length === 0) return;
   const now = new Date().toISOString();
-  // 7 колонок на публикацию — тот же лимит в 100 переменных: 100/7 = 14 строк.
-  const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / 7));
+  // 12 колонок на публикацию: 100/12 = 8 строк за один round-trip.
+  const CHUNK = Math.max(1, Math.floor(MAX_VARIABLES / 12));
   for (let start = 0; start < items.length; start += CHUNK) {
     const chunk = items.slice(start, start + CHUNK);
-    const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
-    const values = chunk.flatMap((item) => [
-      item.id,
-      item.source_key,
-      item.url,
-      item.title,
-      item.summary,
-      item.published_at,
-      now,
-    ]);
+    const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+    const values = chunk.flatMap((item) => {
+      const text = `${item.title} ${item.summary ?? ''}`.toLocaleLowerCase('uk-UA');
+      const kind = classifyNewsKind(text);
+      const region = newsRegionForSource(item.source_key);
+      return [
+        item.id,
+        item.source_key,
+        item.url,
+        item.title,
+        item.summary,
+        item.published_at,
+        now,
+        kind,
+        region,
+        region ? 0 : 1,
+        item.image_urls ?? '[]',
+        item.body ?? item.summary ?? null,
+      ];
+    });
     // INSERT OR IGNORE: первый_seen_at не перетираем, иначе дата обнаружения «обнулялась» бы
     // при каждом кроне и новости вечно выглядели бы только что найденными.
     await env.DB.prepare(
-      `INSERT OR IGNORE INTO news (id, source_key, url, title, summary, published_at, first_seen_at)
+      `INSERT OR IGNORE INTO news
+         (id, source_key, url, title, summary, published_at, first_seen_at,
+          kind, region_cpu, is_ukraine_wide, image_urls, body)
        VALUES ${placeholders}`,
     ).bind(...values).run();
   }
@@ -2756,6 +2849,7 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
     return json(
       {
         data: {
+          region: canonicalRegion || requestedRegion || null,
           ...mirrorStatusPayload(snapshot, statusKeys, today),
           d1QuotaExceeded: d1UnavailableAt !== null,
           d1UnavailableAt,
@@ -2770,7 +2864,12 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
   // поэтому отдаём честные пустые массивы — фронтенд покажет EmptyState, а график уже будет.
   const days = Math.min(7, Math.max(1, Number(url.searchParams.get('days') ?? 2) || 2));
   const syncKeys = mirrorReadKeys(snapshot, requestedRegion, today);
-  const status = mirrorStatusPayload(snapshot, syncKeys, today);
+  const status = {
+    region: syncKeys[0] ?? canonicalRegion ?? requestedRegion ?? null,
+    ...mirrorStatusPayload(snapshot, syncKeys, today),
+    d1QuotaExceeded: d1UnavailableAt !== null,
+    d1UnavailableAt,
+  };
   const regions = mirrorRegionSummaries(snapshot, today);
   const buckets = mirrorUpcomingBuckets(snapshot, syncKeys, today, days);
   const feedKeys = regionFeedKeysOf(canonicalRegion);
@@ -2887,7 +2986,14 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
   const hasFacts = (cpu: string, source: string) =>
     (byRegion.get(sourceKey(cpu, source))?.queues.size ?? 0) > 0 ||
     (coverageByRegion.get(sourceKey(cpu, source))?.covered.size ?? 0) > 0;
+  // Слоты — сильнее покрытия: у живого `energy-ua` бывает строка `schedule_coverage`, но
+  // импорт слотов отстал, и тогда источник с реальными часами (зеркало) должен победить.
+  const hasSlotFacts = (cpu: string, source: string) =>
+    (byRegion.get(sourceKey(cpu, source))?.queues.size ?? 0) > 0 ||
+    (todaySlotsByRegion.get(sourceKey(cpu, source)) ?? 0) > 0;
   const preferredSourceFor = (cpus: string[]): string | null => {
+    if (cpus.some((cpu) => hasSlotFacts(cpu, 'energy-ua'))) return 'energy-ua';
+    if (cpus.some((cpu) => hasSlotFacts(cpu, 'mirror'))) return 'mirror';
     if (cpus.some((cpu) => hasFacts(cpu, 'energy-ua'))) return 'energy-ua';
     if (cpus.some((cpu) => hasFacts(cpu, 'mirror'))) return 'mirror';
     // Незнакомый источник (старые импорты) не выбрасываем: показываем как есть.
@@ -3050,7 +3156,24 @@ async function regionSummariesUncached(env: Env): Promise<Array<Record<string, u
 
 /** Каталог областей с кэшем изолята: он меняется от крона к крону, а не от запроса к запросу. */
 async function regionSummaries(env: Env): Promise<Array<Record<string, unknown>>> {
-  return cached('regions:all', () => regionSummariesUncached(env));
+  const rows = await cached('regions:all', () => regionSummariesUncached(env));
+  // Точечно, а не «весь каталог или ничего»: у одних областей сегодняшние слоты в D1 есть,
+  // у других импорт не прошёл. Сверяем каждую строку с зеркалом и подменяем только те,
+  // где D1 молчит, а зеркало отдаёт реальные часы.
+  const snapshot = await fetchMirror(env);
+  if (!snapshot.ok || !snapshot.payload) return rows;
+  const mirror = new Map(
+    mirrorRegionSummaries(snapshot, kyivToday()).map((row) => [String(row.cpu), row]),
+  );
+  return rows.map((row) => {
+    const live = mirror.get(String(row.cpu));
+    if (!live) return row;
+    const d1Slots = Number(row.todaySlots ?? 0);
+    const mirrorSlots = Number(live.todaySlots ?? 0);
+    if (d1Slots === 0 && mirrorSlots > 0) return live;
+    if (row.covered !== true && live.covered === true) return live;
+    return row;
+  });
 }
 
 async function lastImportedAt(env: Env): Promise<string | null> {
@@ -3787,32 +3910,65 @@ async function offlineSettlements(
  * копии одного запроса разошлись бы, и в самолёте человек читал бы не ту ленту, что на главной.
  * `limit` уже провалидирован вызывающей стороной.
  */
-async function newsItems(env: Env, limit: number): Promise<Array<Record<string, unknown>>> {
+async function newsItems(
+  env: Env,
+  options: { limit: number; region?: string; kind?: string; excludeKind?: string; ukraineWide?: boolean },
+): Promise<Array<Record<string, unknown>>> {
+  const where: string[] = [];
+  const bindings: Array<string | number> = [];
+  if (options.region) {
+    // «Моя область» = посты региона + общие украинские (Укренерго/ДТЕК).
+    if (options.ukraineWide) {
+      where.push('(region_cpu = ? OR is_ukraine_wide = 1)');
+    } else {
+      where.push('region_cpu = ?');
+    }
+    bindings.push(options.region);
+  } else if (options.ukraineWide) {
+    where.push('is_ukraine_wide = 1');
+  }
+  if (options.kind) {
+    where.push('kind = ?');
+    bindings.push(options.kind);
+  }
+  if (options.excludeKind) {
+    where.push('(kind IS NULL OR kind <> ?)');
+    bindings.push(options.excludeKind);
+  }
+  const clause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const result = await env.DB.prepare(
-    `SELECT id, source_key, url, title, summary, published_at, first_seen_at
-     FROM news ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?`,
-  ).bind(limit).all<NewsRow>();
-  const items = (result.results ?? []).map((row) => ({
-    id: row.id,
-    sourceKey: row.source_key,
-    url: row.url,
-    title: row.title,
-    summary: row.summary ?? null,
-    body: row.summary ?? null,
-    publishedAt: row.published_at ?? null,
-    firstSeenAt: row.first_seen_at,
-    regionCpu: null,
-    // Вид публикации зеркалом не отдаётся; «ukraine» честнее, чем выдуманный «outage».
-    kind: 'ukraine',
-    isUkraineWide: true,
-    // tags и imageUrls ОБЯЗАТЕЛЬНЫ: по ним компоненты делают .map(). Раньше воркер отдавал
-    // несуществующее imageUrl вместо imageUrls — это и ломало рендер вкладки «Новини».
-    tags: [],
-    imageUrls: [],
-    // Хэш содержимого нужен, чтобы не перерисовывать карточку, если текст не изменился.
-    // Считаем из того, что реально есть.
-    contentHash: `${row.id}:${row.published_at ?? row.first_seen_at}`,
-  }));
+    `SELECT id, source_key, url, title, summary, published_at, first_seen_at,
+            kind, region_cpu, is_ukraine_wide, image_urls, body
+     FROM news ${clause}
+     ORDER BY COALESCE(published_at, first_seen_at) DESC LIMIT ?`,
+  ).bind(...bindings, options.limit).all<NewsRow>();
+  const items = (result.results ?? []).map((row) => {
+    let imageUrls: string[] = [];
+    try {
+      const parsed = JSON.parse(row.image_urls ?? '[]');
+      if (Array.isArray(parsed)) imageUrls = parsed.filter((url): url is string => typeof url === 'string');
+    } catch {
+      imageUrls = [];
+    }
+    return {
+      id: row.id,
+      sourceKey: row.source_key,
+      url: row.url,
+      title: row.title,
+      summary: row.summary ?? null,
+      body: row.body ?? row.summary ?? null,
+      publishedAt: row.published_at ?? null,
+      firstSeenAt: row.first_seen_at,
+      regionCpu: row.region_cpu ?? null,
+      kind: row.kind ?? 'other',
+      isUkraineWide: row.is_ukraine_wide !== 0,
+      // tags и imageUrls ОБЯЗАТЕЛЬНЫ: по ним компоненты делают .map().
+      tags: [],
+      imageUrls,
+      // Хэш содержимого нужен, чтобы не перерисовывать карточку, если текст не изменился.
+      contentHash: `${row.id}:${row.published_at ?? row.first_seen_at}`,
+    };
+  });
   return items;
 }
 
@@ -3891,9 +4047,23 @@ async function upcomingGroupBuckets(
   days: number,
 ): Promise<Array<Record<string, unknown>>> {
   const keys = [...new Set(regions.filter((region) => region))].sort();
-  return cached(`upcoming:${keys.join(',')}:${today}:${days}`, () =>
+  const buckets = await cached(`upcoming:${keys.join(',')}:${today}:${days}`, () =>
     upcomingGroupBucketsUncached(env, regions, today, days),
   );
+  if (buckets.length > 0) return buckets;
+
+  // D1 может отдать пустой день, пока импорт слотов не прошёл (например, исчерпан лимит
+  // записей). Зеркало в этот момент содержит живой график — без этой ветки главная и пакет
+  // `/sync` показывали «Відключень немає» при реальных интервалах.
+  const snapshot = await fetchMirror(env);
+  if (!snapshot.ok || !snapshot.payload) return buckets;
+  const mirrorKeys = [
+    ...new Set(
+      regions.flatMap((region) => mirrorReadKeys(snapshot, region, today)),
+    ),
+  ];
+  if (mirrorKeys.length === 0) return buckets;
+  return mirrorUpcomingBuckets(snapshot, mirrorKeys, today, days);
 }
 
 /**
@@ -3993,7 +4163,22 @@ async function buildStatusPayloadUncached(
 
 /** `buildStatusPayload` с кэшем изолята: ключ — набор ключей области и дата. */
 async function buildStatusPayload(env: Env, regions: string[], today: string): Promise<Record<string, unknown>> {
-  return cached(`status:${regions.join(',')}:${today}`, () => buildStatusPayloadUncached(env, regions, today));
+  const payload = await cached(`status:${regions.join(',')}:${today}`, () =>
+    buildStatusPayloadUncached(env, regions, today),
+  );
+  // Пока в D1 нет сегодняшних слотов, но зеркало их отдаёт, счётчики D1 — это «тихий ноль».
+  // Отличить его от честного allClear можно по наличию слотов в зеркале: если там пусто,
+  // день действительно опубликован без отключений.
+  if (Number(payload.scheduledGroups ?? 0) > 0 || Number(payload.activeGroups ?? 0) > 0) return payload;
+  const snapshot = await fetchMirror(env);
+  if (!snapshot.ok || !snapshot.payload) return payload;
+  const keys =
+    regions.length > 0
+      ? [...new Set(regions.flatMap((region) => mirrorReadKeys(snapshot, region, today)))]
+      : [...snapshot.cpus];
+  if (keys.length === 0) return payload;
+  const mirror = mirrorStatusPayload(snapshot, keys, today);
+  return Number(mirror.totalQueues ?? 0) > 0 ? mirror : payload;
 }
 
 /**
@@ -4048,7 +4233,7 @@ async function syncBundle(
       'buckets',
       readRegions.length > 0 ? upcomingGroupBuckets(env, readRegions, today, days) : Promise.resolve([]),
     ),
-    measure('news', newsItems(env, SYNC_NEWS_LIMIT)),
+    measure('news', newsItems(env, { limit: SYNC_NEWS_LIMIT })),
     // Список групп — по ключах ФИДА: канонічний/легаси-дубль без покрытия обнулял бы «согласие всех
     // сетей», и офлайн-пакет приносил бы пустой перечень групп при живом графике.
     measure('queues', queueSummaries(env, syncFeedKeys)),
@@ -4178,6 +4363,26 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     // Источник берём у самих слотов: раньше здесь было жёстко 'mirror', и слоты, собранные из
     // Telegram, выдавались за данные зеркала — источник в интерфейсе был бы неправдой.
     const slotSource = rows.find((row) => row.source)?.source ?? null;
+    const lastImported = await lastImportedAt(env);
+    if (intervals.length === 0) {
+      // Пустой D1 ещё не значит «світло за графіком»: при исчерпанном лимите записей
+      // сегодняшние слоты не импортировались. Сверяемся с живым зеркалом и отдаём его
+      // интервалы, если они есть, — иначе Київ показывал зелёное при реальных отключениях.
+      const snapshot = await fetchMirror(env);
+      if (snapshot.ok && snapshot.payload) {
+        const scheduleKeys = mirrorReadKeys(snapshot, requestedRegion, date, queue);
+        const mirrorData = mirrorScheduleResponse(
+          snapshot,
+          scheduleKeys,
+          queue,
+          date,
+          queueAliases,
+        );
+        if ((mirrorData.intervals as unknown[]).length > 0) {
+          return json({ data: mirrorData }, 200, { 'cache-control': 'public, max-age=60' });
+        }
+      }
+    }
     return json({
       data: {
         queue,
@@ -4186,7 +4391,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
         source: intervals.length > 0 ? slotSource : queueCovered ? ([...coverage.sources][0] ?? null) : null,
         covered,
         allClear: covered && intervals.length === 0 && !offByFeed,
-        lastImportedAt: await lastImportedAt(env),
+        lastImportedAt: lastImported,
       },
     }, 200, { 'cache-control': 'public, max-age=60' });
   }
@@ -4200,11 +4405,19 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   }
 
   if (path === '/news') {
-    const limit = Math.min(50, Math.max(1, Number(url.searchParams.get('limit') ?? 20) || 20));
-    const items = await newsItems(env, limit);
+    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? 20) || 20));
+    const kind = url.searchParams.get('kind') ?? undefined;
+    const excludeKind = url.searchParams.get('excludeKind') ?? undefined;
+    const region = url.searchParams.get('region') ?? undefined;
+    const ukraineWide = url.searchParams.get('ukraineWide') === 'true';
+    const items = await newsItems(env, { limit, kind, excludeKind, region, ukraineWide });
     // `stale` — не ошибка, а честный признак пустой ленты: по нему фронтенд показывает
     // «даних немає», а не пустую вёрстку.
-    return json({ data: items, meta: { count: items.length, limit, stale: items.length === 0 } });
+    const latest = items[0]?.publishedAt as string | null | undefined;
+    const stale = items.length === 0 || (latest ? Date.now() - Date.parse(latest) > 24 * 3600 * 1000 : true);
+    return json({ data: items, meta: { count: items.length, limit, stale } }, 200, {
+      'cache-control': 'public, max-age=60',
+    });
   }
 
   // Источники новостей: сколько записей собрано с каждой площадки и когда видели последнюю.
@@ -4981,6 +5194,52 @@ function markCachedResponse(response: Response, kind: 'memory' | 'edge'): Respon
   return new Response(response.body, { status: response.status, headers });
 }
 
+/** Отдаёт APK-релиз из R2 с поддержкой Range (докачка/менеджер загрузок Android). */
+async function serveApk(request: Request, env: Env, fileName: string): Promise<Response> {
+  const bucket = env.APK_BUCKET;
+  if (!bucket) {
+    return json({ error: { code: 'APK_UNAVAILABLE', message: 'APK-хранилище не налаштоване' } }, 503, {
+      'cache-control': 'no-store',
+    });
+  }
+
+  const rangeHeader = request.headers.get('range');
+  const object = await bucket.get(fileName, rangeHeader ? { range: request.headers } : undefined);
+  if (!object) {
+    return json({ error: { code: 'APK_NOT_FOUND', message: 'Файл не знайдено' } }, 404, {
+      'cache-control': 'no-store',
+    });
+  }
+
+  const headers = new Headers({
+    'content-type': 'application/vnd.android.package-archive',
+    'content-disposition': `attachment; filename="${fileName}"`,
+    'cache-control': 'public, max-age=300',
+    'access-control-allow-origin': '*',
+    'accept-ranges': 'bytes',
+    etag: object.httpEtag,
+  });
+  // R2 может вернуть `range` даже на обычный GET; 206 отдаём только если клиент просил Range.
+  const range = rangeHeader ? object.range : undefined;
+  const rangeStart = range && 'offset' in range ? range.offset : undefined;
+  const rangeLength = range && 'length' in range ? range.length : undefined;
+  const partial =
+    typeof rangeStart === 'number' &&
+    typeof rangeLength === 'number' &&
+    rangeStart === 0 &&
+    rangeLength < object.size;
+  if (partial) {
+    headers.set('content-length', String(rangeLength));
+    headers.set('content-range', `bytes ${rangeStart}-${rangeStart + rangeLength - 1}/${object.size}`);
+  } else if (object.size != null) {
+    headers.set('content-length', String(object.size));
+  }
+
+  const status = partial ? 206 : 200;
+  if (request.method === 'HEAD') return new Response(null, { status, headers });
+  return new Response(object.body, { status, headers });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -5000,6 +5259,14 @@ export default {
           'access-control-max-age': '86400',
         },
       });
+    }
+
+    // APK из R2: Cloudflare Pages не принимает файлы больше 25 MiB, а release-APK React Native
+    // весит ~100 MiB. Отдаём его потоком через Worker, с Range и CORS — WebView скачивает
+    // так же, как обычный файл по ссылке.
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      const apkMatch = /^\/(?:download\/)?(svitlo-[\w.-]+\.apk)$/u.exec(url.pathname);
+      if (apkMatch) return serveApk(request, env, apkMatch[1]!);
     }
 
     const path = url.pathname.replace(/^\/api\/v1/u, '').replace(/\/+$/u, '') || '/';

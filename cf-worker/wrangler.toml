@@ -45,3 +45,9 @@ CHERNIHIV_WEB_BASE_URL = "https://chernihivoblenergo.com.ua"
 binding = "DB"
 database_name = "svitlo"
 database_id = "e3613ade-704e-480c-924a-c765745ea59c"
+
+# APK-релизы. Файл ~100 MiB не проходит лимит Pages (25 MiB на файл), поэтому лежит в R2,
+# а Worker отдаёт его по /download/svitlo-latest.apk с поддержкой Range.
+[[r2_buckets]]
+binding = "APK_BUCKET"
+bucket_name = "svitlo-apk"
