@@ -1,214 +1,367 @@
+# PROJECT_MAP — Svitlo (всеукраинский монитор отключений)
+
 > Назначение файла: за 5 минут ввести в курс нового разработчика или ИИ-агента.
-> Актуальность: проверено по реальному коду на **2026-10-14 (коммит `6cbe3ff`, ветка
-> `redesign/wow-ui`)**. `tsc --noEmit` для `api`, `web` и `cf-worker` — **0 ошибок**.
-
----
-
-## ⚠️ ЧТО ИЗМЕНИЛОСЬ 18.10.2026 (обязательно к прочтению)
-
-Архитектура прежняя — **Cloudflare Worker + D1 как основа**, Node-бэкенд стал резервом.
-Ниже только то, что изменилось после 14.10. Актуальные блокеры и лимиты — в `HANDOFF.md`.
-
-| Что | Где | Статус |
-|---|---|---|
-| Worker (API + крон) | `cf-worker/` | **основной раздатчик данных** |
-| D1-база | облако, id в `cf-worker/wrangler.toml` | графики, справочник адресов |
-| Статика | Cloudflare Pages, проект `svitlo-ua` | домен `svitlo-ua-4ze.pages.dev` |
-| Деплой | `./deploy-cf.sh` | без GitHub, без CI |
-| Живой API | `https://svitlo-api.olegvapnik45.workers.dev/api/v1` | крон каждые 20 минут |
-
-**Что поменялось по существу:**
-
-* **D1 — источник истины по графикам.** `/regions`, `/queues`, `/schedules`,
-  `/schedules/upcoming`, `/status` больше не зависят от одного зеркала: снимок дополняется
-  слотами из `schedule_slots` (`MirrorSnapshot.d1Slots`) и покрытием из `schedule_coverage`
-  (`d1Coverage`). Внешнее зеркало недоверенное — см. инвариант ниже.
-* **Адреса хранятся сжато.** Дома лежат в `directory_streets.houses_json` одной строкой на
-  улицу (`{"13":"2/2","16-42":"5/1"}`). Таблица `directory_houses` пуста, из кода убрана.
-  Справочник НП построен на полном реестре КАТОТТГ (28 814 записей), не на GeoNames-горстке.
-* **Голосование за очередь дома удалено** по решению владельца: `/addresses/confirm`,
-  `/addresses/contribute`, `address_queue_votes`, кворум, `protected`.
-* **Парсер Energy-UA** `tools/scrapling_schedules_sync.py` — источник по 16 областям,
-  обычный HTTP без браузера. Правило публикации дня — `is_day_published()`, покрыто тестами.
-* **Сбор энергетиков Чернігівоблэнерго** `tools/import-address-hierarchy.py` разбирает
-  официальный PDF: 305 377 адресов, 12 883 улицы, граница колонок «дільниця / НП»
-  разделена до вставки. Есть `--check-remote` для слежения за свежестью PDF.
-* **Сборка APK** только через `./tools/build-android-apk.sh` — SDK и JDK живут в Docker-образе,
-  на машине их нет. Прямой `./gradlew` падает.
-* **Выкладка после 00:00 UTC** — `./tools/release-after-midnight.sh`.
-
-### ⚠️ Инвариант: зелёный при отсутствии данных запрещён
-
-Оператор без графика отдаёт `class="no_data"` и «Немає даних». Это **не** «світло є за графіком».
-На этом уже поймали ложное покрытие у 11 областей. Правило и фикстуры — в
-`tests/test_scrapling_schedules.py`.
-
-Ветка `redesign/wow-ui`: визуальный редизайн завершён (этапы 1–8), сейчас работа над данными.
+> Актуальность: проверено по коду и живому проду **2026-10-20**, ветка `redesign/wow-ui`,
+> последний коммит `4a080c2`, версия приложения **2.25.0**.
+> `tsc` для `apps/api` (src и tests), `apps/web`, `cf-worker`, `apps/mobile` — **0 ошибок**.
 
 ---
 
 ## 0. TL;DR
 
-PWA-сервис «Svitlo — Чернігів» собирает и показывает **отключения электроэнергии** (плановые/аварийные/ремонтные), **график ГПВ по очередям**, **аварийные сообщения и новости**, **статистику надёжности электроснабжения** и **справочник контактов** для жителей Черниговской обл. (в первую очередь — с. Деснянське Новгород-Северского р-на, с поддержкой многорегиональности и справочника населённых пунктов `settlements`)[cite: 1, 2].
+**Svitlo** — всеукраинский монитор отключений электроэнергии (24 области + Киев): график ГПВ
+по очередям (группам), адресный поиск «область → населённый пункт → улица → дом» с привязкой
+дома к группе, лента аварий и новостей операторов, честный статус «світло є / немає».
+
+Одна доменная логика (`packages/core`) и три клиента: **PWA** (`apps/web`), **Android**
+(`apps/mobile`, Expo SDK 58 → APK), плюс **Node-бэкенд** (`apps/api`, Fastify 5) как резерв и
+локальный стенд. Данные в проде раздаёт **Cloudflare Worker + D1**, статика и справочники
+адресов — **Cloudflare Pages**, APK — **R2**.
 
 | Слой | Технология | Где |
 |---|---|---|
-| Монорепо | pnpm workspaces (`apps/*`, `packages/*`) | `/package.json`, `/pnpm-workspace.yaml`[cite: 2] |
-| API | Fastify 5 + Drizzle ORM + postgres.js + zod + pino + node-cron + helmet + rate-limit | `/apps/api`[cite: 1, 2] |
-| Web | React 18 + Vite 6 + TS + Router 7 + TanStack Query 5 + Tailwind v4 + ECharts + Leaflet + i18next | `/apps/web`[cite: 2] |
-| Shared | zod-схемы и TS-типы, без сборки (потребляется как исходники) | `/packages/shared/src/index.ts`[cite: 2] |
-| БД | PostgreSQL 16 (расширения `uuid-ossp`, `pg_trgm`, `unaccent` + SQL-функция `energy_normalize_address`) | docker service `db`[cite: 2] |
-| Прод-ран | Docker Compose: `db` → `migrate` (one-shot) → `api` + `web` (nginx) | `/docker-compose.yml`, `/docker/*`[cite: 2] |
+| Монорепо | pnpm workspaces (`apps/*`, `packages/*`) | `/package.json`, `/pnpm-workspace.yaml` |
+| API и крон | Cloudflare Worker (Web Fetch + D1 + Cache API + R2), крон `*/20` | `/cf-worker` |
+| База прод | Cloudflare D1 `svitlo` (`e3613ade-704e-480c-924a-c765745ea59c`) | `cf-worker/wrangler.toml` |
+| Web | React 19.3 + Vite 8.3 + TS 7 + Router 7 + TanStack Query 5 + Tailwind v4 + ECharts 6 + Leaflet + vite-plugin-pwa | `/apps/web` |
+| Android | Expo SDK 58 + RN 0.88 + expo-router 58 + NativeWind 4 + Reanimated 4 + Notifee | `/apps/mobile` |
+| Общая логика | `@svitlo/core` — платформенно-нейтральные lib/api/storage/config | `/packages/core` |
+| Контракты | zod-схемы и TS-типы, потребляются как исходники | `/packages/shared` |
+| Резервный бэкенд | Fastify 5 + Drizzle ORM + postgres.js + pino + node-cron | `/apps/api` |
+| Локальная БД | PostgreSQL 16 (`pg_trgm`, `unaccent`, `energy_normalize_address`) | сервис `db` в `/docker-compose.yml` |
+| Тесты | vitest (API, web), pytest (парсер Energy-UA) | `apps/*/tests`, `tests/` |
+| Деплой | `./deploy-cf.sh` (5 шагов, без GitHub и CI) | корень |
+
+### Живое состояние прода (проверено запросами 2026-10-20)
+
+| Что | Ответ |
+|---|---|
+| `GET /api/v1/health` | `{"status":"ok","d1QuotaExceeded":false,"d1UnavailableAt":null}` |
+| `GET /api/v1/version` | опубликовано `2.25.0`, sha256 `7e0e537a…`, 107 700 865 байт; собран `2.26.0`, sha256 `a55061da…`, 35 624 859 байт, `arm64-v8a` |
+| `GET /api/v1/regions` | 27 записей каталога, 12 `covered`, `lastDate: 2026-10-20` |
+| Паки адресов | `svitlo-ua-4ze.pages.dev/data/address/manifest.json`, `version: 2`, 3 области |
 
 ---
 
-## 1. Быстрый старт
+## 1. Поток данных
+
+```text
+        ┌─────────────── источники ───────────────┐
+Energy-UA (HTML)   зеркало ГПВ (JSON)   Telegram   PDF Чернігівобленерго
+        │                  │                 │              │
+        │        крон Worker */20 ───────────┘              │
+        │                  │                                │
+        │            ┌─────▼─────┐                          │
+        │            │    D1     │  schedule_slots, schedule_coverage,
+        │            │  svitlo   │  news, directory_*, snapshot_meta
+        │            └─────┬─────┘                          │
+        │                  │                                │
+   tools/*.py (вручную)    │  /api/v1/*                     │
+        └──► .cache/ ──► паки адресов ──► Pages ──► web / mobile
+                                          │
+                              APK ──► R2 ─┘  /download/svitlo-latest.apk
+```
+
+1. **Крон воркера** каждые 20 минут забирает снимок ГПВ и новости, пишет в D1. Снимок из
+   зеркала **дополняется**, а не заменяется: `MirrorSnapshot.d1Slots` (слоты из
+   `schedule_slots`) и `d1Coverage` (покрытие из `schedule_coverage`).
+2. **Свои источники сильнее зеркала.** Для области, которую разбираем сами и у которой есть
+   строки покрытия, `covered` берётся только из нашей таблицы. Зеркало
+   `dtek-api.svitlo-proxy.workers.dev` уже отдавало пустые таблицы как «свет есть».
+3. **Выбор источника при выдаче графика** — по силе доказательства: слоты запрошенной группы →
+   любые слоты дня → покрытие. Иначе один `schedule_coverage` перекрывал зеркало с живыми
+   интервалами (Київ показывал «Відключень немає»).
+4. **Бюджет записи D1.** Крон не перезаписывает неизменное: фингерпринт `gpv_fingerprint` в
+   `snapshot_meta` даёт ноль записей, когда набор ГПВ-событий не изменился.
+5. **Публичный поиск адреса** идёт не в D1, а в статические паки с Pages (см. §4): автокомплит
+   на каждый символ съедал суточную квоту `rows_read`.
+
+---
+
+## 2. Быстрый старт
 
 ### Путь 1. Облако (основной)
 
 ```bash
-# Нужен аккаунт Cloudflare и один раз — вход:
-npx wrangler login
-
-# Деплой всего: D1 создаётся и подставляется автоматически, схема накатывается,
-# воркер публикуется, фронтенд собирается на его адрес и уезжает в Pages.
-./deploy-cf.sh
+npx wrangler login          # однократно
+./deploy-cf.sh              # D1 → чейнджлог → Worker → паки+фронт → Pages
 ```
 
-Скрипт идемпотентен и сам ищет существующую базу `svitlo` либо создаёт её, если в
-`cf-worker/wrangler.toml` ещё стоит заглушка `ЗАМЕНИТЕ_НА_DATABASE_ID`.
+`deploy-cf.sh` идемпотентен: сам находит или создаёт D1 `svitlo` и Pages-проект, подставляет
+`database_id`, накатывает `cf-worker/schema.sql`, деплоит воркер, собирает паки адресов и
+фронтенд с фактическим адресом воркера и проверяет, что этот адрес вшит в бандл.
 
-### Путь 2. Локально (Node-бэкенд, резервный)
+- `SKIP_ADDRESS_IMPORT=1 ./deploy-cf.sh` — пропустить тяжёлый перенос справочника в D1
+  (деплой кода от него не зависит; нужно, когда квота на исходе).
+- Паки адресов собираются из **локальных** выгрузок в `.cache/`; без них шаг пропускается и
+  поиск остаётся на D1-фолбэке.
+
+### Путь 2. Android
 
 ```bash
-# 1. Переменные окружения (обязателен ADMIN_TOKEN от 16 символов в production)
-cp .env.example .env
-
-# 2. Прод-подобный запуск (сборка образов + миграции + api + nginx)
-docker compose up -d --build
-docker compose ps
-
-# 3. Проверка
-curl -s localhost:3001/api/v1/health      # {"status":"ok"}
-curl -s localhost:3001/api/v1/status      # сводка
-open http://localhost:3000                # UI (nginx → /usr/share/nginx/html)
-open http://localhost:3001/docs           # Swagger UI
+./tools/build-android-apk.sh     # SDK/JDK в Docker-образе; прямой ./gradlew падает
+./tools/build-ota-bundle.sh      # тихий OTA: JS-бандл + манифест в apps/web/public/ota
 ```
 
-Локальная разработка и проверка типов[cite: 1, 2]:
+`apps/mobile/android` не коммитится: он генерируется `expo prebuild`, а нативные правки
+воспроизводятся config-плагинами `plugins/withAndroidWidget.js` и `plugins/withSvitloNative.js`.
+
+### Путь 3. Локально (Node-бэкенд, резерв)
 
 ```bash
-# С установленным pnpm:
-pnpm install
-pnpm --filter @svitlo/api db:migrate
-pnpm --filter @svitlo/api dev      # tsx watch src/server.ts
-pnpm --filter @svitlo/web dev      # vite, proxy /api → http://localhost:3001
-
-# Без глобального pnpm (прямой запуск локальных бинарников tsc):
-./apps/api/node_modules/.bin/tsc --noEmit
-./apps/web/node_modules/.bin/tsc --noEmit
+cp .env.example .env             # в production ADMIN_TOKEN обязателен, ≥16 символов
+docker compose up -d --build     # db → migrate → api (3001) + web (3000)
+curl -s localhost:3001/api/v1/health
+open http://localhost:3000       # nginx: SPA + прокси /api/
+open http://localhost:3001/docs  # Swagger UI
 ```
 
-| Порт | Сервис |
+| Порт | Что |
 |---|---|
-| `3000` | `web` (nginx, статика + прокси `/api/` → `api:3001`, внутри слушает HTTP 80 без TLS)[cite: 1, 2] |
-| `3001` | `api` (Fastify), `/docs` — Swagger[cite: 2] |
-| `127.0.0.1:5432` | PostgreSQL (роль/база `svitlo`, закрыт на loopback-интерфейс)[cite: 1, 2] |
+| `3000` | `web` (nginx, статика + прокси `/api/` → `api:3001`) |
+| `3001` | `api` (Fastify), `/docs` — Swagger |
+| `127.0.0.1:5432` | PostgreSQL (роль/база `svitlo`, только loopback) |
 
-> Тулчейн на хосте: node v26, pnpm 11, Docker 29; образы собираются на **node:22-alpine + pnpm 9.15** (`corepack prepare pnpm@9.15.0`)[cite: 2].
+### Проверки перед коммитом
+
+```bash
+./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmit
+./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.tests.json --noEmit
+./apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json --noEmit
+(cd cf-worker && ./node_modules/.bin/tsc --noEmit)
+(cd apps/mobile && ./node_modules/.bin/tsc --noEmit)
+python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .
+python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py .   # при правках UI
+node tools/gen-git-history.mjs --check                                 # GIT_HISTORY.md актуален
+```
 
 ---
 
-## 2. Структура репозитория
+## 3. Структура репозитория
 
 ```text
 svitlo/
-├─ deploy-cf.sh                # ОСНОВНОЙ ДЕПЛОЙ: D1 → воркер → сборка фронта → Pages, одной командой
-├─ cf-worker/                  # Cloudflare Worker: API + крон 20 мин, БЕЗ Node-зависимостей
-│  ├─ wrangler.toml            # имя, cron */20, [vars], привязка D1 (database_id)
-│  ├─ schema.sql               # схема D1 + справочные данные (контакты, 20 улиц Деснянского)
-│  ├─ .wranglerignore          # что НЕ упаковывать в бандл воркера
-│  ├─ src/index.ts             # все /api/v1 маршруты, cron-обход зеркала, Telegram-новости
-│  ├─ src/address.ts           # нормализация адресов + матчер домов (порт из apps/api)
-│  ├─ src/settlements.ts       # поиск по справочнику, бинарный поиск по префиксу
-│  ├─ src/settlements-ua.json  # 1853 населённых пункта (GeoNames), 72 КБ
-│  ├─ src/chernihiv.ts         # порт парсера chernihiv-web в Worker
-│  └─ src/news / telegram      # разбор t.me/s/<канал>
-├─ tools/
-│  ├─ compare-api-contracts.py # сверка ответов воркера с эталоном (ловит расхождения контрактов)
-│  ├─ gen-settlements-ua.py    # пересборка справочника НП из дампа GeoNames
-│  ├─ build-android-apk.sh     # APK: сборка фронта + cap sync + gradle в Docker
-│  └─ bump-version.sh          # версия X.Y.Z
-├─ docker-compose.yml          # db + migrate + api + web, единый x-api-env для api/migrate
-├─ docker/
-│  ├─ Dockerfile.api           # node:22-alpine, multi-stage (deps→builder→runner), CMD node dist/server.js
-│  ├─ Dockerfile.web           # vite build (ARG VITE_API_BASE_URL) → nginx:alpine
-│  ├─ nginx.conf               # SPA-fallback try_files, proxy /api/ → api:3001, /assets/ cache 1y immutable + headers
-│  ├─ init.sql                 # uuid-ossp + pg_trgm (initdb контейнера БД)
-│  ├─ operator-oblenergo-ca.pem# промежуточный+корневой CA оператора → монтируется как /app/apps/api/operator-ca.pem
-│  └─ .dockerignore
-├─ apps/api/
-│  ├─ src/server.ts / app.ts   # bootstrap Fastify: helmet, rate-limit (TRUST_PROXY), CORS_ORIGINS, роуты, кроны
-│  ├─ src/config.ts            # env-схема на zod (валидация ADMIN_TOKEN и CHERNIHIV_CITY_IDS)
-│  ├─ src/routes/*.ts          # 10 файлов роутов
-│  ├─ src/services/*.ts        # бизнес-логика, классификация, группировка, автоимпорт ГПВ, новости, провайдеры
-│  ├─ src/parsers/*.ts         # адаптеры источников (chernihiv-web, telegram-channel, telegram-bot, mock)
-│  ├─ src/db/{schema,migrate}.ts + migrations/*.sql  # (seed.ts удалён 2026-10-10)
-│  ├─ src/plugins/{auth,cors,swagger}.ts
-│  ├─ src/utils/{timing-safe,errors,hash,logger}.ts
-│  ├─ src/scheduler/cron.ts    # node-cron + jitter (ENABLE_SCHEDULER + setupNewsCollectCron)
-│  ├─ tests/**                 # vitest, 20 файлов (16 проходят, 4 интеграционных требуют TEST_DATABASE_URL)
-│  └─ vitest.config.ts
-├─ apps/web/
-│  ├─ src/main.tsx → App.tsx → router.tsx
-│  ├─ src/pages/*.tsx          # 8 страниц
-│  ├─ src/components/{ui,layout,outages,incidents,status,search,schedule,common}
-│  │  └─ layout/nav-items.ts   # публичная навигация отделена от ADMIN_ITEMS (admin:true)
-│  ├─ src/api/{client,queries}.ts
-│  ├─ src/hooks/*, src/lib/*   # (demo-schedule.ts удалён 2026-10-10; 2 теста: outage-location и source-health)
-│  ├─ src/i18n/{config.ts,uk.json,ru.json}
-│  ├─ src/styles/globals.css   # Tailwind v4 CSS-first (@theme inline + переменные светлой/тёмной темы)
-│  └─ vite.config.ts           # alias @→src, proxy /api, @tailwindcss/vite, vite-plugin-pwa
-├─ packages/shared/src/index.ts# общие типы и zod-схемы
-└─ .env / .env.example / .gitignore
+├─ deploy-cf.sh                 # ОСНОВНОЙ ДЕПЛОЙ: D1 → чейнджлог → Worker → паки+фронт → Pages
+├─ cf-worker/                   # Cloudflare Worker: API + крон */20, без Node-зависимостей
+│  ├─ wrangler.toml             # имя, crons, [vars], D1 (database_id), R2 для APK
+│  ├─ schema.sql                # схема D1: schedule_*, directory_*, news, snapshot_meta
+│  └─ src/
+│     ├─ index.ts               # все /api/v1 маршруты, крон, Telegram-новости, /download APK
+│     ├─ mirror-sync.ts         # снимок зеркала: d1Slots, d1Coverage, фингерпринт
+│     ├─ mirror-parser.ts       # разбор ответов зеркала ГПВ
+│     ├─ schedule-utils.ts      # интервалы, группы, ключи очередей
+│     ├─ address.ts             # нормализация адресов + матчер домов
+│     ├─ settlements.ts + settlements-ua.json  # поиск по НП, бинарный поиск по префиксу
+│     ├─ chernihiv.ts           # порт парсера Чернігівобленерго
+│     ├─ telegram-schedule.ts   # посты канала → ГПВ
+│     ├─ d1-write.ts            # бюджет записи D1
+│     ├─ regions.ts, kyiv-time.ts
+│     └─ data/version.json      # версия, sha256 и ссылка на APK
+├─ packages/
+│  ├─ core/                     # @svitlo/core: lib/*, api/*, storage.ts, config.ts
+│  └─ shared/                   # @svitlo/shared: типы и zod-схемы контрактов
+├─ apps/
+│  ├─ web/                      # PWA: React 19, Vite 8, Tailwind v4
+│  │  ├─ src/pages/             # 11 страниц (Home, Search, Streets, Monitor, Outages, Info…)
+│  │  ├─ src/components/        # ui, layout, outages, incidents, status, search, schedule,
+│  │  │                         # address, places, monitor, offline, changelog, events, region
+│  │  ├─ src/hooks/, src/lib/   # платформенные обёртки; расчёты живут в @svitlo/core
+│  │  ├─ src/i18n/              # одна локаль — uk.json (мультиязычность убрана)
+│  │  ├─ src/styles/globals.css # Tailwind v4 CSS-first (@theme inline + токены тем)
+│  │  └─ public/                # data/address (паки), ota (JS-бандл) — артефакты, в git нет
+│  ├─ mobile/                   # Expo SDK 58, expo-router
+│  │  ├─ app/(tabs)/            # Головна, Пошук, Монітор, Інфо
+│  │  ├─ src/components/        # home, search/address, monitor, schedule, navigation, share, ui
+│  │  ├─ src/context/           # RegionContext, SettingsContext, OtaContext
+│  │  ├─ src/lib/               # ota.ts, notifications.ts
+│  │  ├─ native-android/        # Kotlin (OtaBundle), res (иконка уведомления, shortcuts)
+│  │  └─ plugins/               # withAndroidWidget.js, withSvitloNative.js
+│  └─ api/                      # Fastify 5: роуты, сервисы, парсеры, Drizzle, миграции
+│     ├─ src/{routes,services,parsers,db,plugins,utils,scheduler}/
+│     └─ tests/                 # vitest: 43 файла (интеграционным нужен TEST_DATABASE_URL)
+├─ tools/                       # сборка, импорт и синхронизация данных (см. §6)
+├─ tests/                       # pytest: правило публикации дня ГПВ + фикстуры
+├─ docs/                        # предметные обзоры + архив истории сессий
+└─ docker/                      # Dockerfile.api, Dockerfile.web, nginx.conf, init.sql
 ```
 
 ---
 
-## 3. Доменная модель: ключевые сущности
+## 4. Контракты API (Cloudflare Worker, `/api/v1`)
 
-| Сущность | Где живёт | Что это | Кто показывает |
-|---|---|---|---|
-| **Outage Event (каноническая)** | `outage_events` + `outage_event_addresses` | 1 строка на событие (`event_key` без адресов, `category` CHECK), адреса в отдельной таблице[cite: 1] | Целевой единый слой для всех роутов (в очереди на backfill и переключение чтения)[cite: 1, 2] |
-| **Outage (легаси-слой)** | таблица `outages` | широкая запись источника с блобами адресов; дедуп на чтении через `mergeDuplicateOutages`[cite: 1, 2] | `/outages`, `/status`, `/reliability` (с дедупом); `/outages/stats` (пока без дедупа)[cite: 1, 2] |
-| **Incident (авария / ремонт)** | `incidents` + проекция из `outages` | единая лента: `kind:'outage'` (аварии и ремонты оператора) и `kind:'report'` (сообщения Telegram/новости)[cite: 1, 2] | `/incidents`, блок на главной, счётчики в `/status`[cite: 2] |
-| **Schedule (ГПВ, черги)** | `schedule_slots`, `street_queues` | почасовые интервалы очередей на дату и привязка улиц; демо-синтетики в коде нет (`SCHEDULE_DEMO` удалён)[cite: 1, 2] | `/queues` («Мої черги»), `/streets`, блок на главной[cite: 2] |
+Публичный адрес: `https://svitlo-api.olegvapnik45.workers.dev/api/v1`. Контракты описаны в
+`packages/shared` и одинаковы для воркера и Node-бэкенда — фронтенд не знает, с кем говорит.
+
+| Маршрут | Назначение | Заметки |
+|---|---|---|
+| `GET /health` | статус + `d1QuotaExceeded`, `d1UnavailableAt` | единственный источник правды о квоте |
+| `GET /status` | сводка: покрытые области, время снимка, квота | то же для UI-баннера |
+| `GET /sync` | один пакет для офлайн-старта: сеть + области + график на сегодня/завтра + новости | контракт совпадает с Node |
+| `GET /regions` | 27 записей каталога: `covered`, `lastDate`, `slots` | `slots` — что реально лежит в D1 |
+| `GET /queues?region=` | группы (очереди) области по приоритету | для селектора |
+| `GET /schedules?region=&date=` | снимок ГПВ: слоты, группы, покрытие | источник выбирается по силе доказательства |
+| `GET /schedules/upcoming` | ближайшие интервалы отключений | для главной и виджета |
+| `GET /street-queues?region=&settlement=` | очереди населённого пункта | привязки «улица → очередь» |
+| `GET /street-queues/schedule?region=&queue=&settlement=` | график по очереди/селу | для поиска по адресу |
+| `GET /addresses/settlements?q=&region=` | автокомплит НП | в web/mobile заменён паками (§5) |
+| `GET /addresses/streets?settlement=&q=` | улицы НП + `wholeSettlementQueue` | пустой `q` не допускается (<2 символов → `[]`) |
+| `GET /addresses/houses?settlement=&street=&q=` | дома улицы | читается только после выбора улицы |
+| `GET /addresses/resolve` / `/addresses/suggest` | адрес → очередь, подсказки | мастер адреса |
+| `GET /places/:account` | место по лицевому счёту | ПД не логируются |
+| `GET /outages` | отключения по стране/области | `region=all` — вся страна |
+| `GET /outages/stats` | агрегаты | для страницы статистики |
+| `GET /incidents` | аварийные перерывы (тип 2) с местом и причиной | отдельно от плановых |
+| `GET /reliability?from=&to=&queue=` | `ReliabilityReport`: `days/weeks/months/groups` | контракт чинили в 2.24.0 |
+| `GET /news?limit=&kind=&region=` | лента: `kind`, `region_cpu`, `is_ukraine_wide`, `image_urls` | `excludeKind` для фильтра |
+| `GET /news/sources` | источники ленты | для подписи в UI |
+| `GET /changelog` | «Що нового» из `changelog.json` | генерируется при сборке |
+| `GET /version` | `2.25.0`, sha256, размер, ссылка на APK | для OTA и подписи версии |
+| `GET /download/svitlo-latest.apk` | APK из бакета R2 `svitlo-apk` | Range, 206 на частичный запрос |
+
+Коды: `200` — данные; `400` — невалидные параметры; `404` — нет адреса/места; `5xx` — D1
+недоступна. **`200` не означает «данные есть»** — пустой список честнее выдуманного графика.
 
 ---
 
-## 4. Поток данных и автоимпорт
+## 5. Статические паки адресов (Pages)
 
-1. **Опрос источников (`runParse` в `parse.service.ts`):** запись в `parse_runs(status='running')`, вызов активных адаптеров (`ChernihivWebAdapter`, `TelegramChannelAdapter`, `MockAdapter`), нормализация адресов и районов (`normalizer.ts`), идемпотентный upsert в БД[cite: 2].
-2. **Автоимпорт ГПВ из Telegram:** после основного парса автоматически вызывается `telegram-schedule.service.importTelegramSchedule()`, который читает `telegram_posts` за 14 суток и наполняет `schedule_slots` (`source='telegram'`) без капчи и ПД; ошибка импорта не роняет основной прогон[cite: 2].
-3. **Сбор новостей:** работает по отдельному крону `setupNewsCollectCron`[cite: 1].
+`tools/build-address-packs.py` раскладывает `apps/web/public/data/address/` (в git не хранится):
 
----
-
-## 5. Безопасность и конфигурация
-
-* **Аутентификация `/admin/*`:** заголовок `Authorization: Bearer ${ADMIN_TOKEN}` проверяется через `utils/timing-safe.ts` (SHA-256 + `timingSafeEqual`)[cite: 1, 2]. В `production` приложение не запустится с дефолтным или коротким (<16 символов) токеном[cite: 1].
-* **Сетевая защита:** глобальный CORS выключен по умолчанию (разрешается через `CORS_ORIGINS`), rate-limit 100 req/min настроен с `TRUST_PROXY`-диапазонами, заголовки защиты заданы в `@fastify/helmet` и `nginx.conf`[cite: 1].
-* **Гигиена данных:** `.env`, `operator-samples/`, `snapshots/`, `*.docx` и `CAPTCHA_SOLVER_API_KEY` исключены через `.gitignore`[cite: 1, 2].
-
----
-
-## 6. Чек-лист перед коммитом
-
-```bash
-./apps/api/node_modules/.bin/tsc --noEmit                        # 0 ошибок
-./apps/web/node_modules/.bin/tsc --noEmit                        # 0 ошибок
-python3 skills/frontend-ui-change/scripts/check_tailwind_tokens.py . # проверка токенов Tailwind v4
-pnpm --filter @svitlo/api test                                   # тесты API (20 файлов)
-pnpm --filter @svitlo/web test                                   # тесты Web (2 файла)
-docker compose up -d --build && docker compose ps                # проверка контейнеров
+```text
+data/address/
+├─ manifest.json                # version: 2, generatedAt, области и счётчики
+└─ <region>/
+   ├─ settlements.json(.gz)     # НП области для автокомплита
+   ├─ streets.json(.gz)         # индекс улиц кортежами:
+   │                            #   [name, normalized, defaultQueue, queues[], housesShard]
+   └─ houses-00.json.gz … houses-15.json.gz   # дома, разложенные по шардам
 ```
+
+Правила работы с паками:
+
+- **Дома грузятся только после выбора улицы** (`housesShard` указывает шард). Раньше дома лежали
+  в индексе улиц и пак раздувался до мегабайтов на область.
+- **Подсказки ограничены:** пустой запрос — 20 позиций, непустой — не больше 30, совпадение
+  `includes`, а не `startsWith` (люди ищут «Шевченка» в середине названия).
+- **Матчинг домов** — `matchHouse()` в `cf-worker/src/address.ts`: диапазоны `1-5`, дроби,
+  литеры `12а`, чёт/нечет. Точное совпадение всегда приоритетнее диапазона.
+- **Деградация:** манифест недоступен или `version ≠ 2` → клиент идёт в `/addresses/*` (D1).
+  Это медленнее и тратит квоту, но поиск не ломается.
+
+---
+
+## 6. Доменная модель и инварианты
+
+**Термины.** Область (`regionCpu`: `kyiv-city`, `dnipropetrovska-oblast`, …) → населённый пункт
+(`settlement`) → улица (`street`) → дом (`house`). Группа/очередь (`queue`: 1…6, `1.1`, `3.2`)
+— то, что оператор публикует в графике. Слот — интервал `[startsAt, endsAt]` с признаком
+«отключение/свет есть».
+
+| Таблица D1 | Смысл |
+|---|---|
+| `schedule_slots` | слоты ГПВ из своих источников (основная таблица графиков) |
+| `schedule_coverage` | по области/дате: опубликован ли день; `d1Coverage` читается воркером |
+| `snapshot_meta` | время снимка, `gpv_fingerprint`, служебные ключи |
+| `directory_settlements` / `directory_streets` | справочник НП и улиц (`source`: `osm`, `curated`) |
+| `address_queues` | привязки «улица/дом → очередь»; `source` ≠ `mirror` для реальных привязок |
+| `news` | посты: `kind`, `region_cpu`, `is_ukraine_wide`, `image_urls`, `body` |
+| `outage_events` | канонические события отключений (план/авария) для `/outages`, `/incidents`, `/reliability` |
+
+**Инварианты (нарушение = баг уровня «врёт пользователю»):**
+
+1. **Нет данных ≠ «света нет» и ≠ «свет есть».** Неопубликованный график показывается как
+   «Немає даних», а не зелёным. Правило живёт в `is_day_published()` в
+   `tools/scrapling_schedules_sync.py`, регрессия ловится `tests/test_scrapling_schedules.py`.
+2. **Своё покрытие важнее зеркала** (`d1Coverage` + `loadOwnCoverage`): зеркало не может
+   «покрасить» день, который наш парсер считает неопубликованным.
+3. **Источник выбирается по силе доказательства:** слоты запрошенной группы → любые слоты дня →
+   покрытие. Слабое доказательство никогда не перекрывает сильное.
+4. **Никаких демо-графиков.** `SCHEDULE_DEMO` и подобные заглушки запрещены: лучше пустой экран.
+5. **ПД не ходят в логи и в URL.** Номера лицевых счетов не пишутся в лог и не коммитятся.
+6. **Неизменный снимок не пишется в D1** (фингерпринт `gpv_fingerprint`): квота на запись —
+   100 тыс. строк в сутки на весь проект.
+
+---
+
+## 7. Инструменты (`tools/`)
+
+| Скрипт | Что делает |
+|---|---|
+| `./deploy-cf.sh` (корень) | полный деплой в Cloudflare (5 шагов) |
+| `build-address-packs.py` | паки адресов v2 из `.cache/` → `apps/web/public/data/address/` |
+| `build-android-apk.sh` | сборка подписанного APK в Docker + загрузка в R2 + метаданные `/version` |
+| `build-ota-bundle.sh` | тихий OTA: JS-бандл (.gz) + манифест в `apps/web/public/ota/` |
+| `bump-version.sh` | версия `major|minor|patch` во всех `version.json` и `app.json` |
+| `gen_changelog.mjs` | `changelog.json` из `Release-Note`-трейлеров + `changelog-notes.json` |
+| `gen-git-history.mjs` | `GIT_HISTORY.md` из `git log` (`--check` — только проверка актуальности) |
+| `scrapling_schedules_sync.py` | разбор графиков Energy-UA → D1 (16 областей) |
+| `scrapling_addresses_sync.py`, `import-address-hierarchy.py` | справочник НП/улиц и привязки |
+| `sync-directory-to-d1.mjs` | перенос справочника в D1 |
+| `release-after-midnight.sh` | деплой сразу после сброса суточной квоты D1 |
+| `gen-settlements-ua.py`, `gen_settlement_directory.py` | список НП Украины |
+| `import-osm-streets.mjs` | улицы из OSM |
+| `discover-chernihiv-cities.mjs`, `energy_ua_catalog.py` | каталог городов и сетей |
+| `compare-api-contracts.py` | сверка ответов Worker и Node-бэкенда |
+| `gemini-assist.mjs` | вспомогательная нормализация (не в прод-пути) |
+
+---
+
+## 8. Лимиты D1 и операционные правила
+
+Free Tier: **5 млн `rows_read`** и **100 тыс. `rows_written`** в сутки, сброс в **00:00 UTC**.
+
+- `wrangler d1 export` без `--table` читает всю базу и съедает суточный лимит → бэкапить только
+  селективно: `schedule_slots`, `schedule_coverage`, `snapshot_meta`, `address_queues`.
+- `DELETE FROM` тарифицируется построчно → большие таблицы сносить через DDL, не построчно.
+- `INSERT OR REPLACE` = DELETE + INSERT → поэтому в кроне фингерпринт, а не безусловная запись.
+- D1 не умеет `ADD COLUMN IF NOT EXISTS` → догоняющие колонки добавляются по `PRAGMA table_info`
+  (`ensureNewsColumns` в `cf-worker/src/index.ts`).
+- Когда квота исчерпана: `GET /health` → `d1QuotaExceeded: true`, `/status` тоже; записи уходят
+  на следующий деплой, читатели получают снимок или пустой ответ, но **не 500**.
+- Деплой, которому нужны записи: `./tools/release-after-midnight.sh`.
+
+---
+
+## 9. Тесты и проверки
+
+| Где | Что | Запуск |
+|---|---|---|
+| `apps/api/tests` — 43 файла | юнит (парсеры, сервисы, конфиг, `timingSafeEqual`) + интеграционные с БД | `pnpm --filter @svitlo/api test` (интеграционным нужен `TEST_DATABASE_URL`, база `svitlo_test`) |
+| `apps/web/src/**/*.test.ts` — 26 файлов | api-клиент, офлайн-синк, паки адресов, расчёты графика, health источников | `pnpm --filter @svitlo/web test` |
+| `tests/test_scrapling_schedules.py` | правило публикации дня ГПВ (8 тестов) | `python3 -m pytest tests/ -q` |
+| `cf-worker`, `apps/mobile` | тестов нет — только `tsc` | `(cd cf-worker && tsc --noEmit)` |
+
+Правило: **`tsc` обязателен всегда**, полный прогон тестов — по запросу человека (интеграционные
+требуют поднятой БД).
+
+---
+
+## 10. Безопасность
+
+- Секреты только в `.env` / `wrangler secret`; `.env*`, `*.jks`, `keystore.properties` — в
+  `.gitignore`. Ключи: `ADMIN_TOKEN` (≥16 символов в production), токен Telegram, ключ
+  release-подписи APK.
+- Сравнение токенов — `timingSafeEqual` (`apps/api/tests/timing-safe.test.ts`).
+- ПД (номера лицевых счетов, адреса) не попадают в логи и в коммиты. Сканер:
+  `python3 skills/secrets-pii-hygiene/scripts/scan_secrets.py .`
+- CORS воркера ограничен доменами Pages и локальной разработкой.
+
+---
+
+## 11. Куда смотреть дальше
+
+| Документ | О чём |
+|---|---|
+| `HANDOFF.md` | что сделано, что не закоммичено, что дальше |
+| `PROJECT_AUDIT.md` | ревизия 2026-10-20: риски, оценки, бэклог |
+| `GIT_HISTORY.md` | история коммитов (генерируется из `git log`, руками не править) |
+| `docs/energy-ua-source-audit.md` | разбор источников Energy-UA по областям |
+| `docs/address-queue-sources.md` | откуда берутся привязки «улица → очередь» |
+| `docs/regions-multiregion.md` | мультирегиональность: ключи, покрытие, приоритеты |
+| `docs/AI-ONBOARDING.md` | вводная для ИИ-агента |
+| `docs/archive/HANDOFF-history.md` | как проект пришёл к текущему состоянию |
+| `skills/*/SKILL.md` | обязательные процедуры (дисциплина, миграции, API, парсеры, UI, тесты, deploy) |
+
+
+
+
