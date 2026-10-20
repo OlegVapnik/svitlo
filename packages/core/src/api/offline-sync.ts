@@ -334,6 +334,7 @@ export function hydrateStoredRegion(region: string, client: QueryClient = queryC
     region,
     syncedAt: record.syncedAt,
     settlements: record.bundle.settlements?.length ?? 0,
+    errorKind: null,
   });
   return record;
 }
@@ -357,7 +358,7 @@ export function hydrateOfflineStartup(): string {
     // Записи на диске могли быть сделаны до введения канонизации — прогоняем и их. Каталог с диска
     // тоже не считается свежим: при наличии сети его должен заменить авторитетный `/regions`.
     if (catalog) queryClient.setQueryData(['regions'], { data: canonicalizeRegions(catalog.regions) }, { updatedAt: 0 });
-    setSyncState({ phase: 'idle', region, syncedAt: null, settlements: 0 });
+    setSyncState({ phase: 'idle', region, syncedAt: null, settlements: 0, errorKind: null });
   }
   return region;
 }
@@ -378,6 +379,17 @@ export type SyncPhase =
   /** Связи нет или сервер не ответил: работаем на данных с диска. */
   | 'offline';
 
+/**
+ * Почему синхронизация не удалась.
+ *
+ *   network — сеть недоступна (`navigator.onLine === false` или fetch не дошёл до сервера);
+ *   server  — сервер ответил ошибкой (5xx, исчерпанная квота D1, пустое тело).
+ *
+ * Разделяем, потому что подпись «Без зв’язку» при живом интернете — враньё: человек идёт
+ * проверять Wi-Fi, хотя виноват сервер. Одно и то же состояние экрана, разные советы.
+ */
+export type SyncErrorKind = 'network' | 'server';
+
 export interface SyncState {
   phase: SyncPhase;
   /** Область, к которой относится состояние. */
@@ -390,6 +402,8 @@ export interface SyncState {
   settlements: number;
   /** Текст последней ошибки — показывается в подсказке, чтобы не гадать «почему офлайн». */
   error: string | null;
+  /** Кто виноват в последней неудаче; `null` — неудачи не было. */
+  errorKind: SyncErrorKind | null;
 }
 
 let state: SyncState = {
@@ -399,6 +413,7 @@ let state: SyncState = {
   checkedAt: null,
   settlements: 0,
   error: null,
+  errorKind: null,
 };
 const stateListeners = new Set<() => void>();
 
@@ -431,6 +446,20 @@ function setSyncState(patch: Partial<SyncState>): void {
 }
 
 /**
+ * Кто виноват в неудаче синхронизации — телефон или сервер.
+ *
+ * `ApiError` бросает наш же транспорт, когда сервер ответил (в том числе 5xx и исчерпанной
+ * квотой D1) — значит связь есть. Всё остальное (fetch отвалился, `navigator.onLine === false`,
+ * таймаут) считаем сетью: советы человеку разные («проверьте Wi-Fi» против «подождите, сервер
+ * обновит график, как только сможет»).
+ */
+function classifySyncError(error: unknown): SyncErrorKind {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'network';
+  if (error instanceof ApiError) return 'server';
+  return 'network';
+}
+
+/**
  * Одна синхронизация области: запрос к серверу, запись на диск, обновление кеша и состояния.
  *
  * Возвращать результат не нужно: состояние читается через `getSyncState()`, а вызывают функцию
@@ -457,11 +486,11 @@ export async function syncNow(region: string): Promise<void> {
   // `navigator.onLine` врёт только в одну сторону (говорит true, когда интернета нет), поэтому это
   // именно оптимизация, а не замена обработке ошибок запроса ниже.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    setSyncState({ ...stored, phase: previous ? 'offline' : 'idle', error: null });
+    setSyncState({ ...stored, phase: previous ? 'offline' : 'idle', error: null, errorKind: 'network' });
     return;
   }
 
-  setSyncState({ phase: 'syncing', region: clean, error: null });
+  setSyncState({ phase: 'syncing', region: clean, error: null, errorKind: null });
 
   try {
     // `/sync` відповідає конвертом `{ data: bundle }` — як і решта маршрутів застосунку
@@ -471,7 +500,7 @@ export async function syncNow(region: string): Promise<void> {
     if (!bundle || typeof bundle.syncedAt !== 'string') {
       // Ответ без пакета (прокси подменил тело, сервер отдал не то) — попытка неудачная,
       // но прошлые данные не трогаем: лучше старый график, чем пустой экран.
-      setSyncState({ ...stored, phase: previous ? 'offline' : 'idle', error: 'empty-bundle' });
+      setSyncState({ ...stored, phase: previous ? 'offline' : 'idle', error: 'empty-bundle', errorKind: 'server' });
       return;
     }
 
@@ -491,12 +520,13 @@ export async function syncNow(region: string): Promise<void> {
       checkedAt: new Date().toISOString(),
       settlements: effective.settlements?.length ?? previousSettlements,
       error: null,
+      errorKind: null,
     });
   } catch (error) {
     const checkedAt = new Date().toISOString();
     if (error instanceof ApiError && error.status === 304) {
       // Тело не изменилось — это успех, а не ошибка: данные на диске по-прежнему верны.
-      setSyncState({ ...stored, phase: 'fresh', checkedAt, error: null });
+      setSyncState({ ...stored, phase: 'fresh', checkedAt, error: null, errorKind: null });
       return;
     }
     setSyncState({
@@ -504,6 +534,7 @@ export async function syncNow(region: string): Promise<void> {
       phase: previous ? 'offline' : 'idle',
       checkedAt,
       error: error instanceof Error ? error.message : null,
+      errorKind: classifySyncError(error),
     });
   }
 }

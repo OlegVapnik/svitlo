@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { CloudCheck, CloudOff, Database, RefreshCw, RotateCw, WifiOff } from 'lucide-react';
 import { cn } from '../../lib/cn.js';
+import { syncLabelKey } from '../../lib/sync-label.js';
 import { useRegion } from '../../hooks/useRegion.js';
 import { useSyncStatus } from '../../hooks/useOfflineSync.js';
 import { syncNow } from '../../api/offline-sync.js';
@@ -32,18 +33,17 @@ const STYLES = {
 } as const;
 
 function labelFor(state: SyncState, t: TFunction): string {
+  const key = syncLabelKey(state);
   const when = state.syncedAt ? formatRelative(state.syncedAt) : null;
-  switch (state.phase) {
-    case 'syncing':
-      return t('offline.syncSyncing');
-    case 'fresh':
-      return t('offline.syncFresh', { when: when ?? t('common.noData') });
-    case 'stored':
-      return t('offline.syncStored', { when: when ?? t('common.noData') });
-    case 'offline':
-      return state.syncedAt ? t('offline.syncOffline', { when: formatRelative(state.syncedAt) }) : t('offline.syncOfflineNoData');
+  // Подписи с возрастом данных дополняются временем; «нет данных» и «синхронизируем» — без него.
+  switch (key) {
+    case 'offline.syncFresh':
+    case 'offline.syncStored':
+    case 'offline.syncOffline':
+    case 'offline.syncServerError':
+      return t(key, { when: when ?? t('common.noData') });
     default:
-      return t('offline.syncIdle');
+      return t(key);
   }
 }
 
@@ -51,7 +51,12 @@ export const SyncIndicator = () => {
   const { t } = useTranslation();
   const { currentRegion } = useRegion();
   const state = useSyncStatus();
-  const style = STYLES[state.phase];
+  // `WifiOff` без связи, `CloudOff` — сервер не смог ответить: иконка не должна противоречить
+  // подписи и намекать на выключенный Wi-Fi там, где он работает.
+  const style =
+    state.phase === 'offline' && state.errorKind === 'server'
+      ? { icon: CloudOff, className: 'text-warning', animation: null }
+      : STYLES[state.phase];
   const Icon = style.icon;
   const label = labelFor(state, t);
 

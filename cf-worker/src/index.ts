@@ -185,6 +185,21 @@ function isD1Unavailable(error: unknown): boolean {
  */
 let d1UnavailableAt: string | null = null;
 
+/**
+ * Отдельная отметка именно дневного лимита D1.
+ *
+ * `isD1Unavailable` намеренно широкий (в него попадают `no such table`, `SQLITE_BUSY` и любое
+ * «exceeded»), потому что для фолбэка на зеркало причина не важна. Но показывать человеку
+ * «вичерпано денний ліміт бази» по любой ошибке нельзя: это готовая отговорка на пустом месте.
+ * Поэтому признак квоты считается только по тексту про дневной лимит.
+ */
+let d1QuotaExceededAt: string | null = null;
+
+function isD1QuotaError(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return /daily row (read|write) limit|free tier.*limit|exceeded d1/iu.test(message);
+}
+
 /** URL-ключ HTTP-кэша: без диагностического `timing`, чтобы обычный запрос попадал в ту же запись. */
 function httpCacheKey(url: URL): string {
   const copy = new URL(url.toString());
@@ -2718,6 +2733,11 @@ function mirrorStatusPayload(
   const todayStats = daySlotStats(todaySlots, nowMs);
   const yesterdayStats = daySlotStats(yesterdaySlots, nowMs);
   const lastUpdatedAt = snapshot.timestamp ?? new Date(snapshot.fetchedAt).toISOString();
+  const updatedMs = Date.parse(lastUpdatedAt);
+  // Устаревание считаем по времени снимка, а не по факту ответа: зеркало отдаёт данные, даже
+  // когда D1 недоступен, и подставлять сюда `dataStale: false` значило бы выдавать вчерашний
+  // график за живой. Порог тот же, что в D1-ветке `/status`, — два часа.
+  const dataStale = Number.isFinite(updatedMs) && nowMs - updatedMs > 2 * 60 * 60 * 1000;
   const buildWindow = (label: string, outageMinutes: number) => {
     const minutes = Math.min(24 * 60, Math.max(0, outageMinutes));
     return {
@@ -2746,10 +2766,10 @@ function mirrorStatusPayload(
     scheduledIncidents: 0,
     totalIncidents: 0,
     lastUpdatedAt,
-    dataStale: false,
+    dataStale,
     lastError: null,
     pausedUntil: null,
-    nextAttemptAt: nextCronAttempt(lastUpdatedAt, Date.parse(lastUpdatedAt)),
+    nextAttemptAt: nextCronAttempt(lastUpdatedAt, updatedMs),
     consecutiveParseFailures: 0,
     powerSummary: {
       today: buildWindow('за добу', todayStats.outageMinutes),
@@ -2851,7 +2871,7 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
         data: {
           region: canonicalRegion || requestedRegion || null,
           ...mirrorStatusPayload(snapshot, statusKeys, today),
-          d1QuotaExceeded: d1UnavailableAt !== null,
+          d1QuotaExceeded: d1QuotaExceededAt !== null,
           d1UnavailableAt,
         },
       },
@@ -2867,7 +2887,7 @@ async function mirrorFallbackResponse(path: string, url: URL, env: Env): Promise
   const status = {
     region: syncKeys[0] ?? canonicalRegion ?? requestedRegion ?? null,
     ...mirrorStatusPayload(snapshot, syncKeys, today),
-    d1QuotaExceeded: d1UnavailableAt !== null,
+    d1QuotaExceeded: d1QuotaExceededAt !== null,
     d1UnavailableAt,
   };
   const regions = mirrorRegionSummaries(snapshot, today);
@@ -4295,7 +4315,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
 
   if (path === '/health') {
-    return json({ status: 'ok', d1QuotaExceeded: d1UnavailableAt !== null, d1UnavailableAt });
+    return json({ status: 'ok', d1QuotaExceeded: d1QuotaExceededAt !== null, d1UnavailableAt });
   }
 
   if (path === '/changelog') {
@@ -5151,7 +5171,7 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
       {
         data: {
           ...status,
-          d1QuotaExceeded: d1UnavailableAt !== null,
+          d1QuotaExceeded: d1QuotaExceededAt !== null,
           d1UnavailableAt,
         },
       },
@@ -5303,6 +5323,9 @@ export default {
         // D1 исчерпал дневной лимит — не отдаём 500, а собираем ответ из живого зеркала.
         if (isD1Unavailable(error)) {
           d1UnavailableAt = new Date().toISOString();
+          // Дневной лимит — отдельная отметка: только она объясняет человеку, почему график
+          // не обновляется, хотя связь есть (см. `isD1QuotaError`).
+          if (isD1QuotaError(error)) d1QuotaExceededAt = d1UnavailableAt;
           const fallback = await mirrorFallbackResponse(path, url, env);
           if (fallback) {
             console.warn(`handleApi ${url.pathname}: D1 недоступен, ответ собран из зеркала`);

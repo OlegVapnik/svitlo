@@ -6,6 +6,7 @@
 #   ./tools/build-android-apk.sh --debug         # debug-сборка для эмулятора и отладки
 #   ./tools/build-android-apk.sh --skip-tests    # не гонять JVM-тесты OTA
 #   ./tools/build-android-apk.sh --no-publish    # собрать, но не заливать APK в R2
+#   ./tools/build-android-apk.sh --publish-only  # залить уже собранный APK и обновить version.json
 #   ./tools/build-android-apk.sh --docker        # собрать в контейнере (CI, чужая машина)
 #
 # Результат:
@@ -28,6 +29,7 @@ BUILD_TYPE="release"
 RUN_TESTS=1
 PUBLISH=1
 USE_DOCKER=0
+PUBLISH_ONLY=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -35,6 +37,7 @@ for arg in "$@"; do
     --release) BUILD_TYPE="release" ;;
     --skip-tests) RUN_TESTS=0 ;;
     --no-publish) PUBLISH=0 ;;
+    --publish-only) PUBLISH_ONLY=1 ;;
     --docker) USE_DOCKER=1 ;;
     -h|--help)
       sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
@@ -80,6 +83,24 @@ if [[ "${BUILD_TYPE}" == release ]]; then
     echo "  APK будет подписан debug-ключом: обновить им уже установленное приложение нельзя." >&2
   fi
 fi
+
+# --- публикация уже собранного APK -------------------------------------------------------
+# Зачем режим: versionCode считается по числу коммитов, поэтому пересборка после любой правки
+# даёт другой номер и другой sha256. Когда APK уже подписан и проверен на телефоне, заливать
+# нужно ровно этот файл — пересборка тихо подменила бы бинарник.
+if (( PUBLISH_ONLY )); then
+  if [[ "${BUILD_TYPE}" != release ]]; then
+    echo "--publish-only работает только с release-сборкой" >&2
+    exit 2
+  fi
+  APK="${APK_OUT_DIR}/svitlo-${APP_VERSION}.apk"
+  if [[ ! -f "${APK}" ]]; then
+    echo "Нет готового APK: ${APK}" >&2
+    echo "Соберите его без --publish-only." >&2
+    exit 1
+  fi
+  echo ">>> Публикую готовый APK: ${APK} (сборка и prebuild пропущены)"
+else
 
 # --- prebuild ---------------------------------------------------------------------------
 # `--clean` обязателен: без него старые сгенерированные ABI/подписи остаются в android/ и
@@ -217,6 +238,8 @@ if [[ ! -f "${APK_SRC}" ]]; then
   exit 1
 fi
 cp -f "${APK_SRC}" "${APK}"
+
+fi  # конец ветки сборки (в режиме --publish-only её нет)
 
 # Проверки состава APK, а не только размера: «стало меньше» легко получить, случайно
 # выкинув нужную библиотеку. Проверяем именно то, за что боролись.

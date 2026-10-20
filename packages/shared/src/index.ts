@@ -39,6 +39,26 @@ export interface StatusResponse { grid: { level: 'stable' | 'warning' | 'emergen
   activeGroups?: number;
   /** Сколько групп области погашены дальше сегодня по графику ГПВ. */
   scheduledGroups?: number; activeIncidents: number; scheduledIncidents?: number; totalIncidents?: number; lastUpdatedAt?: string | null; dataStale?: boolean; /** Оцінка моменту наступной спроби опитування (пауза circuit breaker або наступний слот); null — планувальник вимкнено. */ nextAttemptAt?: string | null; /** Остання помилка джерела без персональних даних (уже санитизована на боці API). */ lastError?: string | null; /** До цього моменту джерело на паузі; null — не на паузі. */ pausedUntil?: string | null; /** Невдач підряд при опитуванні джерела. */ consecutiveParseFailures?: number; powerSummary?: PowerSummary | null; }
+/**
+ * Ответ `GET /api/v1/health` — диагностика воркера.
+ *
+ * Без конверта `{ data }`, в отличие от остальных маршрутов: `/health` отвечает прямо объектом,
+ * потому что его читают и мониторинг, и клиент, которому нужен только признак «база жива».
+ */
+export interface HealthResponse {
+  status: string;
+  /**
+   * Дневной лимит D1 исчерпан: свежие данные в базу не пишутся, ответы собираются из зеркала.
+   *
+   * Клиенту это нужно, чтобы отличить «пропала связь» от «сервер не может обновить график»:
+   * в обоих случаях экран показывает последние известные данные, но причины разные, и совет
+   * человеку тоже разный.
+   */
+  d1QuotaExceeded?: boolean;
+  /** Когда изолят впервые увидел недоступность базы (ISO); `null` — база в порядке. */
+  d1UnavailableAt?: string | null;
+}
+
 export interface PaginationQuery { page: number; limit: number; }
 export interface OutageFilters { query?: string; status?: OutageStatus; queue?: number; area?: string; region?: string; dateFrom?: string; dateTo?: string; limit?: number; }
 export interface OutageListResponse { data: Outage[]; meta?: Record<string, unknown>; }

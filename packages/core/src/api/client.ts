@@ -1,4 +1,4 @@
-import type { AddressConfirmResult, AddressHousesResponse, AddressResolveResult, AddressStreetsResponse, AppVersionInfo } from '@svitlo/shared';
+import type { AddressConfirmResult, AddressHousesResponse, AddressResolveResult, AddressStreetsResponse, AppVersionInfo, HealthResponse } from '@svitlo/shared';
 import { getApiBaseUrl } from '../config';
 import { noteServedFromCache, noteServedOnline, readCache, writeCache } from './offline-cache';
 
@@ -107,7 +107,13 @@ export const api = {
     const query = region ? `?${new URLSearchParams({ region }).toString()}` : '';
     return fetcher(`/status${query}`, { signal });
   },
-  fetchHealth: () => fetcher('/health'),
+  /**
+   * Диагностика воркера. Ответ приходит без конверта `{ data }` — см. `HealthResponse`.
+   *
+   * `useOfflineCache = false`: старый «здоровый» ответ из кеша здесь опаснее пустоты, потому
+   * что по нему решают, виноват ли телефон в устаревших данных.
+   */
+  fetchHealth: () => fetcher('/health', undefined, false) as Promise<HealthResponse>,
   /**
    * Офлайн-пакет области (GET /api/v1/sync) — один ответ вместо пяти запросов на старте.
    *

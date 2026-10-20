@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { CircleAlert, CircleCheck, CircleDashed } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useStatus } from '@/api/queries.js';
+import { useHealth, useStatus } from '@/api/queries.js';
 import { useRegion } from '@/hooks/useRegion.js';
 import { sourceSeverity } from '@/lib/source-health.js';
 import { formatDateTime, formatRelative } from '@/lib/date.js';
@@ -16,12 +16,18 @@ const STYLES = {
  * Компактный индикатор состояния источника для шапки: одна иконка и одна подпись.
  * Полные детали (причина, число неудач, время следующей попытки) показывает SourceHealthBanner
  * на странице — в шапке места для них нет, но «данные устарели» видно с любого экрана.
+ *
+ * Отдельно спрашиваем `/health`: при исчерпанной квоте D1 график устаревает не потому, что
+ * сломался телефон или зеркало оператора. Без этой подсказки «Застарілі дані» читается как
+ * поломка на стороне человека.
  */
 export const FreshnessChip = () => {
   const { t } = useTranslation();
   const { currentRegion } = useRegion();
   const { data, isLoading } = useStatus(currentRegion);
+  const { data: health } = useHealth();
   const status = data?.data;
+  const quotaExceeded = health?.d1QuotaExceeded === true;
 
   // Пока идёт первая загрузка — нейтральное «Завантаження…», а не «всё хорошо».
   if (isLoading && !status) {
@@ -47,6 +53,9 @@ export const FreshnessChip = () => {
   const tooltip = [
     status?.lastUpdatedAt ? `${t('status.lastUpdated')}: ${formatDateTime(status.lastUpdatedAt)}` : null,
     status?.nextAttemptAt ? `${t('status.nextAttempt')}: ${formatDateTime(status.nextAttemptAt)}` : null,
+    // Причина важнее времени: «чому застаріли» — первое, что человек хочет узнать.
+    severity !== 'ok' && quotaExceeded ? t('status.staleReasonQuota') : null,
+    status?.lastError ? `${t('status.sourceProblem')}: ${status.lastError}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
