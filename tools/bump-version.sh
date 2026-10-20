@@ -34,6 +34,20 @@ case "${1:-show}" in
     new="$x.$y.$z"
     # sed вместо «-i» разных диаалектов: правим адресно, одной заменой.
     sed -i "s/APP_VERSION = '[0-9]\+\.[0-9]\+\.[0-9]\+'/APP_VERSION = '$new'/" "$VERSION_FILE"
+    # `app.json` — источник versionName для Android-сборки (`expo prebuild` пишет его в
+    # build.gradle). Пока версия правилась только в version.ts, веб говорил «2.26.0», а APK
+    # собирался с versionName 2.25.0 — человек видел разные номера на сайте и на телефоне.
+    node - "$new" <<'NODE'
+const fs = require('node:fs');
+const [version] = process.argv.slice(2);
+for (const file of ['apps/mobile/app.json', 'apps/mobile/package.json']) {
+  const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (file.endsWith('app.json')) json.expo.version = version;
+  else json.version = version;
+  fs.writeFileSync(file, `${JSON.stringify(json, null, 2)}\n`);
+  console.log(`   ${file}: ${version}`);
+}
+NODE
     # Старое значение читаем ДО sed и держим в переменной. Раньше здесь стояло "$(current)"
     # прямо в echo, и подстановка выполнялась уже после правки файла — поэтому скрипт
     # печатал «2.2.0 → 2.2.0», то есть обе версии выглядели одинаково, и повышение

@@ -61,3 +61,11 @@ __pycache__/
 
 # Статические паки адресов — генерируются tools/build-address-packs.py перед сборкой Pages.
 /apps/web/public/data/address/
+# Тихий OTA JS-бандла — выход tools/build-ota-bundle.sh (сжатые бандлы ~2 МБ + манифест).
+/apps/web/public/ota/
+# Настройки IDE: в них абсолютные пути и личные раскладки, продукту они не нужны.
+.idea/
+
+# Готовые APK — производный артефакт, пересобирается tools/build-android-apk.sh (и уезжает в R2).
+/apps/mobile/android-apk/
+

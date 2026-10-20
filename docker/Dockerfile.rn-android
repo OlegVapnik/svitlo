@@ -1,0 +1,23 @@
+# Базовый образ для сборки RN/Expo-приложения Svitlo внутри Docker.
+#
+# Образ `svitlo-android-builder` (docker/Dockerfile.android) даёт JDK 21 и Android SDK, но
+# React Native 0.88 с new architecture собирает `libappmodules.so`/`libreanimated.so` из CMake —
+# без NDK и cmake assembly падает. Поэтому слой сверху докачивает ровно их.
+#
+# Сборка:
+#   docker build -f docker/Dockerfile.android -t svitlo-android-builder .
+#   docker build -f docker/Dockerfile.rn-android -t svitlo-rn-android .
+FROM svitlo-android-builder
+
+# NDK-версия зафиксирована как в RN 0.88; cmake 3.22.1 — минимальный, который тянет Gradle.
+ARG NDK_VERSION=27.1.12297006
+ARG CMAKE_VERSION=3.22.1
+
+RUN yes | sdkmanager --install "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}" > /dev/null
+
+# sdkmanager пишет от root; сборка идёт от текущего пользователя (см. --user в docker run).
+USER root
+RUN chmod -R a+rwX "${ANDROID_SDK_ROOT}"
+
+WORKDIR /workspace
+CMD ["bash"]
