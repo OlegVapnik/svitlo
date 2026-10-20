@@ -46,6 +46,28 @@ interface AppliedMeta {
   version: string;
   sha256: string;
   appliedAt: string;
+  /**
+   * `true` — бандл был скачан, но не поднялся, и нативный загрузчик откатился к вшитому.
+   * Такой SHA больше не предлагаем: иначе приложение качало бы его заново и падало через
+   * один запуск, пока манифест на CDN не обновят.
+   */
+  failed?: boolean;
+}
+
+/**
+ * Диагностика в logcat (`adb logcat -s ReactNativeJS:V`).
+ *
+ * Тихий OTA по определению невидим в интерфейсе, а в поле «обновление не приехало» иначе
+ * приходится угадывать: нет манифеста, не сошёлся хэш, битый gzip или откат по маркеру.
+ * Строки короткие и без ПД — их безопасно оставлять в релизе.
+ */
+function log(message: string, ...rest: unknown[]): void {
+  console.log(`[ota] ${message}`, ...rest);
+}
+
+/** Первые 8 символов SHA — чтобы сравнивать бандлы в логах, не засоряя вывод. */
+function shortSha(sha256: string): string {
+  return sha256.slice(0, 8);
 }
 
 async function readMeta(): Promise<OtaMeta | null> {
@@ -88,12 +110,36 @@ export async function confirmOtaBoot(): Promise<void> {
   const meta = await readMeta();
   if (!meta) return;
   const info = await FileSystem.getInfoAsync(BUNDLE_PATH);
-  if (!info.exists) return;
+  if (!info.exists) {
+    // `meta.json` есть, а бандла нет — значит нативный загрузчик удалил его после
+    // неудачного старта (оставил маркер `.booted`). Помечаем SHA как непригодный и убираем
+    // метаданные: без этого `downloadOtaBundle` снова скачал бы тот же файл, и приложение
+    // падало бы через один запуск, пока манифест на CDN не заменят.
+    log('відкат до вшитого бандла, sha позначено як невдалий', shortSha(meta.sha256));
+    try {
+      const rejected: AppliedMeta = {
+        version: meta.version,
+        sha256: meta.sha256,
+        appliedAt: new Date().toISOString(),
+        failed: true,
+      };
+      await FileSystem.writeAsStringAsync(APPLIED_PATH, JSON.stringify(rejected));
+      await FileSystem.deleteAsync(META_PATH, { idempotent: true });
+    } catch {
+      /* не смогли записать — откат всё равно уже случился */
+    }
+    return;
+  }
 
   // Старые meta.json (до появления downloadedAt) не могут быть скачаны в этой сессии —
   // считаем их применёнными, иначе баннер не погаснет никогда.
   const downloadedAt = typeof meta.downloadedAt === 'number' ? meta.downloadedAt : 0;
   if (downloadedAt > LAUNCH_AT) return;
+
+  // Уже подтверждённый бандл подтверждаем один раз: без этого `applied.json` переписывался
+  // на каждом запуске (лишняя запись на диск и строка в логе каждые полминуты).
+  const confirmed = await readApplied();
+  if (confirmed?.sha256 === meta.sha256 && !confirmed.failed) return;
 
   try {
     const applied: AppliedMeta = {
@@ -102,6 +148,7 @@ export async function confirmOtaBoot(): Promise<void> {
       appliedAt: new Date().toISOString(),
     };
     await FileSystem.writeAsStringAsync(APPLIED_PATH, JSON.stringify(applied));
+    log('OTA-бандл підтверджено', meta.version, shortSha(meta.sha256));
   } catch {
     /* не смогли записать — баннер просто появится ещё раз */
   }
@@ -156,6 +203,40 @@ function base64ToBytes(base64: string): Uint8Array {
 }
 
 /**
+ * Догружает ресурсы бандла (шрифт иконок из `raw`, картинки из `drawable-*`) рядом с бандлом
+ * в `files/ota/`.
+ *
+ * Зачем: из APK RN берёт ассеты по имени Android-ресурса, а из файла на диске — по пути
+ * «каталог бандла / подкаталог drawable или raw / имя файла». Без этих файлов приложение
+ * на OTA-бандле рисуется без иконок в таб-баре и шапке, хотя сам код работает.
+ *
+ * Ошибка загрузки не отменяет обновление: потерять иконки хуже, чем не обновиться, но
+ * и блокировать исправление логики из-за одной картинки нельзя — пишем в лог и идём дальше.
+ */
+async function syncOtaAssets(assets: OtaBundleInfo['assets']): Promise<void> {
+  if (!assets?.length) return;
+  let downloaded = 0;
+  for (const asset of assets) {
+    if (!asset?.path || !asset.url) continue;
+    // `..` в пути недопустим: манифест приходит по сети, а пишем мы в приватный каталог
+    // приложения — подстановка выхода из него была бы записью в чужие файлы.
+    if (asset.path.includes('..')) continue;
+    const target = `${OTA_DIR}${asset.path}`;
+    try {
+      const info = await FileSystem.getInfoAsync(target);
+      if (info.exists && (!asset.sizeBytes || info.size === asset.sizeBytes)) continue;
+      const dir = target.slice(0, target.lastIndexOf('/') + 1);
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      const result = await FileSystem.downloadAsync(asset.url, target);
+      if (result.status === 200) downloaded += 1;
+    } catch (error) {
+      log('ресурс не завантажено', asset.path, error instanceof Error ? error.message : String(error));
+    }
+  }
+  log('ресурси оновлено', `${downloaded}/${assets.length}`);
+}
+
+/**
  * Проверяет, есть ли новый JS-бандл, и скачивает его.
  * Возвращает версию, если бандл готов к применению при следующем запуске.
  */
@@ -163,34 +244,67 @@ type OtaBundleInfo = NonNullable<AppVersionInfo['jsBundle']>;
 
 export async function downloadOtaBundle(info: OtaBundleInfo | null | undefined): Promise<string | null> {
   const bundle = info;
-  if (!bundle?.url) return null;
+  if (!bundle?.url) {
+    log('манифест без адреси бандла');
+    return null;
+  }
 
   const applied = await readApplied();
-  if (applied?.sha256 === bundle.sha256) return null;
+  if (applied?.sha256 === bundle.sha256) {
+    log(applied.failed ? 'sha раніше не піднявся, пропускаю' : 'вже застосовано', shortSha(bundle.sha256));
+    // Бандл применён, но ресурсы могли не докачаться в прошлый раз (сеть пропала, процесс
+    // убили). Проверка дешёвая — только размеры файлов, без сети, пока всё на месте.
+    if (!applied.failed) await syncOtaAssets(bundle.assets);
+    return null;
+  }
 
   const meta = await readMeta();
   if (meta?.sha256 === bundle.sha256) {
     const existing = await FileSystem.getInfoAsync(BUNDLE_PATH);
     // Тот же файл уже лежит и ждёт перезапуска — баннер уместен, но применённый
     // (подтверждённый) бандл повторно предлагать нельзя.
-    if (existing.exists) return meta.version;
+    if (existing.exists) {
+      log('бандл уже завантажено, чекає перезапуску', shortSha(bundle.sha256));
+      // Ресурсы могли не докачаться в прошлый раз (сеть пропала на середине) — повторяем
+      // здесь, пока ожидание перезапуска ещё уместно.
+      await syncOtaAssets(bundle.assets);
+      return meta.version;
+    }
   }
 
   try {
     await FileSystem.makeDirectoryAsync(OTA_DIR, { intermediates: true });
     await FileSystem.deleteAsync(TMP_GZ_PATH, { idempotent: true });
+    log('завантажую', bundle.version, shortSha(bundle.sha256), `${bundle.sizeBytes} B`);
     const downloaded = await FileSystem.downloadAsync(bundle.url, TMP_GZ_PATH);
-    if (downloaded.status !== 200) return null;
+    if (downloaded.status !== 200) {
+      log('сервер віддав', String(downloaded.status));
+      return null;
+    }
 
     const base64 = await FileSystem.readAsStringAsync(TMP_GZ_PATH, { encoding: FileSystem.EncodingType.Base64 });
     const gzBytes = base64ToBytes(base64);
 
     // Хэш проверяем ДО распаковки: битый/подменённый файл не должен дойти до загрузчика.
     const digest = sha256(gzBytes);
-    if (digest !== bundle.sha256) return null;
+    if (digest !== bundle.sha256) {
+      log('хэш не збігся', shortSha(digest), '≠', shortSha(bundle.sha256));
+      return null;
+    }
 
-    const rawBundle = gunzipSync(gzBytes);
-    if (rawBundle.length < 100_000) return null;
+    // Обрезанный (truncated) `.gz` проходит проверку хэша, если манифест собран из того же
+    // битого файла, поэтому распаковка — отдельный рубеж: её провал не должен ничего писать.
+    let rawBundle: Uint8Array;
+    try {
+      rawBundle = gunzipSync(gzBytes);
+    } catch (error) {
+      log('gzip не розпакувався', error instanceof Error ? error.message : String(error));
+      return null;
+    }
+    if (rawBundle.length < 100_000) {
+      log('бандл замалий', `${rawBundle.length} B`);
+      return null;
+    }
 
     // Атомарная замена: пишем во временный файл и переносим, чтобы обрыв записи не оставил
     // половинчатый бандл.
@@ -201,6 +315,10 @@ export async function downloadOtaBundle(info: OtaBundleInfo | null | undefined):
     await FileSystem.deleteAsync(BUNDLE_PATH, { idempotent: true });
     await FileSystem.moveAsync({ from: TMP_BUNDLE_PATH, to: BUNDLE_PATH });
 
+    // Ресурсы кладём до записи meta: если приложение поднимется с новым бандлом, иконки
+    // должны быть уже на месте, иначе первый запуск покажет интерфейс без глифов.
+    await syncOtaAssets(bundle.assets);
+
     const nextMeta: OtaMeta = {
       version: bundle.version,
       sha256: bundle.sha256,
@@ -209,8 +327,10 @@ export async function downloadOtaBundle(info: OtaBundleInfo | null | undefined):
     };
     await FileSystem.writeAsStringAsync(META_PATH, JSON.stringify(nextMeta));
     await FileSystem.deleteAsync(TMP_GZ_PATH, { idempotent: true });
+    log('готово до перезапуску', bundle.version, `${rawBundle.length} B`);
     return bundle.version;
-  } catch {
+  } catch (error) {
+    log('помилка завантаження', error instanceof Error ? error.message : String(error));
     return null;
   }
 }

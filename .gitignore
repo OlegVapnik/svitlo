@@ -63,6 +63,9 @@ __pycache__/
 /apps/web/public/data/address/
 # Тихий OTA JS-бандла — выход tools/build-ota-bundle.sh (сжатые бандлы ~2 МБ + манифест).
 /apps/web/public/ota/
+# Песочница для проверки откатов OTA (`OTA_DIR=ota-test ./tools/publish-ota.sh`): рабочие
+# приложения туда не ходят, файлы нужны только на время теста на устройстве.
+/apps/web/public/ota-test/
 # Настройки IDE: в них абсолютные пути и личные раскладки, продукту они не нужны.
 .idea/
 

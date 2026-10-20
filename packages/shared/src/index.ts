@@ -680,6 +680,17 @@ export interface AppVersionInfo {
     sizeBytes: number;
     /** Версия JS-кода — по ней понимаем, что бандл новее. */
     version: string;
+    /**
+     * Ресурсы бандла (шрифты иконок, картинки из `node_modules`). Без них OTA-бандл
+     * рисуется без иконок: RN резолвит ассеты относительно каталога бандла, а в APK они
+     * лежат в `res`. Путь — относительный, повторяет структуру `--assets-dest`
+     * (`raw/<имя>.ttf`, `drawable-mdpi/<имя>.png`).
+     */
+    assets?: Array<{
+      path: string;
+      url: string;
+      sizeBytes?: number;
+    }> | null;
   } | null;
 }
 

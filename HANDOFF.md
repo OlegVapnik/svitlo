@@ -23,10 +23,37 @@ scaffold `apps/mobile`, вынос `packages/core` и статические п�
 - `/version` → `2.26.0`, sha256 `a55061da…`, 35 624 859 байт, `releasedAt 2026-10-20T14:42:14Z`;
   тот же файл отдаётся по `/download/svitlo-latest.apk` (`content-length` совпадает).
 - OTA: `svitlo-ua-4ze.pages.dev/ota/version.json` → `2.26.0`,
-  `bundle-9fb636c87abc4e75.gz` (1 899 750 байт).
+  `bundle-1662d7cd…gz` (2 302 133 байт) + 28 ресурсов в `/ota/assets`.
 - `/status?region=chernihivska-oblast` → `dataStale: false`, `lastUpdatedAt` свежий;
   D1 писала снапшот в 14:44, то есть квота на запись в тот момент была жива.
 - Паки адресов: `manifest.json` → `version: 2`, области `chernihivska`, `kyiv-city`, `kyivska`.
+
+### OTA проверен на живом устройстве (APK 2.26.0, arm64)
+
+Прогон на физическом телефоне закрыл риск «тихое обновление кладёт приложение». Что
+подтверждено и чем это держится:
+
+- **Обновление без APK доезжает.** Временная строка-маркер в `QueueGrid.tsx` приехала
+  бандлом: баннер «JS-оновлення завантажено» → перезапуск → новый текст, установка APK не
+  потребовалась.
+- **Битый `.gz` не кирпичит.** Подсунутый обрезанный архив не распаковался, приложение
+  осталось на вшитом бандле; тот же SHA помечается `failed` в `applied.json`, поэтому
+  повторной загрузки и цикла падений нет.
+- **Ресурсы бандла едут вместе с бандлом.** Найденный дефект: после применения OTA
+  пропадали иконки в шапке и таб-баре. Причина не в коде: из APK RN ищет ассет по имени
+  Android-ресурса (`res/raw`, `res/drawable-*`), а из файла на диске — по пути
+  `files/ota/<raw|drawable-*>/<имя>`. Шрифт `Ionicons.ttf` лежал только внутри APK.
+  Теперь `tools/build-ota-bundle.sh` публикует дерево `--assets-dest` в `/ota/assets` и
+  перечисляет его в `version.json` (`jsBundle.assets`), а `ota.ts` докачивает файлы в
+  `files/ota` **до** записи `meta.json` — то есть к моменту применения бандла они на месте.
+  Неудача загрузки ресурса обновление не отменяет, а при следующем запуске недостающие
+  файлы досинхронизируются (проверка только по размерам, без сети).
+- **Диагностика.** Строки `[ota] …` в `adb logcat -s ReactNativeJS:V` показывают версию,
+  короткий SHA, причину отказа (хэш, gzip, размер) и число докачанных ресурсов.
+
+Публикация одной командой: `./tools/publish-ota.sh` (сборка Hermes-байткода + `vite build`
++ `wrangler pages deploy`). Проверять на устройстве так: запуск → баннер, перезапуск →
+иконки на месте и баннера нет.
 
 ### Что появилось после прошлой передачи (2.25.0 → 2.26.0)
 
@@ -117,13 +144,11 @@ scaffold `apps/mobile`, вынос `packages/core` и статические п�
 
 ### Что дальше (в этом порядке)
 
-1. **Проверить OTA на живом устройстве.** APK `2.26.0` (versionCode 197, arm64-v8a,
-   35 624 859 байт, sha256 `a55061da…`) опубликован в R2 и отдаётся по
-   `/download/svitlo-latest.apk`; `version.json` обоих бэкендов обновлён. Тихий бандл
-   `bundle-9fb636c87abc4e75.gz` лежит на Pages. Осталось пройти путь на телефоне:
-   скачивание, применение при следующем запуске, откат по маркеру `.booted`.
-   Публикация уже собранного APK без пересборки — `./tools/build-android-apk.sh --publish-only`
-   (`versionCode` считается по числу коммитов, поэтому пересборка подменила бы файл).
+1. **Вынести release-ключ из дерева веба.** `apps/web/android/` — остаток Capacitor-эпохи:
+   там же лежит `keystore` и `keystore.properties`. Перенести в `apps/mobile/credentials/`
+   (в `.gitignore`) или `~/.config/svitlo-keystore/`, поправить `tools/build-android-apk.sh`
+   и `withSvitloNative.js`, затем удалить `apps/web/android` и `@capacitor/*` из
+   `apps/web/package.json`. Ключ не терять: без него обновление APK «поверх» не установится.
 2. **Долги из аудита** (см. `PROJECT_AUDIT.md`, раздел «Бэклог»): backfill `outage_events`
    и отказ от легаси `outages`, CI на `tsc` + тесты, тесты для воркера и мобильного.
 
@@ -144,7 +169,8 @@ SKIP_ADDRESS_IMPORT=1 ./deploy-cf.sh     # когда квота D1 на исх�
 # Android: собирается локальным Gradle из SDK Android Studio (NDK 27.1 + cmake 3.22.1)
 ./tools/build-android-apk.sh                 # release, arm64-v8a, ключ из keystore.properties
 ./tools/build-android-apk.sh --docker        # альтернатива для CI, где нет локального SDK
-./tools/build-ota-bundle.sh                  # тихий OTA JS-бандла
+./tools/build-ota-bundle.sh                  # тихий OTA JS-бандла (+ ресурсы в public/ota/assets)
+./tools/publish-ota.sh                       # собрать и выложить бандл на Pages одной командой
 
 # история и чейнджлог
 node tools/gen-git-history.mjs           # GIT_HISTORY.md из git log
