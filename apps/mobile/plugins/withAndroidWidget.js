@@ -41,7 +41,13 @@ const withAndroidWidget = (config) =>
 
       const copied =
         copyDir(path.join(nativeRoot, 'java'), path.join(mainRoot, 'java')) +
-        copyDir(path.join(nativeRoot, 'res'), path.join(mainRoot, 'res'));
+        copyDir(path.join(nativeRoot, 'res'), path.join(mainRoot, 'res')) +
+        // JVM-тесты (`./gradlew :app:testReleaseUnitTest`) живут рядом с исходниками, но
+        // prebuild их не создаёт: без копирования тестовая папка остаётся пустой.
+        copyDir(
+          path.join(nativeRoot, 'test'),
+          path.join(cfg.modRequest.platformProjectRoot, 'app', 'src', 'test'),
+        );
 
       if (copied > 0) {
         console.log(`withAndroidWidget: скопійовано ${copied} нативних файлів у android/app/src/main`);

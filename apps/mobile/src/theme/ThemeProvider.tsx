@@ -1,6 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
-import { useColorScheme } from 'react-native';
 import { vars } from 'nativewind';
 import {
   paletteFor,
@@ -23,8 +22,8 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const scheme = useColorScheme();
-  const mode: ThemeMode = scheme === 'dark' ? 'dark' : 'light';
+  // Obsidian Dark — единственная тема приложения: ночной режим задаёт и нативная оболочка.
+  const mode: ThemeMode = 'dark';
   const [powerState, setPowerState] = useState<PowerState>('unknown');
 
   const value = useMemo<ThemeContextValue>(

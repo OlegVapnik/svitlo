@@ -3,6 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddressLookup } from '@/components/address/AddressLookup';
 import { RegionPicker } from '@/components/home/RegionPicker';
+import { SwipeableScreen } from '@/components/navigation/SwipeableScreen';
 
 /**
  * Пошук адреси: область → населений пункт → вулиця → будинок.
@@ -12,7 +13,8 @@ import { RegionPicker } from '@/components/home/RegionPicker';
  */
 export default function SearchScreen() {
   return (
-    <SafeAreaView className="flex-1 bg-surface-dim" edges={['top']}>
+    <SwipeableScreen>
+      <SafeAreaView className="flex-1 bg-surface-dim" edges={['top']}>
       <ScrollView
         contentContainerStyle={{ gap: 16, paddingHorizontal: 16, paddingBottom: 32, paddingTop: 12 }}
         keyboardShouldPersistTaps="handled"
@@ -29,5 +31,6 @@ export default function SearchScreen() {
         <AddressLookup />
       </ScrollView>
     </SafeAreaView>
+    </SwipeableScreen>
   );
 }

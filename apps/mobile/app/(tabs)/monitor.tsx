@@ -13,6 +13,7 @@ import { QueueTiles } from '@/components/monitor/QueueTiles';
 import { useRegion } from '@/context/RegionContext';
 import { useRegionQueue } from '@/hooks/useRegionQueue';
 import { useTheme } from '@/theme/ThemeProvider';
+import { SwipeableScreen } from '@/components/navigation/SwipeableScreen';
 
 const SEGMENTS = [
   { id: 'groups', label: 'Групи' },
@@ -69,7 +70,8 @@ export default function MonitorScreen() {
   const { selectedQueue, selectQueue } = useRegionQueue(currentRegion, availableQueues);
 
   return (
-    <SafeAreaView className="flex-1 bg-surface-dim" edges={['top']}>
+    <SwipeableScreen>
+      <SafeAreaView className="flex-1 bg-surface-dim" edges={['top']}>
       <ScrollView contentContainerStyle={{ gap: 16, paddingHorizontal: 16, paddingBottom: 32, paddingTop: 12 }}>
         <View className="flex-row items-center justify-between">
           <View className="flex-1 gap-1 pr-3">
@@ -158,6 +160,7 @@ export default function MonitorScreen() {
         ) : null}
       </ScrollView>
     </SafeAreaView>
+    </SwipeableScreen>
   );
 }
 

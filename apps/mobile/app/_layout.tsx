@@ -1,15 +1,19 @@
+import 'react-native-gesture-handler';
 import '../global.css';
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { configureAddressPacks, configureCoreApi } from '@svitlo/core';
 import { hydrateOfflineStartup } from '@svitlo/core/api/offline-sync';
 import { queryClient } from '@svitlo/core/api/query-client';
 
+import { OtaProvider } from '@/context/OtaContext';
 import { RegionProvider } from '@/context/RegionContext';
+import { SettingsProvider } from '@/context/SettingsContext';
 import { installStorage } from '@/lib/storage';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
 
@@ -39,15 +43,21 @@ hydrateOfflineStartup();
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <RegionProvider>
-            <RootNavigator />
-          </RegionProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </QueryClientProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <OtaProvider>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <RegionProvider>
+              <SettingsProvider>
+                <RootNavigator />
+              </SettingsProvider>
+            </RegionProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+        </OtaProvider>
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   );
 }
 

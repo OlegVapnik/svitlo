@@ -2,11 +2,11 @@
   "expo": {
     "name": "Svitlo",
     "slug": "svitlo",
-    "version": "2.23.2",
+    "version": "2.26.0",
     "orientation": "portrait",
     "scheme": "svitlo",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "ua.com.svitlo.app",
       "supportsTablet": true
@@ -28,7 +28,9 @@
       "expo-router",
       "expo-splash-screen",
       "./plugins/withAndroidWidget",
-      "expo-font"
+      "./plugins/withSvitloNative",
+      "expo-font",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
