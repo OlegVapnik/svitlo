@@ -296,7 +296,7 @@ function RowAction({
           : 'h-9 w-9 items-center justify-center rounded-full active:bg-surface-container-high'
       }
     >
-      <Ionicons name={icon} size={16} color={color} />
+      <Ionicons name={icon} size={16} color="#FFFFFF" />
     </Pressable>
   );
 }
