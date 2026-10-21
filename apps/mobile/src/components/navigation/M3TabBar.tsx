@@ -11,7 +11,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 const ICONS: Record<string, { active: keyof typeof Ionicons.glyphMap; idle: keyof typeof Ionicons.glyphMap }> = {
   index: { active: 'home', idle: 'home-outline' },
   search: { active: 'search', idle: 'search-outline' },
-  monitor: { active: 'pulse', idle: 'pulse-outline' },
+  monitor: { active: 'calendar', idle: 'calendar-outline' },
   info: { active: 'information-circle', idle: 'information-circle-outline' },
 };
 
@@ -19,9 +19,6 @@ const SPRING = { damping: 18, stiffness: 220, mass: 0.9 };
 
 /**
  * Нижний бар M3 Expressive: овальная пилюля активного пункта раскрывается пружиной.
- *
- * Высота 76 + safe-area снизу; пилюля живёт на UI-потоке, поэтому переключение не ждёт JS.
- * Тактильный отклик — тонкий selection, как у системных переключателей.
  */
 export function M3TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
   const { palette } = useTheme();
@@ -83,7 +80,9 @@ export function M3TabBar({ state, descriptors, emitter, navigateToTab }: BottomT
               ? descriptor.options.tabBarLabel
               : typeof descriptor.options.title === 'string'
                 ? descriptor.options.title
-                : route.name;
+                : route.name === 'monitor'
+                  ? 'Графіки'
+                  : route.name;
 
           const focused = state.index === index;
           const icon = ICONS[route.name]?.[focused ? 'active' : 'idle'] ?? 'ellipse-outline';

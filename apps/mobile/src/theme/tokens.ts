@@ -1,26 +1,27 @@
 /**
  * Токены темы, перенесённые из apps/web/src/styles/globals.css.
  *
- * Здесь только значения. Классы Tailwind (bg-surface, text-foreground, …) статичны и читают
- * CSS-переменные, которые ThemeProvider выставляет через NativeWind `vars()`. Динамические
- * цвета (состояние сети, ячейки графиков) берём из `powerTone()` и передаём в `style`, а не
- * собираем className на лету — инжектор NativeWind компилирует классы статически.
+ * Система 3 статусов + нейтральный:
+ * 1) Світло є (#10B981, смарагдовий) — круг (●)
+ * 2) Скоро вимкнення / Скоро увімкнуть (#F59E0B, бурштиновий) — ромб (◆)
+ * 3) Відключення (#F43F5E, рубіновий + діагональна штриховка) — квадрат (■)
+ * 4) Немає даних (#27272A / #71717A, нейтральний темний) — чесний статус без графіку
  */
 
 export type ThemeMode = 'light' | 'dark';
-// `allClear` — день опубликован без отключений: зелёный, но без интервалов. Отличается от
-// `unknown` (данных нет) и от `on` (есть интервалы). Тон совпадает с `on`.
 export type PowerState = 'on' | 'warning' | 'off' | 'allClear' | 'unknown';
 
 export interface StatusTone {
-  /** Заливка точки/бейджа. */
+  /** Заливка точки/бейджа/індикатора. */
   color: string;
-  /** Текст поверх фона. */
+  /** Текст поверх фону. */
   text: string;
-  /** Мягкая подложка (бейдж, чип, свечение). */
+  /** М'яка підложка (бейдж, чіп, світіння). */
   soft: string;
-  /** Граница бейджа. */
+  /** Межа бейджа. */
   border: string;
+  /** Геометричний символ форми статусу: ●, ◆, ■ */
+  symbol: string;
 }
 
 export interface Palette {
@@ -61,25 +62,25 @@ export const lightPalette: Palette = {
   cardRaised: '#f1f5f9',
   foreground: '#0f172a',
   mutedForeground: '#64748b',
-  primary: '#047857',
+  primary: '#059669',
   onPrimary: '#ffffff',
-  primaryContainer: 'rgba(4, 120, 87, 0.12)',
+  primaryContainer: 'rgba(5, 150, 105, 0.12)',
   border: '#e2e8f0',
   borderStrong: '#94a3b8',
   hairline: 'rgba(15, 23, 42, 0.08)',
   track: 'rgba(15, 23, 42, 0.12)',
-  success: '#059669',
-  warning: '#d97706',
-  destructive: '#e11d48',
+  success: '#10B981',
+  warning: '#F59E0B',
+  destructive: '#F43F5E',
   info: '#2563eb',
   unknown: '#71717a',
   levelHigh: '#65a30d',
   status: {
-    on: { color: '#059669', text: '#047857', soft: 'rgba(5, 150, 105, 0.10)', border: 'rgba(5, 150, 105, 0.25)' },
-    allClear: { color: '#059669', text: '#047857', soft: 'rgba(5, 150, 105, 0.10)', border: 'rgba(5, 150, 105, 0.25)' },
-    warning: { color: '#d97706', text: '#b45309', soft: 'rgba(217, 119, 6, 0.10)', border: 'rgba(217, 119, 6, 0.25)' },
-    off: { color: '#e11d48', text: '#be123c', soft: 'rgba(225, 29, 72, 0.10)', border: 'rgba(225, 29, 72, 0.25)' },
-    unknown: { color: '#71717a', text: '#52525b', soft: 'rgba(113, 113, 122, 0.10)', border: 'rgba(113, 113, 122, 0.25)' },
+    on: { color: '#10B981', text: '#059669', soft: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.3)', symbol: '●' },
+    allClear: { color: '#10B981', text: '#059669', soft: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.3)', symbol: '●' },
+    warning: { color: '#F59E0B', text: '#d97706', soft: 'rgba(245, 158, 11, 0.14)', border: 'rgba(245, 158, 11, 0.35)', symbol: '◆' },
+    off: { color: '#F43F5E', text: '#e11d48', soft: 'rgba(244, 63, 94, 0.14)', border: 'rgba(244, 63, 94, 0.35)', symbol: '■' },
+    unknown: { color: '#71717a', text: '#52525b', soft: 'rgba(113, 113, 122, 0.12)', border: 'rgba(113, 113, 122, 0.25)', symbol: '●' },
   },
 };
 
@@ -88,31 +89,31 @@ export const darkPalette: Palette = {
   surfaceDim: '#09090b',
   surfaceContainerLow: '#0e0e12',
   surfaceContainer: '#131318',
-  surfaceContainerHigh: '#1b1b22',
-  surfaceContainerHighest: '#23232c',
+  surfaceContainerHigh: '#18181f',
+  surfaceContainerHighest: '#24242e',
   card: '#131318',
   cardRaised: '#1b1b22',
   foreground: '#fafafa',
   mutedForeground: '#a1a1aa',
-  primary: '#10b981',
+  primary: '#10B981',
   onPrimary: '#09090b',
   primaryContainer: 'rgba(16, 185, 129, 0.14)',
   border: 'rgba(255, 255, 255, 0.08)',
   borderStrong: '#3f3f46',
   hairline: 'rgba(255, 255, 255, 0.06)',
   track: 'rgba(255, 255, 255, 0.12)',
-  success: '#10b981',
-  warning: '#f59e0b',
-  destructive: '#f43f5e',
+  success: '#10B981',
+  warning: '#F59E0B',
+  destructive: '#F43F5E',
   info: '#3b82f6',
   unknown: '#71717a',
   levelHigh: '#a3e635',
   status: {
-    on: { color: '#10b981', text: '#34d399', soft: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.25)' },
-    allClear: { color: '#10b981', text: '#34d399', soft: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.25)' },
-    warning: { color: '#f59e0b', text: '#fbbf24', soft: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.25)' },
-    off: { color: '#f43f5e', text: '#fb7185', soft: 'rgba(244, 63, 94, 0.12)', border: 'rgba(244, 63, 94, 0.25)' },
-    unknown: { color: '#71717a', text: '#a1a1aa', soft: 'rgba(113, 113, 122, 0.12)', border: 'rgba(113, 113, 122, 0.25)' },
+    on: { color: '#10B981', text: '#34d399', soft: 'rgba(16, 185, 129, 0.14)', border: 'rgba(16, 185, 129, 0.35)', symbol: '●' },
+    allClear: { color: '#10B981', text: '#34d399', soft: 'rgba(16, 185, 129, 0.14)', border: 'rgba(16, 185, 129, 0.35)', symbol: '●' },
+    warning: { color: '#F59E0B', text: '#fbbf24', soft: 'rgba(245, 158, 11, 0.16)', border: 'rgba(245, 158, 11, 0.4)', symbol: '◆' },
+    off: { color: '#F43F5E', text: '#fb7185', soft: 'rgba(244, 63, 94, 0.16)', border: 'rgba(244, 63, 94, 0.4)', symbol: '■' },
+    unknown: { color: '#71717a', text: '#a1a1aa', soft: 'rgba(39, 39, 42, 0.6)', border: 'rgba(255, 255, 255, 0.08)', symbol: '●' },
   },
 };
 
@@ -120,12 +121,10 @@ export function paletteFor(mode: ThemeMode): Palette {
   return mode === 'dark' ? darkPalette : lightPalette;
 }
 
-/** Цвета для конкретного состояния сети — для `style`, графиков и свечения. */
 export function powerTone(mode: ThemeMode, state: PowerState): StatusTone {
   return paletteFor(mode).status[state];
 }
 
-/** CSS-переменные для NativeWind `vars()`: статичные классы Tailwind читают их. */
 export function themeVars(mode: ThemeMode, powerState: PowerState = 'unknown'): Record<string, string> {
   const p = paletteFor(mode);
   const tone = p.status[powerState];

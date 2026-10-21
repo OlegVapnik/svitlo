@@ -1,41 +1,67 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { Text, View } from 'react-native';
 
 import { useTheme, type PowerState } from '@/theme/ThemeProvider';
 
-const ICONS: Record<PowerState, keyof typeof Ionicons.glyphMap> = {
-  on: 'flash',
-  warning: 'time-outline',
-  off: 'flash-off-outline',
-  allClear: 'checkmark-circle-outline',
-  unknown: 'help-circle-outline',
-};
-
 export interface StatusPillProps {
   state: PowerState;
   label: string;
-  /** Точка пульсирует — единственный «живой» элемент шапки. */
   pulse?: boolean;
 }
 
 /**
- * Пилл состояния сети: полупрозрачная заливка, грань 1px, светящаяся точка и иконка.
- *
- * Цвет приходит из токенов состояния (`palette.status[state]`), поэтому пилл, таймер,
- * волна и свечение не могут разойтись.
+ * Пилл состояния сети: полупрозрачная заливка, грань 1px, светящаяся геометрическая форма (● / ◆ / ■).
+ * - Світло є: круг ● (#10B981)
+ * - Скоро вимкнення: ромб ◆ (#F59E0B)
+ * - Відключення: квадрат ■ (#F43F5E)
+ * - Немає даних: нейтральний сірий
  */
 export function StatusPill({ state, label, pulse = false }: StatusPillProps) {
   const { palette } = useTheme();
   const tone = palette.status[state];
 
-  return (
-    <View
-      style={{ backgroundColor: tone.soft, borderColor: tone.border }}
-      className="flex-row items-center gap-2 self-start rounded-full border px-3 py-1"
-    >
+  // Геометрический индикатор формы
+  const renderShape = () => {
+    if (state === 'warning') {
+      return (
+        <View
+          style={{
+            width: 7,
+            height: 7,
+            backgroundColor: tone.color,
+            transform: [{ rotate: '45deg' }],
+            shadowColor: tone.color,
+            shadowOpacity: 0.9,
+            shadowRadius: 5,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 3,
+          }}
+        />
+      );
+    }
+    if (state === 'off') {
+      return (
+        <View
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 1.5,
+            backgroundColor: tone.color,
+            shadowColor: tone.color,
+            shadowOpacity: 0.8,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 3,
+          }}
+        />
+      );
+    }
+    // on, allClear, unknown: круг
+    return (
       <View
-        className="h-2 w-2 rounded-full"
         style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
           backgroundColor: tone.color,
           opacity: pulse ? 1 : 0.9,
           shadowColor: tone.color,
@@ -45,8 +71,16 @@ export function StatusPill({ state, label, pulse = false }: StatusPillProps) {
           elevation: 3,
         }}
       />
-      <Ionicons name={ICONS[state]} size={13} color={tone.text} />
-      <Text className="text-xs font-semibold" style={{ color: tone.text }}>
+    );
+  };
+
+  return (
+    <View
+      style={{ backgroundColor: tone.soft, borderColor: tone.border }}
+      className="flex-row items-center gap-2 self-start rounded-full border px-3 py-1"
+    >
+      {renderShape()}
+      <Text className="text-xs font-bold" style={{ color: tone.text }}>
         {label}
       </Text>
     </View>
