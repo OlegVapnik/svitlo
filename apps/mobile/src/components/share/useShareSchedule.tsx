@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState, type ComponentRef } from 'react';
 import { Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 
@@ -17,6 +19,8 @@ const STATE_LABEL: Record<PowerState, string> = {
   unknown: 'Немає даних',
 };
 
+const HOUR_TICKS = ['00:00', '06:00', '12:00', '18:00', '24:00'];
+
 interface ShareInput {
   state: PowerState;
   queue: string | null;
@@ -30,11 +34,10 @@ interface ShareInput {
 }
 
 /**
- * Красивая PNG-карточка через react-native-view-shot + expo-sharing.
+ * Премиальная карточка шеринга графика (1080x1440 PNG) в стиле Material Design 3.
  *
- * Карточка верстается обычными RN-компонентами (никакого Canvas/WebView) и живёт за
- * пределами экрана: пользователь её не видит, но captureRef снимает её как отдельный слой.
- * 3x-размер даёт 1080 px по ширине — хватает для Telegram и сторис.
+ * Карточка верстается обычными RN-компонентами (без Canvas/WebView) и снята в высоком
+ * разрешении через captureRef для отправки в Telegram, Viber и Сторис.
  */
 export function useShareSchedule(input: ShareInput) {
   const ref = useRef<ComponentRef<typeof View>>(null);
@@ -59,7 +62,7 @@ export function useShareSchedule(input: ShareInput) {
         });
       }
     } catch {
-      // Пользователь отменил шеринг или слой ещё не отрисован — молча выходим.
+      // Пользователь отменил шеринг
     } finally {
       setSharing(false);
     }
@@ -76,8 +79,6 @@ export function useShareSchedule(input: ShareInput) {
         left: 0,
         width: 360,
         height: 480,
-        // Держим карточку в пределах экрана, но под контентом: Android не рендерит слои,
-        // вынесенные за границы (translateX: -2000), и captureRef вернул бы пустой PNG.
         zIndex: -1,
       }}
     >
@@ -102,105 +103,254 @@ function ShareCard({
   const { palette } = useTheme();
   const tone = palette.status[state];
   const slots = generateTimelineSlots(intervals, date, new Date());
+
   const detail =
     state === 'off' && offEndsAt
-      ? `До ${minutesToHm(minutesOfDay(offEndsAt, date))}`
+      ? `Вимкнено до ${minutesToHm(minutesOfDay(offEndsAt, date))}`
       : state === 'off' && backInMinutes != null
-        ? `Світло через ${formatMinutesUk(backInMinutes)}`
+        ? `Очікується увімкнення через ${formatMinutesUk(backInMinutes)}`
         : state === 'warning' && nextInMinutes != null
-          ? `Вимкнуть через ${formatMinutesUk(nextInMinutes)}`
+          ? `Наступне відключення через ${formatMinutesUk(nextInMinutes)}`
           : state === 'on' && nextInMinutes != null
-            ? `Відключення через ${formatMinutesUk(nextInMinutes)}`
-            : 'За графіком на сьогодні';
+            ? `Наступне відключення через ${formatMinutesUk(nextInMinutes)}`
+            : 'Відключень за графіком на сьогодні немає';
+
+  const formattedDate = (() => {
+    try {
+      const [year, month, day] = date.split('-').map(Number);
+      if (!year || !month || !day) return date;
+      const d = new Date(year, month - 1, day);
+      return d.toLocaleDateString('uk-UA', {
+        day: 'numeric',
+        month: 'long',
+        weekday: 'short',
+      }).toUpperCase();
+    } catch {
+      return date;
+    }
+  })();
 
   return (
     <View
       style={{
         flex: 1,
-        backgroundColor: '#09090b',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        backgroundColor: palette.card,
+        borderColor: tone.border,
+        borderWidth: 1.5,
         borderRadius: 32,
-        padding: 28,
+        padding: 24,
         justifyContent: 'space-between',
+        overflow: 'hidden',
       }}
     >
-      <View style={{ gap: 6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: tone.color }} />
-          <Text style={{ color: '#a1a1aa', fontSize: 13, fontWeight: '700', letterSpacing: 1 }}>
-            SVITLO · {regionName.toLocaleUpperCase('uk-UA')}
+      {/* Мягкий нативный верхний градиент статуса */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[tone.soft, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 0.5 }}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 220 }}
+      />
+
+      {/* 1) Шапка с брендингом Svitlo и регионом */}
+      <View style={{ gap: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {/* Брендовый лого-значок Svitlo */}
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                backgroundColor: tone.color,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="flash" size={18} color="#000000" />
+            </View>
+            <View>
+              <Text style={{ color: palette.foreground, fontSize: 15, fontWeight: '800', letterSpacing: 0.5 }}>
+                SVITLO
+              </Text>
+              <Text style={{ color: palette.mutedForeground, fontSize: 11, fontWeight: '600' }}>
+                {regionName.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Плашка даты */}
+          <View
+            style={{
+              backgroundColor: palette.surfaceContainerHigh,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: palette.hairline,
+            }}
+          >
+            <Text style={{ color: palette.foreground, fontSize: 11, fontWeight: '700' }}>
+              {formattedDate}
+            </Text>
+          </View>
+        </View>
+
+        {/* 2) Главный доминирующий заголовок состояния */}
+        <View style={{ gap: 6, marginTop: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 5,
+                backgroundColor: tone.color,
+              }}
+            />
+            <Text style={{ color: tone.color, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 }}>
+              {state === 'off' ? 'Відключення за графіком' : state === 'on' ? 'Електропостачання є' : 'Увага'}
+            </Text>
+          </View>
+
+          <Text
+            style={{
+              color: palette.foreground,
+              fontSize: 34,
+              fontWeight: '900',
+              letterSpacing: -0.8,
+              lineHeight: 38,
+            }}
+          >
+            {STATE_LABEL[state]}
+          </Text>
+
+          <Text style={{ color: palette.mutedForeground, fontSize: 14, fontWeight: '500' }}>
+            {detail}
           </Text>
         </View>
 
-        <Text style={{ color: tone.text, fontSize: 42, fontWeight: '800', marginTop: 18 }}>
-          {STATE_LABEL[state]}
-        </Text>
-        <Text style={{ color: '#a1a1aa', fontSize: 16 }}>{detail}</Text>
+        {/* Информационные чипы: Черга и Загальный час без света */}
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 2 }}>
+          {queue ? (
+            <View
+              style={{
+                backgroundColor: tone.soft,
+                borderColor: tone.border,
+                borderWidth: 1,
+                borderRadius: 14,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Ionicons name="grid-outline" size={13} color={tone.text} />
+              <Text style={{ color: tone.text, fontSize: 13, fontWeight: '800' }}>
+                ЧЕРГА {queue}
+              </Text>
+            </View>
+          ) : null}
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 }}>
           <View
             style={{
-              borderRadius: 999,
+              backgroundColor: palette.surfaceContainerHigh,
+              borderColor: palette.hairline,
               borderWidth: 1,
-              borderColor: tone.border,
-              backgroundColor: tone.soft,
-              paddingHorizontal: 14,
+              borderRadius: 14,
+              paddingHorizontal: 12,
               paddingVertical: 6,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
             }}
           >
-            <Text style={{ color: tone.text, fontSize: 14, fontWeight: '700' }}>
-              {queue ? `Черга ${queue}` : 'Черга не вибрана'}
+            <Ionicons name="time-outline" size={13} color={palette.mutedForeground} />
+            <Text style={{ color: palette.foreground, fontSize: 13, fontWeight: '700' }}>
+              Без світла: {formatMinutesUk(offMinutes)}
             </Text>
           </View>
-          <Text style={{ color: '#71717a', fontSize: 13 }}>{date}</Text>
         </View>
       </View>
 
-      <View style={{ gap: 12 }}>
-        <Text style={{ color: '#a1a1aa', fontSize: 12, fontWeight: '600' }}>
-          Без світла за добу: {formatMinutesUk(offMinutes)}
-        </Text>
+      {/* 3) Выразительная 24-часовая полоса графика (Главный визуальный якорь) */}
+      <View style={{ gap: 10 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={{ color: palette.foreground, fontSize: 12, fontWeight: '700' }}>
+            24-годинний графік доби
+          </Text>
+          <Text style={{ color: palette.mutedForeground, fontSize: 11, fontWeight: '600' }}>
+            48 получасовых слотов
+          </Text>
+        </View>
 
+        {/* Укрупненный стильный трек Timeline */}
         <View
           style={{
             flexDirection: 'row',
-            height: 38,
-            gap: 1,
-            padding: 5,
-            borderRadius: 12,
-            backgroundColor: '#0e0e12',
+            height: 52,
+            gap: 2,
+            padding: 4,
+            borderRadius: 16,
+            backgroundColor: palette.surfaceDim,
             borderWidth: 1,
-            borderColor: 'rgba(255,255,255,0.06)',
+            borderColor: palette.hairline,
           }}
         >
           {slots.map((slot) => {
             const isOff = slot.stateCode === OFF_STATE_CODE;
-            const isOn = slot.stateCode === 1;
+            const isWarning = slot.stateCode === WARNING_STATE_CODE;
+            const isOn = slot.stateCode === ON_STATE_CODE;
+
+            const bg = isOff
+              ? palette.status.off.color
+              : isWarning
+                ? palette.status.warning.color
+                : isOn
+                  ? palette.status.on.color
+                  : palette.surfaceContainerHigh;
+
             return (
               <View
                 key={slot.index}
                 style={{
                   flex: 1,
                   borderRadius: 3,
-                  backgroundColor: isOff
-                    ? 'rgba(244,63,94,0.55)'
-                    : isOn
-                      ? 'rgba(16,185,129,0.45)'
-                      : '#1b1b22',
+                  backgroundColor: bg,
+                  opacity: isOff || isWarning || isOn ? 0.85 : 0.25,
                 }}
               />
             );
           })}
         </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Text style={{ color: '#71717a', fontSize: 11, fontWeight: '600' }}>00:00</Text>
-          <Text style={{ color: '#71717a', fontSize: 11, fontWeight: '600' }}>12:00</Text>
-          <Text style={{ color: '#71717a', fontSize: 11, fontWeight: '600' }}>24:00</Text>
+        {/* Временная шкала под полосой */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2 }}>
+          {HOUR_TICKS.map((tick) => (
+            <Text key={tick} style={{ color: palette.mutedForeground, fontSize: 11, fontWeight: '700' }}>
+              {tick}
+            </Text>
+          ))}
         </View>
+      </View>
 
-        <Text style={{ color: '#52525b', fontSize: 11 }}>Графік оновлюється автоматично · svitlo</Text>
+      {/* 4) Футер карточки с автоподписью */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderTopWidth: 1,
+          borderTopColor: palette.hairline,
+          paddingTop: 12,
+        }}
+      >
+        <Text style={{ color: palette.mutedForeground, fontSize: 11, fontWeight: '600' }}>
+          Графік оновлюється в реальному часі
+        </Text>
+        <Text style={{ color: palette.foreground, fontSize: 12, fontWeight: '800', letterSpacing: 0.5 }}>
+          svitlo.ua
+        </Text>
       </View>
     </View>
   );
