@@ -3,6 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, Text, View } from 'react-native';
 
 import { PLACE_ICONS, type PlaceIcon } from '@svitlo/core/lib/saved-places';
+import { useTheme } from '@/theme/ThemeProvider';
 
 const META: Record<PlaceIcon, { icon: ComponentProps<typeof Ionicons>['name']; label: string }> = {
   home: { icon: 'home-outline', label: 'Дім' },
@@ -18,7 +19,7 @@ const META: Record<PlaceIcon, { icon: ComponentProps<typeof Ionicons>['name']; l
 export function PlaceIconBadge({
   icon,
   size = 18,
-  color,
+  color = '#FFFFFF',
 }: {
   icon: PlaceIcon;
   size?: number;
@@ -34,6 +35,8 @@ export function PlaceIconPicker({
   value: PlaceIcon;
   onChange: (icon: PlaceIcon) => void;
 }) {
+  const { palette } = useTheme();
+
   return (
     <View className="flex-row flex-wrap gap-2">
       {PLACE_ICONS.map((icon) => {
@@ -45,13 +48,13 @@ export function PlaceIconPicker({
             accessibilityRole="button"
             accessibilityLabel={META[icon].label}
             accessibilityState={{ selected }}
-            className={
-              selected
-                ? 'h-10 w-10 items-center justify-center rounded-full border-2 border-primary bg-primary-container active:opacity-80'
-                : 'h-10 w-10 items-center justify-center rounded-full border border-border bg-surface-container-high active:opacity-70'
-            }
+            style={{
+              backgroundColor: selected ? palette.primaryContainer : palette.surfaceContainerHigh,
+              borderColor: selected ? palette.primary : palette.border,
+            }}
+            className="h-10 w-10 items-center justify-center rounded-full border active:opacity-80"
           >
-            <PlaceIconBadge icon={icon} size={18} />
+            <PlaceIconBadge icon={icon} size={18} color="#FFFFFF" />
           </Pressable>
         );
       })}
