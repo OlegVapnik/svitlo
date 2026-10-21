@@ -1,16 +1,16 @@
 import 'react-native-gesture-handler';
 import '../global.css';
 
-import { QueryClientProvider } from '@tanstack/react-query';
+// QueryClientProvider imported from @svitlo/core below
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { configureAddressPacks, configureCoreApi } from '@svitlo/core';
+import { configureAddressPacks, configureCoreApi, QueryClientProvider, queryClient } from '@svitlo/core';
 import { hydrateOfflineStartup } from '@svitlo/core/api/offline-sync';
-import { queryClient } from '@svitlo/core/api/query-client';
+// queryClient imported from @svitlo/core
 
 import { RegionProvider } from '@/context/RegionContext';
 import { SettingsProvider } from '@/context/SettingsContext';

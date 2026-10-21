@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 
 import { useOutages, useQueueSchedule, useUpcomingGroupOutages } from '@svitlo/core/api/queries';
 import { kyivDateOffsetKey } from '@svitlo/core/lib/outage-dates';
+import { queueCodeMatches } from '@svitlo/core/lib/queue';
 import { formatMinutesUk, minutesOfDay, minutesToHm } from '@svitlo/core/lib/scheduleWindow';
 
 import { AccidentBanner } from '@/components/home/AccidentBanner';
@@ -15,7 +16,6 @@ import { Timeline24h } from '@/components/schedule/Timeline24h';
 import { QueueGrid } from '@/components/home/QueueGrid';
 import { UpcomingOutages } from '@/components/home/UpcomingOutages';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
-import { NEXT_OUTAGE_SOON_MINUTES } from '@/config';
 import { useRegion } from '@/context/RegionContext';
 import { useSettings } from '@/context/SettingsContext';
 import { useEarlyPowerDetector } from '@/hooks/useEarlyPowerDetector';
@@ -49,13 +49,38 @@ export default function HomeScreen() {
   const [selectedDay, setSelectedDay] = useState<'today' | 'tomorrow'>('today');
   const activeDate = selectedDay === 'today' ? today : tomorrow;
 
-  const scheduleQuery = useQueueSchedule(selectedQueue ?? undefined, activeDate, currentRegion);
-  const schedule = unwrapSchedule(scheduleQuery.data);
-  const intervals = schedule?.intervals ?? [];
-  const { state, summary } = powerStateFromSchedule(schedule, activeDate);
-
   const upcomingQuery = useUpcomingGroupOutages(currentRegion, 2);
   const upcoming = upcomingQuery.data?.data ?? [];
+
+  const scheduleQuery = useQueueSchedule(selectedQueue ?? undefined, activeDate, currentRegion);
+  const directSchedule = unwrapSchedule(scheduleQuery.data);
+
+  // Синтезируем расписание из upcoming, если /schedules ещё не ответил или вернул пусто
+  const schedule = useMemo(() => {
+    if (directSchedule && directSchedule.intervals && directSchedule.intervals.length > 0) {
+      return directSchedule;
+    }
+    if (!selectedQueue) return directSchedule;
+
+    const matched = upcoming.find(
+      (item) => item.date === activeDate && queueCodeMatches(currentRegion, item.queue, selectedQueue)
+    );
+    if (matched && matched.intervals && matched.intervals.length > 0) {
+      return {
+        region: currentRegion,
+        queue: selectedQueue,
+        date: activeDate,
+        intervals: matched.intervals,
+        allClear: false,
+        source: matched.source ?? 'mirror',
+        lastImportedAt: new Date().toISOString(),
+      };
+    }
+    return directSchedule;
+  }, [directSchedule, selectedQueue, upcoming, activeDate, currentRegion]);
+
+  const intervals = schedule?.intervals ?? [];
+  const { state, summary } = powerStateFromSchedule(schedule, activeDate);
 
   // Аварії — окремим джерелом. `/outages` віддає і планові ГПВ-вікна (`kind: 'gpv'`), і фактичні
   // перерви (`kind: 'repair'`). На головній важить друге: план уже показано нижче, а аварія — факт,
@@ -77,24 +102,7 @@ export default function HomeScreen() {
     return set;
   }, [upcoming, today]);
 
-  const soonQueues = useMemo(() => {
-    const set = new Set<string>();
-    const nowMs = now.getTime();
-    for (const item of upcoming) {
-      if (item.date !== today || item.isActiveNow) continue;
-      for (const interval of item.intervals) {
-        if (interval.stateCode === 3) {
-          const startMs = Date.parse(interval.startsAt);
-          const diffMinutes = (startMs - nowMs) / 60000;
-          if (diffMinutes > 0 && diffMinutes <= NEXT_OUTAGE_SOON_MINUTES) {
-            set.add(item.queue);
-            break;
-          }
-        }
-      }
-    }
-    return set;
-  }, [upcoming, today, now]);
+
 
   const liveDetail = (() => {
     if (state === 'off') {
@@ -326,7 +334,6 @@ export default function HomeScreen() {
           queues={currentRegionData.queues}
           selected={selectedQueue}
           active={activeQueues}
-          soon={soonQueues}
           covered={currentRegionData.covered}
           onSelect={selectQueue}
         />
