@@ -10,7 +10,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 export default function InfoScreen() {
   const { palette } = useTheme();
-  const { pending, phase, openSheet } = useUpdates();
+  const { pending, openSheet } = useUpdates();
 
   return (
     <SwipeableScreen>
@@ -22,7 +22,7 @@ export default function InfoScreen() {
         >
           <ScreenHeader title="Інфо" />
 
-          {/* Стильная карточка-заглушка редизайна */}
+          {/* Картка оновлень та версії */}
           <View
             style={{
               backgroundColor: palette.card,
@@ -73,7 +73,7 @@ export default function InfoScreen() {
             </View>
           </View>
 
-          {/* Блок полезных ссылок */}
+          {/* Блок підтримки та інформації */}
           <View
             style={{
               backgroundColor: palette.card,
@@ -86,16 +86,12 @@ export default function InfoScreen() {
               Джерела та підтримка
             </Text>
 
-            <Pressable
-              onPress={() => void Linking.openURL('https://t.me/svitlo_app_official')}
-              className="flex-row items-center justify-between rounded-2xl bg-surface-container-low p-3 active:opacity-75"
-            >
+            <View className="flex-row items-center justify-between rounded-2xl bg-surface-container-low p-3">
               <View className="flex-row items-center gap-2.5">
                 <Ionicons name="paper-plane-outline" size={18} color={palette.primary} />
-                <Text className="text-xs font-semibold text-foreground">Telegram-канал Svitlo</Text>
+                <Text className="text-xs font-semibold text-foreground">Канал Svitlo в Telegram</Text>
               </View>
-              <Ionicons name="chevron-forward" size={14} color={palette.mutedForeground} />
-            </Pressable>
+            </View>
 
             <Pressable
               onPress={() => void Linking.openURL('https://github.com/OlegVapnik/svitlo')}
