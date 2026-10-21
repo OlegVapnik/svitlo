@@ -14,7 +14,6 @@ import { HeroStatus } from '@/components/home/HeroStatus';
 import { SavedPlacesCarousel } from '@/components/places/SavedPlacesCarousel';
 import { Timeline24h } from '@/components/schedule/Timeline24h';
 import { QueueGrid } from '@/components/home/QueueGrid';
-import { UpcomingOutages } from '@/components/home/UpcomingOutages';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useRegion } from '@/context/RegionContext';
 import { useSettings } from '@/context/SettingsContext';
@@ -338,7 +337,6 @@ export default function HomeScreen() {
           <AccidentBanner outages={outages} loading={outagesQuery.isLoading} />
 
           {/* 2) Мої місця с индикаторами состояния */}
-          <SavedPlacesCarousel selectedQueue={selectedQueue} queueStatusMap={queueStatusMap} />
 
           {/* 3) Главный Hero-блок со стеклянным свечением */}
           <HeroStatus
@@ -413,7 +411,7 @@ export default function HomeScreen() {
               <View className="rounded-2xl bg-surface-container-low p-4">
                 <Text className="text-center text-sm font-medium text-muted-foreground">
                   {state === 'allClear'
-                    ? '⚡ Оператор підтвердив добу без відключень.'
+                    ? 'Оператор підтвердив добу без відключень.'
                     : selectedDay === 'today'
                     ? 'Графік на сьогодні ще не опубліковано.'
                     : 'Графік на завтра ще не опубліковано.'}
@@ -446,19 +444,12 @@ export default function HomeScreen() {
 
           {/* 5) Блок «Моя черга» с 3 статусами */}
           <QueueGrid
-            regionCpu={currentRegion}
-            queues={currentRegionData.queues}
+            regionCpu={currentRegion} queues={currentRegionData.queues}
             selected={selectedQueue}
             active={activeQueues}
             soon={soonQueues}
             covered={currentRegionData.covered}
             onSelect={selectQueue}
-          />
-
-          {/* 6) Блок «Статистика електропостачання» */}
-          <UpcomingOutages
-            regionCpu={currentRegion}
-            selectedQueue={selectedQueue}
           />
         </ScrollView>
       </SafeAreaView>

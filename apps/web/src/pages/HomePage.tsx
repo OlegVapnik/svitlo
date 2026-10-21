@@ -14,7 +14,6 @@ import { StatusIndicator } from '../components/status/StatusIndicator.js';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
 import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
-import { ReliabilityCard } from '../components/status/ReliabilityCard.js';
 import { HomeHeroSection } from '../components/status/HomeHeroSection.js';
 import { ConnectionProblem } from '../components/region/ConnectionProblem.js';
 import { OfflineBanner, BuildStamp } from '../components/offline/OfflineBanner.js';
@@ -572,7 +571,6 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="min-w-0 space-y-3">
-          <ReliabilityCard />
 
           {/* Компактний стан енергосистеми: три числа й статус мережі без великої картки. */}
           <section className="space-y-3 rounded-2xl border border-hairline bg-card p-4">
