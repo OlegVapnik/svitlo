@@ -72,7 +72,7 @@ export function useLiveNotification({
 
     const progress = intervals.length > 0 ? slotProgress(intervals, date, now) : null;
     const endsAt = state === 'off' ? summary?.offEndsAt : summary?.nextStartsAt;
-    const title = queue ? `⚡ ${TITLES[state]} · черга ${queue}` : `⚡ ${TITLES[state]}`;
+    const title = queue ? `${TITLES[state]} · черга ${queue}` : `${TITLES[state]}`;
 
     void showLiveNotification({
       title,
