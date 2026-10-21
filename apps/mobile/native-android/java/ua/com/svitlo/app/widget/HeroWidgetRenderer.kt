@@ -30,15 +30,13 @@ enum class WidgetVariant {
     ;
 
     companion object {
-        /** Ниже этой высоты полная карточка не помещается даже в сжатом виде. */
-        const val FULL_MIN_HEIGHT_DP = 104f
+        /** Ниже этой высоты полная карточка не помещается даже в сжатом виде, переходим на 4×1. */
+        const val FULL_MIN_HEIGHT_DP = 112f
 
         /** Граница «четыре колонки»: на 2×1 чип очереди ещё влезает, на 4×1 — уже свободно. */
         const val WIDE_MIN_WIDTH_DP = 200f
 
         fun of(widthDp: Float, heightDp: Float): WidgetVariant = when {
-            // Полная карточка требует и ширины, и высоты: узкий растянутый по вертикали 2×1
-            // иначе получил бы пилюлю и очередь, которые физически не влезают в 150 dp ширины.
             widthDp >= WIDE_MIN_WIDTH_DP && heightDp >= FULL_MIN_HEIGHT_DP -> FULL
             widthDp >= WIDE_MIN_WIDTH_DP -> WIDE
             else -> NARROW
@@ -52,11 +50,6 @@ enum class WidgetVariant {
  * Почему Canvas, а не XML-вёрстка: у виджета нет доступа к React и Tailwind, а составные
  * градиенты и штриховку пришлось бы собирать десятком View. Один Bitmap в ImageView даёт ровно
  * тот же макет, что Hero-карточка приложения.
- *
- * Bitmap рисуется строго в пикселях ячейки: лаунчер сообщает размер в dp, провайдер переводит
- * его в px, и картинка совпадает с ImageView один к одному. Раньше размер был захардкожен
- * (1080×570), а `fitXY` растягивал его под ячейку — шрифты и точки состояния сплющивались
- * по горизонтали в узкие овалы.
  */
 class HeroWidgetRenderer(private val density: Float) {
 
@@ -125,9 +118,6 @@ class HeroWidgetRenderer(private val density: Float) {
 
     /**
      * 2×1: «статус одним взглядом» — чип очереди, состояние и остаток одной строкой.
-     *
-     * Метки часов здесь не рисуем: на 150 dp ширины «00:00 … 24:00» превратились бы в кашу,
-     * а роль шкалы — показать, где сейчас, а не назвать часы.
      */
     private fun drawNarrow(
         canvas: Canvas,
@@ -139,8 +129,6 @@ class HeroWidgetRenderer(private val density: Float) {
         val pad = min(dp(9f), height * 0.14f)
         val timelineHeight = min(dp(16f), height * 0.30f)
         val timelineTop = height - pad - timelineHeight
-        // Строка центрируется в своей полосе: виджет можно растянуть по вертикали, и текст
-        // не должен прилипать к верхнему краю, оставляя пустоту над шкалой.
         val rowHeight = (timelineTop - pad * 2).coerceAtLeast(dp(12f))
         val baseline = pad + rowHeight * 0.72f
 
@@ -160,7 +148,7 @@ class HeroWidgetRenderer(private val density: Float) {
 
         textPaint.textSize = dp(12f)
         textPaint.color = Color.parseColor("#FAFAFA")
-        val headlineMax = width - pad - timerWidth - dp(8f) - left
+        val headlineMax = max(0f, width - pad - timerWidth - dp(8f) - left)
         canvas.drawText(fit(data.headline, dp(12f), headlineMax), left, baseline, textPaint)
 
         drawTimeline(
@@ -177,8 +165,8 @@ class HeroWidgetRenderer(private val density: Float) {
     /**
      * 4×1: «сутки по часам» — строка статуса и подписанная шкала 00:00…24:00.
      *
-     * Справа виден глиф обновления: зона нажатия должна совпадать с тем, что человек видит,
-     * иначе получается «слепая» кнопка в прозрачном углу.
+     * Правый край отмеряется строго по цепочке (глиф -> остаток -> заголовок),
+     * исключая наслоение текста "Вимкнуть" под "хв".
      */
     private fun drawWide(
         canvas: Canvas,
@@ -192,7 +180,6 @@ class HeroWidgetRenderer(private val density: Float) {
         val timelineHeight = min(dp(18f), height * 0.26f)
         val timelineBottom = labelsBaseline - dp(10f)
         val timelineTop = timelineBottom - timelineHeight
-        // Как и в 2×1: полоса строки растягивается вместе с ячейкой, текст держится по центру.
         val rowHeight = (timelineTop - pad).coerceAtLeast(dp(14f))
         val baseline = pad + rowHeight * 0.72f
 
@@ -201,7 +188,7 @@ class HeroWidgetRenderer(private val density: Float) {
             left += drawQueueChip(canvas, left, baseline, queue, accent, 9f, 16f) + dp(7f)
         }
 
-        // Точка состояния + заголовок: цвет говорит о статусе, текст уточняет его словами.
+        // Точка состояния
         paint.reset()
         paint.isAntiAlias = true
         paint.style = Paint.Style.FILL
@@ -216,25 +203,28 @@ class HeroWidgetRenderer(private val density: Float) {
             textPaint.textSize = dp(12f)
             textPaint.color = Color.parseColor("#A1A1AA")
             val glyph = "↻"
-            right -= textPaint.measureText(glyph)
+            val glyphWidth = textPaint.measureText(glyph)
+            right -= glyphWidth
             canvas.drawText(glyph, right, baseline, textPaint)
-            right -= dp(8f)
+            right -= dp(6f)
         }
 
-        var timerWidth = 0f
         val wideTimer = data.timer?.takeIf { !it.equals("null", ignoreCase = true) }
         if (wideTimer != null) {
             textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            textPaint.textSize = dp(15f)
+            textPaint.textSize = dp(14f)
             textPaint.color = accent
-            timerWidth = textPaint.measureText(wideTimer)
-            canvas.drawText(wideTimer, right - timerWidth, baseline, textPaint)
+            val timerWidth = textPaint.measureText(wideTimer)
+            right -= timerWidth
+            canvas.drawText(wideTimer, right, baseline, textPaint)
+            right -= dp(6f)
         }
 
-        textPaint.textSize = dp(13f)
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        textPaint.textSize = dp(12f)
         textPaint.color = Color.parseColor("#FAFAFA")
-        val headlineMax = right - timerWidth - dp(8f) - left
-        canvas.drawText(fit(data.headline, dp(13f), headlineMax), left, baseline, textPaint)
+        val headlineMax = max(0f, right - left)
+        canvas.drawText(fit(data.headline, dp(12f), headlineMax), left, baseline, textPaint)
 
         drawTimeline(
             canvas = canvas,
@@ -251,10 +241,6 @@ class HeroWidgetRenderer(private val density: Float) {
     /**
      * 4×2: полная карточка — пилюля, очередь, заголовок, точное время следующего события,
      * остаток, подписанная шкала и нижняя строка со временем обновления.
-     *
-     * Вся вёрстка привязана к фактической высоте: у части лаунчеров 4×2 — это 110 dp, у других
-     * 155 dp. При нехватке места макет сжимается целиком (`scale`), а не теряет блоки: полная
-     * карточка обязана остаться полной.
      */
     private fun drawFull(
         canvas: Canvas,
@@ -263,14 +249,14 @@ class HeroWidgetRenderer(private val density: Float) {
         data: WidgetPayload,
         accent: Int,
     ) {
-        val scale = min(1f, (height / density) / 152f).coerceAtLeast(0.74f)
+        val scale = min(1f, (height / density) / 152f).coerceAtLeast(0.78f)
         val unit = { value: Float -> dp(value * scale) }
 
         val pad = unit(12f)
         val pillTop = pad
         val pillHeight = unit(22f)
-        val headlineBaseline = pillTop + pillHeight + unit(26f)
-        val detailBaseline = headlineBaseline + unit(15f)
+        val headlineBaseline = pillTop + pillHeight + unit(24f)
+        val detailBaseline = headlineBaseline + unit(20f)
 
         val footerBaseline = height - pad
         val labelsBaseline = footerBaseline - unit(11f)
@@ -309,8 +295,7 @@ class HeroWidgetRenderer(private val density: Float) {
             textPaint,
         )
 
-        // Очередь — справа вверху, на той же линии, что пилюля. Зона нажатия «наступна черга»
-        // лежит ровно здесь, поэтому текст ярче обычных подписей.
+        // Очередь — справа вверху
         textPaint.textSize = unit(10f)
         textPaint.color = Color.parseColor("#D4D4D8")
         val queueText = data.queue?.let { "ЧЕРГА $it" } ?: "ЧЕРГА НЕ ВИБРАНА"
@@ -322,37 +307,40 @@ class HeroWidgetRenderer(private val density: Float) {
         )
 
         textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        textPaint.textSize = unit(20f)
+        textPaint.textSize = unit(18f)
         textPaint.color = accent
         canvas.drawText(
-            fit(data.headline, unit(20f), width - pad * 2),
+            fit(data.headline, unit(18f), width - pad * 2),
             pad,
             headlineBaseline,
             textPaint,
         )
 
-        // Справа — остаток, слева — время следующего события («Наступне: о 08:30»).
+        // Справа — остаток, слева — детали события.
         var timerWidth = 0f
         val fullTimer = data.timer?.takeIf { !it.equals("null", ignoreCase = true) }
         if (fullTimer != null) {
-            textPaint.textSize = unit(18f)
+            textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            textPaint.textSize = unit(14f)
             textPaint.color = accent
             val valueWidth = textPaint.measureText(fullTimer)
             canvas.drawText(fullTimer, width - pad - valueWidth, detailBaseline, textPaint)
             timerWidth = valueWidth
+
             val prefixRaw = data.timerPrefix?.takeIf { !it.equals("null", ignoreCase = true) }
             if (prefixRaw != null) {
+                textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
                 textPaint.textSize = unit(9f)
                 textPaint.color = Color.parseColor("#A1A1AA")
                 val prefix = prefixRaw.uppercase()
                 val prefixWidth = textPaint.measureText(prefix)
                 canvas.drawText(
                     prefix,
-                    width - pad - valueWidth - unit(6f) - prefixWidth,
-                    detailBaseline - unit(2f),
+                    width - pad - valueWidth - unit(4f) - prefixWidth,
+                    detailBaseline,
                     textPaint,
                 )
-                timerWidth += prefixWidth + unit(6f)
+                timerWidth += prefixWidth + unit(4f)
             }
         }
 
@@ -360,8 +348,9 @@ class HeroWidgetRenderer(private val density: Float) {
         textPaint.textSize = unit(11f)
         textPaint.color = Color.parseColor("#A1A1AA")
         val cleanDetail = if (data.detail.equals("null", ignoreCase = true)) "" else data.detail
+        val detailMaxWidth = max(0f, width - pad * 2 - timerWidth - unit(8f))
         canvas.drawText(
-            fit(cleanDetail, unit(11f), width - pad * 2 - timerWidth - unit(10f)),
+            fit(cleanDetail, unit(11f), detailMaxWidth),
             pad,
             detailBaseline,
             textPaint,
@@ -378,8 +367,7 @@ class HeroWidgetRenderer(private val density: Float) {
         )
         drawTimeLabels(canvas, pad, width - pad * 2, labelsBaseline, unit(9f))
 
-        // Нижняя строка: слева — минуты без света по графику, справа — время обновления
-        // с глифом. Раньше здесь стояло «00:00 · 12:00 · 24:00», дублировавшее подписи шкалы.
+        // Нижняя строка: время без света и отметка обновления
         val updated = formatUpdatedAt(data.updatedAt)
         if (updated != null) {
             textPaint.textSize = unit(9f)
@@ -398,15 +386,12 @@ class HeroWidgetRenderer(private val density: Float) {
         } else {
             "Графік оновлюється автоматично"
         }
-        val footerMax = width - pad * 2 - (if (updated != null) unit(104f) else 0f)
+        val footerMax = max(0f, width - pad * 2 - (if (updated != null) unit(104f) else 0f))
         canvas.drawText(fit(footer, unit(9f), footerMax), pad, footerBaseline, textPaint)
     }
 
     /**
      * Компактный бейдж очереди («20/1») для 2×1 и 4×1.
-     *
-     * Без него малый виджет не отвечал на главный вопрос: «а моя ли это очередь?». Возвращает
-     * ширину бейджа, чтобы вызывающий продолжил строку с нужного места.
      */
     private fun drawQueueChip(
         canvas: Canvas,
@@ -436,8 +421,6 @@ class HeroWidgetRenderer(private val density: Float) {
         paint.color = withAlpha(accent, 0.30f)
         canvas.drawRoundRect(rect, chipHeight / 2f, chipHeight / 2f, paint)
 
-        // Текст по центру бейджа: baseline смещаем на половину высоты шрифта, иначе строка
-        // прижимается к нижнему краю и бейдж выглядит перекошенным.
         val metrics = textPaint.fontMetrics
         val centered = (top + chipHeight / 2f) - (metrics.ascent + metrics.descent) / 2f
         canvas.drawText(text, left + dp(5f), centered, textPaint)
@@ -446,9 +429,6 @@ class HeroWidgetRenderer(private val density: Float) {
 
     /**
      * Подписи шкалы: 00:00, 06:00, 12:00, 18:00, 24:00 под своими делениями.
-     *
-     * Крайние метки прижимаем к краям трека, а не центрируем: иначе «00:00» уезжает за левый
-     * край карточки и обрезается.
      */
     private fun drawTimeLabels(
         canvas: Canvas,
@@ -554,7 +534,7 @@ class HeroWidgetRenderer(private val density: Float) {
         canvas.restore()
     }
 
-    /** Обрезает строку по ширине: виджет не умеет numberOfLines, а вылезать за край нельзя. */
+    /** Обрезает строку по ширине с многоточием. */
     private fun fit(text: String, size: Float, maxWidth: Float): String {
         if (maxWidth <= 0f) return ""
         textPaint.textSize = size
@@ -591,4 +571,3 @@ class HeroWidgetRenderer(private val density: Float) {
 
     private fun dp(value: Float): Float = value * density
 }
-

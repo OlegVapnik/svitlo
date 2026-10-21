@@ -145,7 +145,7 @@ export default function MonitorScreen() {
             })}
           </View>
 
-          {/* 1) Режим «Групи» — 24-часовая матрица 12 подгрупп */}
+          {/* 1) Режим «Групи» — 24-годинна матриця груп (усі черги регіону, до 60 у Києві) */}
           {mode === 'groups' ? (
             <GroupMatrix
               regionCpu={currentRegion}
@@ -153,6 +153,7 @@ export default function MonitorScreen() {
               upcoming={upcoming}
               date={today}
               now={now}
+              availableQueues={currentRegionData.queues}
             />
           ) : null}
 

@@ -367,10 +367,11 @@ export const OTA_PATHS = { dir: OTA_DIR, bundle: BUNDLE_PATH, meta: META_PATH } 
  */
 export async function fetchOtaBundleInfo(): Promise<OtaBundleInfo | null> {
   const sources = [OTA_BASE, ...OTA_SOURCES.filter((s) => s !== OTA_BASE)];
+  const cacheBuster = `?t=${Date.now()}`;
   for (const base of sources) {
     try {
-      const response = await fetch(`${base}/version.json`, {
-        headers: { accept: 'application/json' },
+      const response = await fetch(`${base}/version.json${cacheBuster}`, {
+        headers: { accept: 'application/json', 'cache-control': 'no-cache' },
       });
       if (!response.ok) continue;
       const data = (await response.json()) as { jsBundle?: AppVersionInfo['jsBundle'] };

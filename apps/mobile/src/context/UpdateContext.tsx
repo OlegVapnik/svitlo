@@ -130,7 +130,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       setProgress(0);
     };
     void check();
-    const timer = setInterval(() => void check(), 6 * 60 * 60_000);
+    const timer = setInterval(() => void check(), 60_000);
     return () => {
       active = false;
       clearInterval(timer);

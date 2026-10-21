@@ -193,12 +193,6 @@ export function HeroStatus({
           />
         </View>
       ) : null}
-
-      {summary && summary.offMinutes > 0 ? (
-        <Text className="mt-3 text-xs text-muted-foreground">
-          Без світла за графіком за добу: {formatMinutesUk(summary.offMinutes)}
-        </Text>
-      ) : null}
     </View>
   );
 }
