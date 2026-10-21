@@ -1,16 +1,10 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Newspaper } from 'lucide-react';
-import { NewsPage } from './NewsPage';
+import { MaintenanceNotice } from '../components/common/MaintenanceNotice.js';
 
 /**
  * Раздел «Інфо»: лента новостей операторов.
- *
- * Раньше здесь были ещё и контакты обленерго, но проект от них больше не зависит, и они
- * удалены целиком: страница, хук, тип, маршрут, таблица и номера в интерфейсе.
- *
- * Сам раздел оставлен, потому что новости — единственное, что приложение берёт из
- * Telegram-каналов операторов, и это по-прежнему полезно.
  */
 export const InfoPage: React.FC = () => {
   const { t } = useTranslation();
@@ -24,7 +18,10 @@ export const InfoPage: React.FC = () => {
         <p className="text-xs text-muted-foreground sm:text-sm">{t('info.subtitle')}</p>
       </header>
 
-      <NewsPage embedded />
+      <MaintenanceNotice
+        title="Стрічка новин на плановому обслуговуванні"
+        subtitle="Проводяться роботи з модернізації джерел та оновлення телеграм-каналів обленерго."
+      />
     </div>
   );
 };

@@ -1,9 +1,9 @@
 {
-  "version": "2.34.0",
+  "version": "2.34.6",
   "apkUrl": "https://svitlo-api.olegvapnik45.workers.dev/download/svitlo-latest.apk",
-  "sha256": "19f8a99dcdf6d32edb0d3518783ef5b1e14461ebcd365666632262456686b555",
-  "sizeBytes": 37480464,
-  "releasedAt": "2026-10-21T15:13:45Z",
+  "sha256": "bd604c682c1767fb73f6c6c6b17723a8e9f8a2d52d49fc820af9d3d83af414c5",
+  "sizeBytes": 37530468,
+  "releasedAt": "2026-10-21T17:38:28.348Z",
   "notes": [
     "Прямий збір ГПВ для Чернівців та стійкий парсер годин відключень Одеси.",
     "У «Інфо» видно, яке джерело дало графік, коли воно оновилося і чи немає застарілих даних."

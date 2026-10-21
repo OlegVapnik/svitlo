@@ -31,8 +31,15 @@ const BOOT_MARKER = `${OTA_DIR}.booted`;
  */
 const LAUNCH_AT = Date.now();
 
-/** Метаданные OTA лежат рядом с APK на Pages: не требуют деплоя воркера. */
-const OTA_BASE = process.env.EXPO_PUBLIC_OTA_BASE_URL ?? 'https://svitlo-ua-4ze.pages.dev/ota';
+/**
+ * Источники манифеста OTA.
+ * Первичный канал — GitHub (OlegVapnik/svitlo), резервный fallback — Cloudflare Pages.
+ */
+const OTA_SOURCES = [
+  'https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota',
+  'https://svitlo-ua-4ze.pages.dev/ota',
+];
+const OTA_BASE = process.env.EXPO_PUBLIC_OTA_BASE_URL ?? OTA_SOURCES[0];
 
 export interface OtaMeta {
   version: string;
@@ -359,14 +366,21 @@ export const OTA_PATHS = { dir: OTA_DIR, bundle: BUNDLE_PATH, meta: META_PATH } 
  * не трогая воркер и D1. Если манифеста нет — тихо живём на вшитом бандле.
  */
 export async function fetchOtaBundleInfo(): Promise<OtaBundleInfo | null> {
-  try {
-    const response = await fetch(`${OTA_BASE}/version.json`, { headers: { accept: 'application/json' } });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { jsBundle?: AppVersionInfo['jsBundle'] };
-    const info = data.jsBundle;
-    if (!info?.url || !info.sha256 || !info.version) return null;
-    return info;
-  } catch {
-    return null;
+  const sources = [OTA_BASE, ...OTA_SOURCES.filter((s) => s !== OTA_BASE)];
+  for (const base of sources) {
+    try {
+      const response = await fetch(`${base}/version.json`, {
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok) continue;
+      const data = (await response.json()) as { jsBundle?: AppVersionInfo['jsBundle'] };
+      const info = data.jsBundle;
+      if (info?.url && info.sha256 && info.version) {
+        return info;
+      }
+    } catch {
+      // Пробуем следующий источник (GitHub -> Pages fallback)
+    }
   }
+  return null;
 }

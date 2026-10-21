@@ -1,0 +1,152 @@
+{
+  "generatedAt": "2026-10-21T20:06:25.939Z",
+  "version": "2.34.6",
+  "jsBundle": {
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-4a03e56625fe7828.gz",
+    "sha256": "4a03e56625fe78289275df6a3fe3b51d077b304a3ac643dc095d68c2ffa63237",
+    "sizeBytes": 2871956,
+    "version": "2.34.6",
+    "assets": [
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_arrow_down.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_arrow_down.png",
+        "sizeBytes": 9456
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_arrow_right.xml",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_arrow_right.xml",
+        "sizeBytes": 307
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_checkmark.xml",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_checkmark.xml",
+        "sizeBytes": 312
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_error.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_error.png",
+        "sizeBytes": 469
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_file.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_file.png",
+        "sizeBytes": 138
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_forward.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_forward.png",
+        "sizeBytes": 188
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_pkg.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_pkg.png",
+        "sizeBytes": 364
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "sizeBytes": 100
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backiconmask.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backiconmask.png",
+        "sizeBytes": 653
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "sizeBytes": 220
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "sizeBytes": 141
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "sizeBytes": 258
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_sitemap.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_sitemap.png",
+        "sizeBytes": 465
+      },
+      {
+        "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_unmatched.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_unmatched.png",
+        "sizeBytes": 4752
+      },
+      {
+        "path": "drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "sizeBytes": 134
+      },
+      {
+        "path": "drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "sizeBytes": 334
+      },
+      {
+        "path": "drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "sizeBytes": 201
+      },
+      {
+        "path": "drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "sizeBytes": 483
+      },
+      {
+        "path": "drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "sizeBytes": 167
+      },
+      {
+        "path": "drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "sizeBytes": 502
+      },
+      {
+        "path": "drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "sizeBytes": 266
+      },
+      {
+        "path": "drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "sizeBytes": 728
+      },
+      {
+        "path": "drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "sizeBytes": 207
+      },
+      {
+        "path": "drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "sizeBytes": 645
+      },
+      {
+        "path": "drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "sizeBytes": 332
+      },
+      {
+        "path": "drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "sizeBytes": 928
+      },
+      {
+        "path": "raw/__node_modules_pnpm_expovectoricons1511_expofont5809_expo58016_reactnative0880_babelcore_80148849744df7332ad6918896fd9426_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/__node_modules_pnpm_expovectoricons1511_expofont5809_expo58016_reactnative0880_babelcore_80148849744df7332ad6918896fd9426_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
+        "sizeBytes": 389724
+      },
+      {
+        "path": "raw/keep.xml",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/keep.xml",
+        "sizeBytes": 2073
+      }
+    ]
+  }
+}
