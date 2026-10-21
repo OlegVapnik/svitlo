@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { Text, View } from 'react-native';
-import Svg, { Defs, Line, Pattern, Rect } from 'react-native-svg';
 
 import { generateTimelineSlots, getCurrentTimeMarker } from '@svitlo/core/lib/timeline';
 import { minutesToHm, OFF_STATE_CODE } from '@svitlo/core/lib/scheduleWindow';
@@ -9,7 +8,7 @@ import type { GroupOutageSummary } from '@svitlo/shared';
 
 import { useTheme } from '@/theme/ThemeProvider';
 
-const MATRIX_GROUPS = [
+const DEFAULT_12_GROUPS = [
   '1/1', '1/2',
   '2/1', '2/2',
   '3/1', '3/2',
@@ -26,9 +25,10 @@ interface GroupMatrixProps {
   upcoming: GroupOutageSummary[];
   date: string;
   now: Date;
+  availableQueues?: string[];
 }
 
-export function GroupMatrix({ regionCpu, selectedQueue, upcoming, date, now }: GroupMatrixProps) {
+export function GroupMatrix({ regionCpu, selectedQueue, upcoming, date, now, availableQueues }: GroupMatrixProps) {
   const { palette } = useTheme();
   const marker = useMemo(() => getCurrentTimeMarker(date, now), [date, now]);
 
@@ -43,6 +43,34 @@ export function GroupMatrix({ regionCpu, selectedQueue, upcoming, date, now }: G
     return map;
   }, [upcoming, date, regionCpu]);
 
+  // Список групп для матрицы:
+  // Если у региона в каталоге или в upcoming есть перечень очередей (например, 60 очередей у Киева),
+  // выводим именно его, иначе стандартные 12 подгрупп 1/1–6/2.
+  const groupsToDisplay = useMemo(() => {
+    if (availableQueues && availableQueues.length > 0) {
+      return availableQueues;
+    }
+    // Если availableQueues не передали, смотрим в upcoming
+    const fromUpcoming = Array.from(
+      new Set(
+        upcoming
+          .filter((item) => item.date === date)
+          .map((item) => item.queue)
+      )
+    ).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+
+    return fromUpcoming.length > 0 ? fromUpcoming : DEFAULT_12_GROUPS;
+  }, [availableQueues, upcoming, date]);
+
+  const title = groupsToDisplay.length > 12
+    ? `Матриця груп (${groupsToDisplay.length} черг)`
+    : 'Матриця груп 1/1 – 6/2';
+
   return (
     <View
       style={{
@@ -53,7 +81,7 @@ export function GroupMatrix({ regionCpu, selectedQueue, upcoming, date, now }: G
       className="gap-3 rounded-3xl p-4 shadow-sm"
     >
       <View className="flex-row items-center justify-between">
-        <Text className="text-sm font-bold text-foreground">Матриця груп 1/1 – 6/2</Text>
+        <Text className="text-sm font-bold text-foreground">{title}</Text>
         {marker ? (
           <View className="flex-row items-center gap-1.5 rounded-full bg-surface-container-high px-2.5 py-1">
             <View className="h-2 w-2 rounded-full bg-white shadow-sm" />
@@ -71,12 +99,12 @@ export function GroupMatrix({ regionCpu, selectedQueue, upcoming, date, now }: G
         ))}
       </View>
 
-      {/* Сетка полосок по всем 12 группам */}
+      {/* Сетка полосок по всем группам */}
       <View className="relative gap-1.5">
-        {MATRIX_GROUPS.map((q) => {
+        {groupsToDisplay.map((q) => {
           const canon = canonicalQueueCode(regionCpu, q);
           const isSelected = selectedQueue != null && queueCodeMatches(regionCpu, q, selectedQueue);
-          const groupData = intervalsByQueue.get(canon);
+          const groupData = intervalsByQueue.get(canon) ?? intervalsByQueue.get(q);
           const intervals = groupData?.intervals ?? [];
           const slots = generateTimelineSlots(intervals, date, now);
 
@@ -92,6 +120,7 @@ export function GroupMatrix({ regionCpu, selectedQueue, upcoming, date, now }: G
             >
               <View className="w-12 pr-2">
                 <Text
+                  numberOfLines={1}
                   className="text-xs font-bold"
                   style={{ color: isSelected ? palette.primary : palette.foreground }}
                 >

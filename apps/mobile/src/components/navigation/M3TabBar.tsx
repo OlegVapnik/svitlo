@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { BottomTabBarProps } from 'expo-router/build/layouts/Tabs';
-import * as Haptics from 'expo-haptics';
+import { triggerSoftHaptic } from '@/lib/haptics';
 import { useCallback, useEffect, useState } from 'react';
 import { LayoutChangeEvent, Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -88,7 +88,7 @@ export function M3TabBar({ state, descriptors, emitter, navigateToTab }: BottomT
           const icon = ICONS[route.name]?.[focused ? 'active' : 'idle'] ?? 'ellipse-outline';
 
           const onPress = () => {
-            void Haptics.selectionAsync();
+            triggerSoftHaptic();
             const event = emitter.emit({
               type: 'tabPress',
               target: route.key,

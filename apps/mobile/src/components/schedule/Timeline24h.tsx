@@ -1,13 +1,13 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
 import Svg, { Defs, Line, Pattern, Rect } from 'react-native-svg';
 
 import { generateTimelineSlots, getCurrentTimeMarker } from '@svitlo/core/lib/timeline';
 import { minutesToHm, OFF_STATE_CODE } from '@svitlo/core/lib/scheduleWindow';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
+import { triggerSoftHaptic } from '@/lib/haptics';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const HOUR_TICKS = [0, 4, 8, 12, 16, 20, 24];
@@ -53,14 +53,14 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
       if (!point) return;
       lastHalf.current = point.minute;
       setScrub(point);
-      void Haptics.selectionAsync();
+      triggerSoftHaptic();
     })
     .onUpdate((event) => {
       const point = pointForX(event.x);
       if (!point) return;
       if (point.minute !== lastHalf.current) {
         lastHalf.current = point.minute;
-        void Haptics.selectionAsync();
+        triggerSoftHaptic();
       }
       setScrub(point);
     })

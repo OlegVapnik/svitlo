@@ -2,6 +2,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 
+import { triggerSoftHaptic } from '@/lib/haptics';
 import { useRegion } from '@/context/RegionContext';
 import { useApplySavedPlace } from '@/hooks/useApplySavedPlace';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
@@ -77,7 +78,10 @@ export function SavedPlacesCarousel({
           return (
             <Pressable
               key={place.id}
-              onPress={() => applyPlace(place)}
+              onPress={() => {
+                triggerSoftHaptic();
+                applyPlace(place);
+              }}
               accessibilityRole="button"
               accessibilityLabel={`${place.label}, черга ${place.queue}`}
               accessibilityState={{ selected: active }}

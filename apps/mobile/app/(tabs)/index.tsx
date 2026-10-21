@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 
@@ -24,6 +25,7 @@ import { useMinuteTicker } from '@/hooks/useMinuteTicker';
 import { useRegionQueue } from '@/hooks/useRegionQueue';
 import { useShareSchedule } from '@/components/share/useShareSchedule';
 import { useSyncStatus } from '@/context/SyncContext';
+import { triggerSoftHaptic } from '@/lib/haptics';
 import { powerStateFromSchedule, unwrapSchedule } from '@/lib/power-state';
 import { useNotificationAction, type NotificationAction } from '@/lib/notification-actions';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -334,9 +336,10 @@ export default function HomeScreen() {
             }
           />
 
-          <AccidentBanner outages={outages} loading={outagesQuery.isLoading} />
-
           {/* 2) Мої місця с индикаторами состояния */}
+          <SavedPlacesCarousel selectedQueue={selectedQueue} queueStatusMap={queueStatusMap} />
+
+          <AccidentBanner outages={outages} loading={outagesQuery.isLoading} />
 
           {/* 3) Главный Hero-блок со стеклянным свечением */}
           <HeroStatus
@@ -368,7 +371,12 @@ export default function HomeScreen() {
                 className="flex-row rounded-xl p-0.5"
               >
                 <Pressable
-                  onPress={() => setSelectedDay('today')}
+                  onPress={() => {
+                    if (selectedDay !== 'today') {
+                      triggerSoftHaptic();
+                      setSelectedDay('today');
+                    }
+                  }}
                   style={{
                     backgroundColor: selectedDay === 'today' ? palette.card : 'transparent',
                   }}
@@ -386,7 +394,12 @@ export default function HomeScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => setSelectedDay('tomorrow')}
+                  onPress={() => {
+                    if (selectedDay !== 'tomorrow') {
+                      triggerSoftHaptic();
+                      setSelectedDay('tomorrow');
+                    }
+                  }}
                   style={{
                     backgroundColor: selectedDay === 'tomorrow' ? palette.card : 'transparent',
                   }}
@@ -405,19 +418,26 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {intervals.length > 0 ? (
-              <Timeline24h intervals={intervals} date={activeDate} now={now} />
-            ) : (
-              <View className="rounded-2xl bg-surface-container-low p-4">
-                <Text className="text-center text-sm font-medium text-muted-foreground">
-                  {state === 'allClear'
-                    ? 'Оператор підтвердив добу без відключень.'
-                    : selectedDay === 'today'
-                    ? 'Графік на сьогодні ще не опубліковано.'
-                    : 'Графік на завтра ще не опубліковано.'}
-                </Text>
-              </View>
-            )}
+            <Animated.View
+              key={selectedDay}
+              entering={FadeIn.duration(200)}
+              exiting={FadeOut.duration(120)}
+              layout={LinearTransition.duration(180)}
+            >
+              {intervals.length > 0 ? (
+                <Timeline24h intervals={intervals} date={activeDate} now={now} />
+              ) : (
+                <View className="rounded-2xl bg-surface-container-low p-4">
+                  <Text className="text-center text-sm font-medium text-muted-foreground">
+                    {state === 'allClear'
+                      ? 'Оператор підтвердив добу без відключень.'
+                      : selectedDay === 'today'
+                      ? 'Графік на сьогодні ще не опубліковано.'
+                      : 'Графік на завтра ще не опубліковано.'}
+                  </Text>
+                </View>
+              )}
+            </Animated.View>
 
             {/* Две компактные сводные плитки в ряд */}
             <View className="flex-row gap-2 pt-1">

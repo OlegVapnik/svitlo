@@ -1,8 +1,9 @@
 import { router, usePathname } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { View } from 'react-native';
 import type { ReactNode } from 'react';
+
+import { triggerSoftHaptic } from '@/lib/haptics';
 
 const TAB_PATHS = ['/', '/search', '/monitor', '/info'] as const;
 
@@ -20,7 +21,7 @@ export function SwipeableScreen({ children }: { children: ReactNode }) {
   const go = (direction: 1 | -1) => {
     const next = index + direction;
     if (next < 0 || next >= TAB_PATHS.length) return;
-    void Haptics.selectionAsync();
+    triggerSoftHaptic();
     router.navigate(TAB_PATHS[next]);
   };
 
