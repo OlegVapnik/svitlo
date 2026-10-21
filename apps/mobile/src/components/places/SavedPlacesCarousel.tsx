@@ -8,17 +8,16 @@ import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { useTheme } from '@/theme/ThemeProvider';
 import { PlaceIconBadge } from '@/components/places/PlaceIcon';
 
-/**
- * Швидкий перемикач збережених місць над героєм.
- *
- * Горизонтальна стрічка не розсуває головний екран: перші місця видно без прокрутки, решта —
- * свайпом. Дотик застосовує і область, і чергу, тому графік нижче одразу перебудовується.
- */
+interface SavedPlacesCarouselProps {
+  selectedQueue: string | null;
+  /** Карта статусов для очередей: { queue: { state: 'on' | 'warning' | 'off' | 'unknown', label: string } } */
+  queueStatusMap?: Record<string, { state: 'on' | 'warning' | 'off' | 'unknown'; label: string }>;
+}
+
 export function SavedPlacesCarousel({
   selectedQueue,
-}: {
-  selectedQueue: string | null;
-}) {
+  queueStatusMap = {},
+}: SavedPlacesCarouselProps) {
   const { palette } = useTheme();
   const router = useRouter();
   const { currentRegion } = useRegion();
@@ -31,7 +30,8 @@ export function SavedPlacesCarousel({
         onPress={() => router.navigate('/search')}
         accessibilityRole="button"
         accessibilityLabel="Зберегти місце"
-        className="flex-row items-center gap-3 rounded-2xl border border-dashed border-border bg-card px-4 py-3 active:opacity-70"
+        style={{ backgroundColor: palette.card, borderColor: palette.hairline }}
+        className="flex-row items-center gap-3 rounded-2xl border border-dashed px-4 py-3 active:opacity-70"
       >
         <View className="h-9 w-9 items-center justify-center rounded-full bg-primary-container">
           <Ionicons name="star-outline" size={18} color={palette.primary} />
@@ -50,16 +50,16 @@ export function SavedPlacesCarousel({
   return (
     <View className="gap-2">
       <View className="flex-row items-center justify-between">
-        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Збережені місця
+        <Text className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Мої місця
         </Text>
         <Pressable
           onPress={() => router.navigate('/search')}
           accessibilityRole="button"
           accessibilityLabel="Керувати збереженими місцями"
-          className="min-h-8 flex-row items-center gap-1 rounded-full px-2 active:opacity-70"
+          className="flex-row items-center gap-1 rounded-full px-1 active:opacity-70"
         >
-          <Ionicons name="settings-outline" size={14} color={palette.mutedForeground} />
+          <Ionicons name="settings-outline" size={13} color={palette.mutedForeground} />
           <Text className="text-xs font-semibold text-muted-foreground">Керувати</Text>
         </Pressable>
       </View>
@@ -71,6 +71,9 @@ export function SavedPlacesCarousel({
       >
         {places.map((place) => {
           const active = place.regionCpu === currentRegion && place.queue === selectedQueue;
+          const statusInfo = queueStatusMap[place.queue] ?? { state: 'on', label: '' };
+          const tone = palette.status[statusInfo.state] ?? palette.status.on;
+
           return (
             <Pressable
               key={place.id}
@@ -78,22 +81,44 @@ export function SavedPlacesCarousel({
               accessibilityRole="button"
               accessibilityLabel={`${place.label}, черга ${place.queue}`}
               accessibilityState={{ selected: active }}
-              className={
-                active
-                  ? 'min-w-28 flex-row items-center gap-2 rounded-2xl border-2 border-primary bg-primary-container px-3 py-2.5 active:opacity-80'
-                  : 'min-w-28 flex-row items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2.5 active:opacity-70'
-              }
+              style={{
+                backgroundColor: active ? palette.primaryContainer : palette.card,
+                borderColor: active ? palette.primary : palette.border,
+                borderWidth: active ? 1.5 : 1,
+              }}
+              className="flex-row items-center gap-2.5 rounded-2xl px-3.5 py-2.5 active:opacity-75"
             >
-              <View className="h-8 w-8 items-center justify-center rounded-full bg-surface-container-high">
-                <PlaceIconBadge icon={place.icon} size={16} color={active ? palette.primary : palette.foreground} />
+              <View className="relative h-8 w-8 items-center justify-center rounded-full bg-surface-container-high">
+                <PlaceIconBadge icon={place.icon} size={15} color={active ? palette.primary : palette.foreground} />
+                {/* Светящаяся форма индикатора текущего состояния места */}
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: -1,
+                    right: -1,
+                    width: 7,
+                    height: 7,
+                    borderRadius: statusInfo.state === 'off' ? 1.5 : statusInfo.state === 'warning' ? 0 : 3.5,
+                    transform: statusInfo.state === 'warning' ? [{ rotate: '45deg' }] : [],
+                    backgroundColor: tone.color,
+                    shadowColor: tone.color,
+                    shadowOpacity: 0.9,
+                    shadowRadius: 4,
+                  }}
+                />
               </View>
-              <View className="min-w-0 flex-1">
-                <Text numberOfLines={1} className="text-xs font-bold text-foreground">
-                  {place.label}
-                </Text>
+
+              <View className="min-w-0">
+                <View className="flex-row items-center gap-1.5">
+                  <Text numberOfLines={1} className="text-xs font-bold text-foreground">
+                    {place.label}
+                  </Text>
+                  <Text className="text-[11px] font-bold" style={{ color: tone.color }}>
+                    {tone.symbol}
+                  </Text>
+                </View>
                 <Text className="text-[11px] font-semibold text-muted-foreground">
-                  {place.isPrimary ? 'Головне · ' : ''}
-                  Черга {place.queue}
+                  {place.queue} {statusInfo.label ? `· ${statusInfo.label}` : ''}
                 </Text>
               </View>
             </Pressable>
@@ -104,10 +129,11 @@ export function SavedPlacesCarousel({
           onPress={() => router.navigate('/search')}
           accessibilityRole="button"
           accessibilityLabel="Додати місце"
-          className="w-14 items-center justify-center rounded-2xl border border-dashed border-border bg-card active:opacity-70"
+          style={{ backgroundColor: palette.card, borderColor: palette.border }}
+          className="flex-row items-center gap-1.5 rounded-2xl border border-dashed px-3 py-2.5 active:opacity-70"
         >
-          <Ionicons name="add" size={22} color={palette.mutedForeground} />
-          <Text className="text-[10px] font-semibold text-muted-foreground">Додати</Text>
+          <Ionicons name="add" size={18} color={palette.mutedForeground} />
+          <Text className="text-xs font-semibold text-muted-foreground">Додати місце</Text>
         </Pressable>
       </ScrollView>
     </View>

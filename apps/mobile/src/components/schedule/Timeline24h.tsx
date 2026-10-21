@@ -21,12 +21,8 @@ interface Timeline24hProps {
 }
 
 /**
- * 24-часовая шкала: 48 получасовых сегментов в строгом треке.
- *
- * Часы со светом — изумрудные, без света — рубиновые с диагональной SVG-штриховкой
- * (читается даже на солнце и при дальтонизме). Белая риска показывает текущую минуту
- * без нависающих плашек. Долгое протягивание пальцем открывает лупу с подсказкой и
- * щёлкает haptics на каждой получасовой границе — как колесо будильника.
+ * 24-часовая шкала: 48 получасовых сегментов с интерактивным scrubbing жестом (рулетка времени),
+ * тактильным откликом Haptics.selectionAsync() на каждом 30-минутном шаге и диагональной штриховкой.
  */
 export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hProps) {
   const { palette } = useTheme();
@@ -49,8 +45,8 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
 
   const pan = Gesture.Pan()
     .runOnJS(true)
-    .minDistance(6)
-    .activeOffsetX([-8, 8])
+    .minDistance(4)
+    .activeOffsetX([-6, 6])
     .failOffsetY([-12, 12])
     .onBegin((event) => {
       const point = pointForX(event.x);
@@ -75,14 +71,13 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
 
   const activeSlot = scrub ? slots[scrub.slotIndex] : null;
   const scrubPercent = scrub ? (scrub.minute / 1440) * 100 : 0;
-  // Тултип не должен вылезти за край экрана: сдвигаем его внутрь.
-  const tooltipShift = scrubPercent < 14 ? 0 : scrubPercent > 86 ? -100 : -50;
+  const tooltipShift = scrubPercent < 16 ? 0 : scrubPercent > 84 ? -100 : -50;
 
   return (
-    <View className="w-full gap-3">
+    <View className="w-full gap-2.5">
       <View className="flex-row justify-between px-0.5">
         {HOUR_TICKS.map((hour) => (
-          <Text key={hour} className="text-[11px] font-semibold text-muted-foreground">
+          <Text key={hour} className="text-[10px] font-semibold text-muted-foreground">
             {String(hour).padStart(2, '0')}:00
           </Text>
         ))}
@@ -94,22 +89,33 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
             pointerEvents="none"
             style={{
               position: 'absolute',
-              bottom: 46,
+              bottom: 50,
               left: `${scrubPercent}%`,
               transform: [{ translateX: tooltipShift }],
-              backgroundColor: palette.surfaceContainerHighest,
-              borderColor: palette.border,
-              borderWidth: 1,
-              borderRadius: 10,
-              paddingHorizontal: 10,
-              paddingVertical: 6,
+              backgroundColor: '#1b1b22',
+              borderColor: activeSlot.stateCode === 3 ? '#F43F5E' : activeSlot.stateCode === 2 ? '#F59E0B' : '#10B981',
+              borderWidth: 1.5,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 7,
               zIndex: 30,
-              elevation: 8,
-              minWidth: 120,
+              elevation: 10,
+              shadowColor: '#000',
+              shadowOpacity: 0.5,
+              shadowRadius: 8,
+              minWidth: 130,
             }}
           >
-            <Text className="text-[11px] font-bold text-foreground">
-              {activeSlot.rangeLabel} · {activeSlot.stateName}
+            <Text className="text-center text-xs font-bold text-foreground">
+              {activeSlot.rangeLabel}
+            </Text>
+            <Text
+              className="text-center text-[11px] font-semibold"
+              style={{
+                color: activeSlot.stateCode === 3 ? '#FB7185' : activeSlot.stateCode === 2 ? '#FBBF24' : '#34D399',
+              }}
+            >
+              {activeSlot.stateCode === 3 ? '■ Відключення' : activeSlot.stateCode === 2 ? '◆ Скоро вимкнення' : '● Світло є'}
             </Text>
           </View>
         ) : null}
@@ -119,11 +125,11 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
             onLayout={onLayout}
             style={{
               height: 48,
-              backgroundColor: '#0e0e12',
+              backgroundColor: '#0c0c10',
               borderColor: palette.hairline,
               borderWidth: 1,
               borderRadius: 16,
-              padding: 6,
+              padding: 5,
             }}
           >
             <View className="flex-1 flex-row gap-[1px] overflow-hidden rounded-lg">
@@ -136,23 +142,23 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
                     key={slot.index}
                     style={{
                       flex: 1,
-                      height: 36,
-                      borderRadius: 4,
-                      opacity: slot.isPast ? 0.55 : 1,
+                      height: 38,
+                      borderRadius: 3.5,
+                      opacity: slot.isPast ? 0.5 : 1,
                       backgroundColor: isOff
-                        ? 'rgba(244, 63, 94, 0.34)'
+                        ? 'rgba(244, 63, 94, 0.42)'
                         : isWarning
-                          ? 'rgba(245, 158, 11, 0.26)'
+                          ? 'rgba(245, 158, 11, 0.35)'
                           : isOn
-                            ? 'rgba(16, 185, 129, 0.24)'
+                            ? 'rgba(16, 185, 129, 0.28)'
                             : palette.surfaceContainerHigh,
                       borderWidth: 1,
                       borderColor: isOff
-                        ? 'rgba(251, 113, 133, 0.5)'
+                        ? 'rgba(244, 63, 94, 0.65)'
                         : isWarning
-                          ? 'rgba(251, 191, 36, 0.4)'
+                          ? 'rgba(245, 158, 11, 0.6)'
                           : isOn
-                            ? 'rgba(52, 211, 153, 0.4)'
+                            ? 'rgba(16, 185, 129, 0.45)'
                             : palette.hairline,
                     }}
                   />
@@ -160,11 +166,11 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
               })}
             </View>
 
-            {/* Одна SVG-маска штриховки поверх всех рубиновых сегментов. */}
+            {/* SVG-штриховка рубиновых сегментов отключений */}
             <Svg
               pointerEvents="none"
-              style={{ position: 'absolute', left: 6, right: 6, top: 6, bottom: 6 }}
-              viewBox="0 0 1440 36"
+              style={{ position: 'absolute', left: 5, right: 5, top: 5, bottom: 5 }}
+              viewBox="0 0 1440 38"
               preserveAspectRatio="none"
             >
               <Defs>
@@ -175,7 +181,7 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
                   patternUnits="userSpaceOnUse"
                   patternTransform="rotate(45)"
                 >
-                  <Line x1={0} y1={0} x2={0} y2={6} stroke="rgba(255,228,230,0.3)" strokeWidth={2} strokeLinecap="round" />
+                  <Line x1={0} y1={0} x2={0} y2={6} stroke="rgba(255,228,230,0.35)" strokeWidth={1.8} strokeLinecap="round" />
                 </Pattern>
               </Defs>
               {slots
@@ -186,7 +192,7 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
                     x={slot.startMinutes}
                     y={0}
                     width={30}
-                    height={36}
+                    height={38}
                     fill={`url(#${hatchId})`}
                   />
                 ))}
@@ -197,13 +203,16 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
                 pointerEvents="none"
                 style={{
                   position: 'absolute',
-                  top: 6,
-                  bottom: 6,
-                  left: 6 + (trackWidth - 12) * (marker.percent / 100),
-                  width: 2,
-                  marginLeft: -1,
+                  top: 4,
+                  bottom: 4,
+                  left: 5 + (trackWidth - 10) * (marker.percent / 100),
+                  width: 2.5,
+                  marginLeft: -1.25,
                   borderRadius: 2,
-                  backgroundColor: 'rgba(255,255,255,0.9)',
+                  backgroundColor: '#FFFFFF',
+                  shadowColor: '#FFF',
+                  shadowOpacity: 0.8,
+                  shadowRadius: 4,
                 }}
               />
             ) : null}
@@ -211,31 +220,27 @@ export function Timeline24h({ intervals, date, now = new Date() }: Timeline24hPr
         </GestureDetector>
       </View>
 
-      <View className="flex-row flex-wrap items-center gap-2 pt-0.5">
-        <View
-          className="flex-row items-center gap-1.5 rounded-full border px-2.5 py-1"
-          style={{ borderColor: palette.hairline, backgroundColor: palette.surfaceContainerHigh }}
-        >
-          <View
-            className="h-2.5 w-2.5 rounded-full border"
-            style={{ borderColor: 'rgba(52,211,153,0.5)', backgroundColor: 'rgba(16,185,129,0.3)' }}
-          />
-          <Text className="text-[11px] font-medium text-muted-foreground">Світло є</Text>
+      {/* Легенда статусов шкалы с символами */}
+      <View className="flex-row flex-wrap items-center justify-between gap-1.5 pt-1">
+        <View className="flex-row items-center gap-3">
+          <View className="flex-row items-center gap-1.5">
+            <Text className="text-xs font-bold text-success">●</Text>
+            <Text className="text-[11px] font-medium text-muted-foreground">Світло</Text>
+          </View>
+          <View className="flex-row items-center gap-1.5">
+            <Text className="text-xs font-bold text-warning">◆</Text>
+            <Text className="text-[11px] font-medium text-muted-foreground">Скоро</Text>
+          </View>
+          <View className="flex-row items-center gap-1.5">
+            <Text className="text-xs font-bold text-destructive">■</Text>
+            <Text className="text-[11px] font-medium text-muted-foreground">Відключення</Text>
+          </View>
         </View>
-        <View
-          className="flex-row items-center gap-1.5 rounded-full border px-2.5 py-1"
-          style={{ borderColor: palette.hairline, backgroundColor: palette.surfaceContainerHigh }}
-        >
-          <View
-            className="h-2.5 w-2.5 rounded border"
-            style={{ borderColor: 'rgba(251,113,133,0.55)', backgroundColor: 'rgba(244,63,94,0.35)' }}
-          />
-          <Text className="text-[11px] font-medium text-muted-foreground">Відключення</Text>
-        </View>
+
         {marker ? (
-          <View className="ml-auto flex-row items-center gap-1.5">
-            <View className="h-3.5 w-0.5 rounded-full bg-white/85" />
-            <Text className="text-[11px] font-semibold text-foreground">Зараз {minutesToHm(marker.nowMinutes)}</Text>
+          <View className="flex-row items-center gap-1">
+            <View className="h-3 w-0.5 rounded-full bg-white" />
+            <Text className="text-[11px] font-bold text-foreground">Зараз {minutesToHm(marker.nowMinutes)}</Text>
           </View>
         ) : null}
       </View>
