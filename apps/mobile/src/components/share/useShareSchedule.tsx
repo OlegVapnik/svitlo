@@ -299,8 +299,8 @@ function ShareCard({
         >
           {slots.map((slot) => {
             const isOff = slot.stateCode === OFF_STATE_CODE;
-            const isWarning = slot.stateCode === WARNING_STATE_CODE;
-            const isOn = slot.stateCode === ON_STATE_CODE;
+            const isWarning = slot.stateCode === 2;
+            const isOn = slot.stateCode === 1;
 
             const bg = isOff
               ? palette.status.off.color
