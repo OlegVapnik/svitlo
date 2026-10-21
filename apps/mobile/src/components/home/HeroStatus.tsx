@@ -25,10 +25,10 @@ const LABELS: Record<PowerState, string> = {
 };
 
 const PILL_LABELS: Record<PowerState, string> = {
-  on: '⚡ За графіком',
-  warning: '⚠️ Скоро вимкнення',
+  on: 'За графіком',
+  warning: 'Скоро вимкнення',
   off: 'Відключення',
-  allClear: '⚡ За графіком',
+  allClear: 'За графіком',
   unknown: 'Немає даних',
 };
 

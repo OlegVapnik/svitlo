@@ -159,7 +159,7 @@ export async function notifyEarlyPower(
 
   await notifee.displayNotification({
     id: 'svitlo-early-power',
-    title: "⚡ Світло з'явилося раніше графіка?",
+    title: "Світло з'явилося раніше графіка?",
     body: offUntil
       ? `За графіком відключення до ${offUntil}, але живлення відновлено!`
       : 'За графіком зараз відключення, але живлення відновлено!',
