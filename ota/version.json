@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-10-21T20:06:25.939Z",
+  "generatedAt": "2026-10-21T20:49:04.180Z",
   "version": "2.34.6",
   "jsBundle": {
-    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-4a03e56625fe7828.gz",
-    "sha256": "4a03e56625fe78289275df6a3fe3b51d077b304a3ac643dc095d68c2ffa63237",
-    "sizeBytes": 2871956,
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-865990d6426b6e14.gz",
+    "sha256": "865990d6426b6e144efa84a3f95993c9f8453e0a2b2d50d690d414765c17aac7",
+    "sizeBytes": 2834697,
     "version": "2.34.6",
     "assets": [
       {
