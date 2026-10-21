@@ -94,22 +94,26 @@ class HeroWidgetRenderer(private val density: Float) {
         paint.color = Color.parseColor("#131318")
         canvas.drawRoundRect(rect, radius, radius, paint)
 
-        canvas.save()
-        val clip = Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) }
-        canvas.clipPath(clip)
-        paint.reset()
-        paint.isAntiAlias = true
-        paint.shader = RadialGradient(
-            width * 0.94f,
-            -height * 0.30f,
-            max(width, height) * 0.95f,
-            intArrayOf(withAlpha(accent, 0.30f), withAlpha(accent, 0f)),
-            null,
-            Shader.TileMode.CLAMP,
-        )
-        canvas.drawRect(rect, paint)
-        paint.shader = null
-        canvas.restore()
+        try {
+            canvas.save()
+            val clip = Path().apply { addRoundRect(rect, radius, radius, Path.Direction.CW) }
+            canvas.clipPath(clip)
+            paint.reset()
+            paint.isAntiAlias = true
+            paint.shader = RadialGradient(
+                width * 0.94f,
+                0f,
+                max(width, height) * 0.95f,
+                intArrayOf(withAlpha(accent, 0.30f), withAlpha(accent, 0f)),
+                null,
+                Shader.TileMode.CLAMP,
+            )
+            canvas.drawRect(rect, paint)
+            paint.shader = null
+            canvas.restore()
+        } catch (_: Exception) {
+            // Skia fallback
+        }
 
         paint.reset()
         paint.isAntiAlias = true
@@ -148,7 +152,7 @@ class HeroWidgetRenderer(private val density: Float) {
         textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         textPaint.color = accent
         textPaint.textSize = dp(13f)
-        val timerText = data.timer
+        val timerText = data.timer?.takeIf { !it.equals("null", ignoreCase = true) }
         val timerWidth = if (timerText != null) textPaint.measureText(timerText) else 0f
         if (timerText != null) {
             canvas.drawText(timerText, width - pad - timerWidth, baseline, textPaint)
@@ -218,12 +222,13 @@ class HeroWidgetRenderer(private val density: Float) {
         }
 
         var timerWidth = 0f
-        if (data.timer != null) {
+        val wideTimer = data.timer?.takeIf { !it.equals("null", ignoreCase = true) }
+        if (wideTimer != null) {
             textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
             textPaint.textSize = dp(15f)
             textPaint.color = accent
-            timerWidth = textPaint.measureText(data.timer)
-            canvas.drawText(data.timer, right - timerWidth, baseline, textPaint)
+            timerWidth = textPaint.measureText(wideTimer)
+            canvas.drawText(wideTimer, right - timerWidth, baseline, textPaint)
         }
 
         textPaint.textSize = dp(13f)
@@ -328,16 +333,18 @@ class HeroWidgetRenderer(private val density: Float) {
 
         // Справа — остаток, слева — время следующего события («Наступне: о 08:30»).
         var timerWidth = 0f
-        if (data.timer != null) {
+        val fullTimer = data.timer?.takeIf { !it.equals("null", ignoreCase = true) }
+        if (fullTimer != null) {
             textPaint.textSize = unit(18f)
             textPaint.color = accent
-            val valueWidth = textPaint.measureText(data.timer)
-            canvas.drawText(data.timer, width - pad - valueWidth, detailBaseline, textPaint)
+            val valueWidth = textPaint.measureText(fullTimer)
+            canvas.drawText(fullTimer, width - pad - valueWidth, detailBaseline, textPaint)
             timerWidth = valueWidth
-            if (data.timerPrefix != null) {
+            val prefixRaw = data.timerPrefix?.takeIf { !it.equals("null", ignoreCase = true) }
+            if (prefixRaw != null) {
                 textPaint.textSize = unit(9f)
                 textPaint.color = Color.parseColor("#A1A1AA")
-                val prefix = data.timerPrefix.uppercase()
+                val prefix = prefixRaw.uppercase()
                 val prefixWidth = textPaint.measureText(prefix)
                 canvas.drawText(
                     prefix,
@@ -352,8 +359,9 @@ class HeroWidgetRenderer(private val density: Float) {
         textPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         textPaint.textSize = unit(11f)
         textPaint.color = Color.parseColor("#A1A1AA")
+        val cleanDetail = if (data.detail.equals("null", ignoreCase = true)) "" else data.detail
         canvas.drawText(
-            fit(data.detail, unit(11f), width - pad * 2 - timerWidth - unit(10f)),
+            fit(cleanDetail, unit(11f), width - pad * 2 - timerWidth - unit(10f)),
             pad,
             detailBaseline,
             textPaint,

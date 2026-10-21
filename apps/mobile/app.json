@@ -2,7 +2,7 @@
   "expo": {
     "name": "Svitlo",
     "slug": "svitlo",
-    "version": "2.34.0",
+    "version": "2.34.6",
     "orientation": "portrait",
     "scheme": "svitlo",
     "icon": "./assets/icon.png",

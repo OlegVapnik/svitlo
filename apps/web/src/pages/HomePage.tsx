@@ -15,7 +15,6 @@ import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
 import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
 import { ReliabilityCard } from '../components/status/ReliabilityCard.js';
-import { ChangelogCard } from '../components/changelog/ChangelogCard.js';
 import { HomeHeroSection } from '../components/status/HomeHeroSection.js';
 import { ConnectionProblem } from '../components/region/ConnectionProblem.js';
 import { OfflineBanner, BuildStamp } from '../components/offline/OfflineBanner.js';
@@ -641,77 +640,6 @@ export const HomePage: React.FC = () => {
       </div>
 
       <SourceHealthBanner />
-
-      <section className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground">{t('home.upcoming')}</h2>
-          <Link to="/outages" className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
-            {t('home.allOutages')}
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-          </Link>
-        </div>
-
-        {outagesLoading ? (
-          <div className="space-y-2">
-            {[0, 1, 2].map((index) => (
-              <Skeleton key={index} className="h-24 w-full rounded-2xl" />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            {/* Групи без відключень на найближчі дні — не показуємо: блок про відключення, а не про график. */}
-            {groupOutagesLoading ? (
-              <Skeleton className="h-28 w-full rounded-2xl" />
-            ) : upcomingGroups.length === 0 ? (
-              outages.length === 0 ? (
-                <div className="flex items-center justify-center gap-2 rounded-2xl border border-hairline bg-surface-container-high/50 px-6 py-8 text-sm text-on-surface-variant">
-                  <ZapOff className="h-4 w-4" aria-hidden />
-                  {t('outages.noOutages')}
-                </div>
-              ) : null
-            ) : (
-              <>
-                {upcomingByDate.map(([date, groups]) => (
-                  <div key={date} className="space-y-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      {formatUpcomingDay(date, new Date())}
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {groups.map((group) => (
-                        <GroupOutageCard
-                          key={`${group.date}-${group.queues.join(',')}-${group.intervals[0]?.startsAt ?? ''}`}
-                          group={group}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {upcomingGroups.length > VISIBLE_GROUPS_LIMIT && (
-                  <button
-                    type="button"
-                    onClick={() => setAllGroupsShown((value) => !value)}
-                    className="mx-auto block rounded-full border border-border px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-muted"
-                    aria-expanded={allGroupsShown}
-                  >
-                    {allGroupsShown
-                      ? t('home.hideAllGroups')
-                      : t('home.showAllGroups', { n: upcomingGroups.length - VISIBLE_GROUPS_LIMIT })}
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Точкові ремонтні/аварійні відключення згруповані за вулицями/районами.
-                Раніше всі 28 записів мали одну areaName («Деснянське») і виглядали як одне й
-                те саме відключення; тепер видно реальні вулиці з outage_event_addresses. */}
-            {outages.length > 0 && <PointOutagesByPlace outages={outages} />}
-          </div>
-        )}
-      </section>
-
-      {/* «Що нового» — в самому низу й згорнуте: список змін не має змагатися з графіком
-          за перший екран, але мусить бути там, де його шукають. */}
-      <ChangelogCard />
 
       {/* Версия сборки: видно сразу, без поиска по меню. */}
       <BuildStamp />

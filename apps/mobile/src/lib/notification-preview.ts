@@ -12,8 +12,8 @@ import type { PowerState } from '@/theme/ThemeProvider';
 
 const HEADLINES: Record<PowerState, string> = {
   on: 'Світло є',
-  warning: 'Скоро вимкнуть',
-  off: 'Світла немає',
+  warning: 'Світло є',
+  off: 'Відключення',
   allClear: 'Відключень немає',
   unknown: 'Немає даних',
 };
@@ -80,13 +80,13 @@ export function buildNotificationBanner({
     if (state === 'allClear') return 'Відключень за графіком на сьогодні немає';
     if (!summary) return 'Оператор не опублікував графік на сьогодні';
     if (state === 'off' && summary.offEndsAt) {
-      return `Увімкнуть о ${minutesToHm(minutesOfDay(summary.offEndsAt, date))}`;
+      return `Буде о ${minutesToHm(minutesOfDay(summary.offEndsAt, date))}`;
     }
     if (state === 'off' && summary.backInMinutes != null) {
-      return `Увімкнуть через ${formatMinutesUk(summary.backInMinutes)}`;
+      return `Буде через ${formatMinutesUk(summary.backInMinutes)}`;
     }
     if (summary.nextStartsAt) {
-      return `Наступне: о ${minutesToHm(minutesOfDay(summary.nextStartsAt, date))}`;
+      return `Вимкнуть о ${minutesToHm(minutesOfDay(summary.nextStartsAt, date))}`;
     }
     if (summary.nextInMinutes != null) {
       return `Вимкнуть через ${formatMinutesUk(summary.nextInMinutes)}`;

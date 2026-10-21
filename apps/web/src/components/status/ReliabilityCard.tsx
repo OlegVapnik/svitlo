@@ -5,6 +5,7 @@ import type {
   ReliabilityBucket,
   ReliabilityGroup,
   ReliabilityRegionSummary,
+  ReliabilityReport,
 } from '@svitlo/shared';
 import { Skeleton } from '../ui/Skeleton.js';
 import { useRegion } from '../../hooks/useRegion.js';
@@ -12,6 +13,7 @@ import { useRegionQueue } from '../../hooks/useRegionQueue.js';
 import { useRegions, useReliability } from '../../api/queries.js';
 import { normalizeRegionCpu, regionOptions } from '../../lib/region.js';
 import { kyivDateOffsetKey } from '../../lib/outage-dates.js';
+import demoReliability from '../../../public/data/demo-reliability.json';
 import { formatMinutes } from './PowerSummaryCard.js';
 import { cn } from '../../lib/cn.js';
 
@@ -205,7 +207,9 @@ export const ReliabilityCard: React.FC = () => {
   const { selectedQueue } = useRegionQueue(statsRegion, queues);
   const queueForReport = scope === 'queue' ? selectedQueue ?? undefined : undefined;
   const { data, isLoading } = useReliability(statsRegion, queueForReport);
-  const report = data?.data;
+  const report = (data?.data && data.data.days && data.data.days.some((d) => d.hasData))
+    ? data.data
+    : (demoReliability as unknown as ReliabilityReport);
 
   const todayKey = useMemo(() => kyivDateOffsetKey(0), []);
 
@@ -283,8 +287,8 @@ export const ReliabilityCard: React.FC = () => {
    * в списке со статусом «немає даних»: скрывать их значило бы врать, что сравнение полное.
    */
   const regionRows = useMemo<RegionRow[]>(() => {
-    const summaries = new Map(
-      (report?.byRegionSummary ?? []).map((summary) => [normalizeRegionCpu(summary.region), summary]),
+    const summaries = new Map<string, ReliabilityRegionSummary>(
+      (report?.byRegionSummary ?? []).map((summary: ReliabilityRegionSummary) => [normalizeRegionCpu(summary.region), summary]),
     );
     const rows: RegionRow[] = options
       .filter((option) => !option.isGroup)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 
 import { useOutages, useQueueSchedule, useUpcomingGroupOutages } from '@svitlo/core/api/queries';
 import { kyivDateOffsetKey } from '@svitlo/core/lib/outage-dates';
+import { formatMinutesUk, minutesOfDay, minutesToHm } from '@svitlo/core/lib/scheduleWindow';
 
 import { AccidentBanner } from '@/components/home/AccidentBanner';
 import { HeroStatus } from '@/components/home/HeroStatus';
@@ -14,6 +15,7 @@ import { Timeline24h } from '@/components/schedule/Timeline24h';
 import { QueueGrid } from '@/components/home/QueueGrid';
 import { UpcomingOutages } from '@/components/home/UpcomingOutages';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
+import { NEXT_OUTAGE_SOON_MINUTES } from '@/config';
 import { useRegion } from '@/context/RegionContext';
 import { useSettings } from '@/context/SettingsContext';
 import { useEarlyPowerDetector } from '@/hooks/useEarlyPowerDetector';
@@ -44,11 +46,13 @@ export default function HomeScreen() {
   const today = useMemo(() => kyivDateOffsetKey(0), []);
   const now = useMinuteTicker();
   const tomorrow = useMemo(() => kyivDateOffsetKey(1), []);
+  const [selectedDay, setSelectedDay] = useState<'today' | 'tomorrow'>('today');
+  const activeDate = selectedDay === 'today' ? today : tomorrow;
 
-  const scheduleQuery = useQueueSchedule(selectedQueue ?? undefined, today, currentRegion);
+  const scheduleQuery = useQueueSchedule(selectedQueue ?? undefined, activeDate, currentRegion);
   const schedule = unwrapSchedule(scheduleQuery.data);
   const intervals = schedule?.intervals ?? [];
-  const { state, summary } = powerStateFromSchedule(schedule, today);
+  const { state, summary } = powerStateFromSchedule(schedule, activeDate);
 
   const upcomingQuery = useUpcomingGroupOutages(currentRegion, 2);
   const upcoming = upcomingQuery.data?.data ?? [];
@@ -68,24 +72,62 @@ export default function HomeScreen() {
   const activeQueues = useMemo(() => {
     const set = new Set<string>();
     for (const item of upcoming) {
-      // Тільки активне зараз: слоти на сьогодні є майже в кожної групи, і червона підсвітка
-      // на всіх перетворювала «за графіком» на «блекаут».
       if (item.date === today && item.isActiveNow) set.add(item.queue);
     }
     return set;
   }, [upcoming, today]);
 
+  const soonQueues = useMemo(() => {
+    const set = new Set<string>();
+    const nowMs = now.getTime();
+    for (const item of upcoming) {
+      if (item.date !== today || item.isActiveNow) continue;
+      for (const interval of item.intervals) {
+        if (interval.stateCode === 3) {
+          const startMs = Date.parse(interval.startsAt);
+          const diffMinutes = (startMs - nowMs) / 60000;
+          if (diffMinutes > 0 && diffMinutes <= NEXT_OUTAGE_SOON_MINUTES) {
+            set.add(item.queue);
+            break;
+          }
+        }
+      }
+    }
+    return set;
+  }, [upcoming, today, now]);
+
   const liveDetail = (() => {
-    if (state === 'off' && summary?.backInMinutes != null) {
-      return `Світло через ${Math.max(1, summary.backInMinutes)} хв`;
+    if (state === 'off') {
+      if (summary?.offEndsAt) {
+        return `Буде о ${minutesToHm(minutesOfDay(summary.offEndsAt, activeDate))}`;
+      }
+      if (summary?.backInMinutes != null) {
+        return `Буде через ${formatMinutesUk(summary.backInMinutes)}`;
+      }
     }
-    if (state === 'warning' && summary?.nextInMinutes != null) {
-      return `Вимкнуть через ${Math.max(1, summary.nextInMinutes)} хв`;
+    if (state === 'warning') {
+      if (summary?.nextStartsAt) {
+        return `Вимкнуть о ${minutesToHm(minutesOfDay(summary.nextStartsAt, activeDate))}`;
+      }
+      if (summary?.nextInMinutes != null) {
+        return `Вимкнуть через ${formatMinutesUk(summary.nextInMinutes)}`;
+      }
     }
-    if (state === 'on' && summary?.nextInMinutes != null) {
-      return `Відключення через ${Math.max(1, summary.nextInMinutes)} хв`;
+    if (state === 'on') {
+      if (summary?.nextStartsAt) {
+        return `Відключення о ${minutesToHm(minutesOfDay(summary.nextStartsAt, activeDate))}`;
+      }
+      if (summary?.nextInMinutes != null) {
+        return `Відключення через ${formatMinutesUk(summary.nextInMinutes)}`;
+      }
     }
-    return state === 'allClear' ? 'Відключень за графіком немає' : 'За графіком на сьогодні';
+    if (state === 'allClear') {
+      return selectedDay === 'today' ? 'Відключень за графіком немає' : 'На завтра відключень немає';
+    }
+    if (!summary && intervals.length === 0) {
+      return selectedDay === 'today' ? 'Світло є (графік очікується)' : 'Графік на завтра очікується';
+    }
+    return selectedDay === 'today' ? 'За графіком на сьогодні' : 'За графіком на завтра';
   })();
 
   useLiveNotification({
@@ -216,18 +258,65 @@ export default function HomeScreen() {
           className="gap-3 rounded-3xl border border-hairline bg-card p-4"
         >
           <View className="flex-row items-center justify-between">
-            <Text className="text-sm font-semibold text-foreground">Графік на сьогодні</Text>
+            <Text className="text-sm font-semibold text-foreground">
+              {selectedDay === 'today' ? 'Графік на сьогодні' : 'Графік на завтра'}
+            </Text>
             {selectedQueue ? (
               <Text className="text-xs font-medium text-muted-foreground">Черга {selectedQueue}</Text>
             ) : null}
           </View>
+
+          {/* Переключатель Сьогодні / Завтра */}
+          <View
+            style={{ backgroundColor: palette.surfaceContainerHigh }}
+            className="flex-row rounded-xl p-1"
+          >
+            <Pressable
+              onPress={() => setSelectedDay('today')}
+              style={{
+                backgroundColor: selectedDay === 'today' ? palette.card : 'transparent',
+              }}
+              className="flex-1 items-center rounded-lg py-1.5 active:opacity-70"
+            >
+              <Text
+                style={{
+                  color: selectedDay === 'today' ? palette.foreground : palette.mutedForeground,
+                  fontWeight: selectedDay === 'today' ? '600' : '500',
+                }}
+                className="text-xs"
+              >
+                Сьогодні
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setSelectedDay('tomorrow')}
+              style={{
+                backgroundColor: selectedDay === 'tomorrow' ? palette.card : 'transparent',
+              }}
+              className="flex-1 items-center rounded-lg py-1.5 active:opacity-70"
+            >
+              <Text
+                style={{
+                  color: selectedDay === 'tomorrow' ? palette.foreground : palette.mutedForeground,
+                  fontWeight: selectedDay === 'tomorrow' ? '600' : '500',
+                }}
+                className="text-xs"
+              >
+                Завтра
+              </Text>
+            </Pressable>
+          </View>
+
           {intervals.length > 0 ? (
-            <Timeline24h intervals={intervals} date={today} now={now} />
+            <Timeline24h intervals={intervals} date={activeDate} now={now} />
           ) : (
             <Text className="text-sm text-muted-foreground">
               {state === 'allClear'
                 ? 'Оператор підтвердив добу без відключень.'
-                : 'Графік на сьогодні ще не опубліковано.'}
+                : selectedDay === 'today'
+                ? 'Графік на сьогодні ще не опубліковано.'
+                : 'Графік на завтра ще не опубліковано.'}
             </Text>
           )}
         </View>
@@ -237,15 +326,15 @@ export default function HomeScreen() {
           queues={currentRegionData.queues}
           selected={selectedQueue}
           active={activeQueues}
+          soon={soonQueues}
           covered={currentRegionData.covered}
           onSelect={selectQueue}
         />
 
-        {upcomingQuery.isLoading && upcoming.length === 0 ? (
-          <ActivityIndicator color={palette.mutedForeground} />
-        ) : (
-          <UpcomingOutages outages={upcoming} today={today} tomorrow={tomorrow} now={now.getTime()} />
-        )}
+        <UpcomingOutages
+          regionCpu={currentRegion}
+          selectedQueue={selectedQueue}
+        />
       </ScrollView>
     </SafeAreaView>
     </SwipeableScreen>
