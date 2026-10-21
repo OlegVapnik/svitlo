@@ -51,7 +51,7 @@ export const REGION_CATALOG: RegionCatalogEntry[] = [
   { cpu: 'odeska-oblast', nameUa: 'Одеська область', feedKeys: [] },
   { cpu: 'poltavska-oblast', nameUa: 'Полтавська область', feedKeys: ['poltavska-oblast'] },
   { cpu: 'rivnenska-oblast', nameUa: 'Рівненська область', feedKeys: ['rivnenska-oblast'] },
-  { cpu: 'sumska-oblast', nameUa: 'Сумська область', feedKeys: [] },
+  { cpu: 'sumska-oblast', nameUa: 'Сумська область', feedKeys: ['sumska-oblast'] },
   { cpu: 'ternopilska-oblast', nameUa: 'Тернопільська область', feedKeys: ['ternopilska-oblast'] },
   { cpu: 'kharkivska-oblast', nameUa: 'Харківська область', feedKeys: ['kharkivska-oblast'] },
   { cpu: 'khersonska-oblast', nameUa: 'Херсонська область', feedKeys: [] },
