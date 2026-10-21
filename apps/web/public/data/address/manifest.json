@@ -1,0 +1,1992 @@
+{
+  "generatedAt": "2026-10-21T17:26:44Z",
+  "regions": {
+    "chernihivska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 227395,
+          "count": 611,
+          "hash": "ccd6f264bc43",
+          "url": "chernihivska-oblast/houses-0.ccd6f264bc43.json"
+        },
+        "1": {
+          "bytes": 196160,
+          "count": 523,
+          "hash": "313458a62331",
+          "url": "chernihivska-oblast/houses-1.313458a62331.json"
+        },
+        "10": {
+          "bytes": 270756,
+          "count": 900,
+          "hash": "1913ce28a6c4",
+          "url": "chernihivska-oblast/houses-10.1913ce28a6c4.json"
+        },
+        "11": {
+          "bytes": 252384,
+          "count": 646,
+          "hash": "66267ae8ce5b",
+          "url": "chernihivska-oblast/houses-11.66267ae8ce5b.json"
+        },
+        "12": {
+          "bytes": 147718,
+          "count": 413,
+          "hash": "f4e9c4a716a6",
+          "url": "chernihivska-oblast/houses-12.f4e9c4a716a6.json"
+        },
+        "13": {
+          "bytes": 317524,
+          "count": 895,
+          "hash": "c874d2ed8297",
+          "url": "chernihivska-oblast/houses-13.c874d2ed8297.json"
+        },
+        "14": {
+          "bytes": 303309,
+          "count": 950,
+          "hash": "0345f16c4f26",
+          "url": "chernihivska-oblast/houses-14.0345f16c4f26.json"
+        },
+        "15": {
+          "bytes": 327830,
+          "count": 860,
+          "hash": "152740fecc62",
+          "url": "chernihivska-oblast/houses-15.152740fecc62.json"
+        },
+        "2": {
+          "bytes": 212795,
+          "count": 663,
+          "hash": "ec2ba40c21d5",
+          "url": "chernihivska-oblast/houses-2.ec2ba40c21d5.json"
+        },
+        "3": {
+          "bytes": 198725,
+          "count": 597,
+          "hash": "3ae38182ecc6",
+          "url": "chernihivska-oblast/houses-3.3ae38182ecc6.json"
+        },
+        "4": {
+          "bytes": 158684,
+          "count": 527,
+          "hash": "b86d2b27a35e",
+          "url": "chernihivska-oblast/houses-4.b86d2b27a35e.json"
+        },
+        "5": {
+          "bytes": 150328,
+          "count": 431,
+          "hash": "16acec3adc97",
+          "url": "chernihivska-oblast/houses-5.16acec3adc97.json"
+        },
+        "6": {
+          "bytes": 381905,
+          "count": 1151,
+          "hash": "08feb4e8597a",
+          "url": "chernihivska-oblast/houses-6.08feb4e8597a.json"
+        },
+        "7": {
+          "bytes": 737547,
+          "count": 1737,
+          "hash": "23bb90b5a014",
+          "url": "chernihivska-oblast/houses-7.23bb90b5a014.json"
+        },
+        "8": {
+          "bytes": 218578,
+          "count": 565,
+          "hash": "d9c8693be138",
+          "url": "chernihivska-oblast/houses-8.d9c8693be138.json"
+        },
+        "9": {
+          "bytes": 368824,
+          "count": 1130,
+          "hash": "09173dac9b9d",
+          "url": "chernihivska-oblast/houses-9.09173dac9b9d.json"
+        }
+      },
+      "housesCount": 12599,
+      "settlements": {
+        "bytes": 134427,
+        "count": 1068,
+        "hash": "1f63e7fb2813",
+        "url": "chernihivska-oblast/settlements.1f63e7fb2813.json"
+      },
+      "settlementsCount": 1068,
+      "shards": {
+        "а": {
+          "bytes": 9576,
+          "count": 131,
+          "hash": "4d3526e66f71",
+          "url": "chernihivska-oblast/streets-а.4d3526e66f71.json"
+        },
+        "б": {
+          "bytes": 77384,
+          "count": 1098,
+          "hash": "e1d725e5821f",
+          "url": "chernihivska-oblast/streets-б.e1d725e5821f.json"
+        },
+        "в": {
+          "bytes": 55947,
+          "count": 788,
+          "hash": "3bec87748208",
+          "url": "chernihivska-oblast/streets-в.3bec87748208.json"
+        },
+        "г": {
+          "bytes": 45475,
+          "count": 635,
+          "hash": "a32aee8152cc",
+          "url": "chernihivska-oblast/streets-г.a32aee8152cc.json"
+        },
+        "д": {
+          "bytes": 31983,
+          "count": 442,
+          "hash": "439e126ac32c",
+          "url": "chernihivska-oblast/streets-д.439e126ac32c.json"
+        },
+        "ж": {
+          "bytes": 9582,
+          "count": 131,
+          "hash": "a3cb21f713f0",
+          "url": "chernihivska-oblast/streets-ж.a3cb21f713f0.json"
+        },
+        "з": {
+          "bytes": 13838,
+          "count": 173,
+          "hash": "c6a94c38b949",
+          "url": "chernihivska-oblast/streets-з.c6a94c38b949.json"
+        },
+        "к": {
+          "bytes": 111497,
+          "count": 1616,
+          "hash": "5087efbe3245",
+          "url": "chernihivska-oblast/streets-к.5087efbe3245.json"
+        },
+        "л": {
+          "bytes": 39662,
+          "count": 545,
+          "hash": "af7902a337f8",
+          "url": "chernihivska-oblast/streets-л.af7902a337f8.json"
+        },
+        "м": {
+          "bytes": 58621,
+          "count": 834,
+          "hash": "bb3527cd7df2",
+          "url": "chernihivska-oblast/streets-м.bb3527cd7df2.json"
+        },
+        "н": {
+          "bytes": 59549,
+          "count": 856,
+          "hash": "f0561b775ee7",
+          "url": "chernihivska-oblast/streets-н.f0561b775ee7.json"
+        },
+        "о": {
+          "bytes": 36819,
+          "count": 524,
+          "hash": "8ebca048e3a5",
+          "url": "chernihivska-oblast/streets-о.8ebca048e3a5.json"
+        },
+        "п": {
+          "bytes": 84248,
+          "count": 1156,
+          "hash": "4bbfbd5a0992",
+          "url": "chernihivska-oblast/streets-п.4bbfbd5a0992.json"
+        },
+        "р": {
+          "bytes": 33807,
+          "count": 491,
+          "hash": "1a6d919f14a0",
+          "url": "chernihivska-oblast/streets-р.1a6d919f14a0.json"
+        },
+        "с": {
+          "bytes": 89080,
+          "count": 1274,
+          "hash": "1dc1edad1d2a",
+          "url": "chernihivska-oblast/streets-с.1dc1edad1d2a.json"
+        },
+        "т": {
+          "bytes": 26544,
+          "count": 379,
+          "hash": "60c019ffa7b1",
+          "url": "chernihivska-oblast/streets-т.60c019ffa7b1.json"
+        },
+        "у": {
+          "bytes": 3798,
+          "count": 49,
+          "hash": "9cc4b8c8c6ad",
+          "url": "chernihivska-oblast/streets-у.9cc4b8c8c6ad.json"
+        },
+        "ф": {
+          "bytes": 4311,
+          "count": 63,
+          "hash": "3c0d5f6a67fe",
+          "url": "chernihivska-oblast/streets-ф.3c0d5f6a67fe.json"
+        },
+        "х": {
+          "bytes": 15515,
+          "count": 223,
+          "hash": "e4f03bca9def",
+          "url": "chernihivska-oblast/streets-х.e4f03bca9def.json"
+        },
+        "ц": {
+          "bytes": 281,
+          "count": 2,
+          "hash": "e56957f6df9f",
+          "url": "chernihivska-oblast/streets-ц.e56957f6df9f.json"
+        },
+        "ч": {
+          "bytes": 41610,
+          "count": 563,
+          "hash": "8192a7830efe",
+          "url": "chernihivska-oblast/streets-ч.8192a7830efe.json"
+        },
+        "ш": {
+          "bytes": 10367,
+          "count": 135,
+          "hash": "b957d2c882a7",
+          "url": "chernihivska-oblast/streets-ш.b957d2c882a7.json"
+        },
+        "щ": {
+          "bytes": 1485,
+          "count": 16,
+          "hash": "42ab8f5fa78d",
+          "url": "chernihivska-oblast/streets-щ.42ab8f5fa78d.json"
+        },
+        "ю": {
+          "bytes": 1131,
+          "count": 13,
+          "hash": "ff71c8d8d580",
+          "url": "chernihivska-oblast/streets-ю.ff71c8d8d580.json"
+        },
+        "я": {
+          "bytes": 7852,
+          "count": 112,
+          "hash": "d1a6bbdf9580",
+          "url": "chernihivska-oblast/streets-я.d1a6bbdf9580.json"
+        },
+        "є": {
+          "bytes": 2733,
+          "count": 38,
+          "hash": "d4d9cac4a219",
+          "url": "chernihivska-oblast/streets-є.d4d9cac4a219.json"
+        },
+        "і": {
+          "bytes": 20667,
+          "count": 312,
+          "hash": "26d9bc970dd5",
+          "url": "chernihivska-oblast/streets-і.26d9bc970dd5.json"
+        }
+      },
+      "streetsCount": 12599
+    },
+    "kyiv-city": {
+      "houses": {
+        "0": {
+          "bytes": 34796,
+          "count": 139,
+          "hash": "20db195573aa",
+          "url": "kyiv-city/houses-0.20db195573aa.json"
+        },
+        "1": {
+          "bytes": 35557,
+          "count": 166,
+          "hash": "fc38801bdc45",
+          "url": "kyiv-city/houses-1.fc38801bdc45.json"
+        },
+        "10": {
+          "bytes": 38930,
+          "count": 149,
+          "hash": "f7747f733867",
+          "url": "kyiv-city/houses-10.f7747f733867.json"
+        },
+        "11": {
+          "bytes": 33782,
+          "count": 141,
+          "hash": "f45faeda071b",
+          "url": "kyiv-city/houses-11.f45faeda071b.json"
+        },
+        "12": {
+          "bytes": 31614,
+          "count": 139,
+          "hash": "fa9d4904d6a9",
+          "url": "kyiv-city/houses-12.fa9d4904d6a9.json"
+        },
+        "13": {
+          "bytes": 36821,
+          "count": 164,
+          "hash": "20b7e5978e29",
+          "url": "kyiv-city/houses-13.20b7e5978e29.json"
+        },
+        "14": {
+          "bytes": 37077,
+          "count": 150,
+          "hash": "cfd7439b8333",
+          "url": "kyiv-city/houses-14.cfd7439b8333.json"
+        },
+        "15": {
+          "bytes": 36495,
+          "count": 148,
+          "hash": "9c59a118e67f",
+          "url": "kyiv-city/houses-15.9c59a118e67f.json"
+        },
+        "2": {
+          "bytes": 35289,
+          "count": 143,
+          "hash": "563768aa21bb",
+          "url": "kyiv-city/houses-2.563768aa21bb.json"
+        },
+        "3": {
+          "bytes": 41782,
+          "count": 159,
+          "hash": "f9f751e4ad60",
+          "url": "kyiv-city/houses-3.f9f751e4ad60.json"
+        },
+        "4": {
+          "bytes": 38942,
+          "count": 172,
+          "hash": "d9b636f41883",
+          "url": "kyiv-city/houses-4.d9b636f41883.json"
+        },
+        "5": {
+          "bytes": 30549,
+          "count": 135,
+          "hash": "ccc440ca5f78",
+          "url": "kyiv-city/houses-5.ccc440ca5f78.json"
+        },
+        "6": {
+          "bytes": 49728,
+          "count": 183,
+          "hash": "b09c20f4eb87",
+          "url": "kyiv-city/houses-6.b09c20f4eb87.json"
+        },
+        "7": {
+          "bytes": 42147,
+          "count": 151,
+          "hash": "6ebd0797056c",
+          "url": "kyiv-city/houses-7.6ebd0797056c.json"
+        },
+        "8": {
+          "bytes": 34643,
+          "count": 139,
+          "hash": "8a73f8f320c1",
+          "url": "kyiv-city/houses-8.8a73f8f320c1.json"
+        },
+        "9": {
+          "bytes": 42246,
+          "count": 148,
+          "hash": "9a3a6870cd17",
+          "url": "kyiv-city/houses-9.9a3a6870cd17.json"
+        }
+      },
+      "housesCount": 2426,
+      "settlements": {
+        "bytes": 432,
+        "count": 1,
+        "hash": "3b3546fead75",
+        "url": "kyiv-city/settlements.3b3546fead75.json"
+      },
+      "settlementsCount": 1,
+      "shards": {
+        "к": {
+          "bytes": 209967,
+          "count": 2429,
+          "hash": "07691a955551",
+          "url": "kyiv-city/streets-к.07691a955551.json"
+        }
+      },
+      "streetsCount": 2429
+    },
+    "kyivska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 151972,
+          "count": 639,
+          "hash": "e2abd16df863",
+          "url": "kyivska-oblast/houses-0.e2abd16df863.json"
+        },
+        "1": {
+          "bytes": 160453,
+          "count": 692,
+          "hash": "03e374222958",
+          "url": "kyivska-oblast/houses-1.03e374222958.json"
+        },
+        "10": {
+          "bytes": 245916,
+          "count": 1190,
+          "hash": "4370658651ea",
+          "url": "kyivska-oblast/houses-10.4370658651ea.json"
+        },
+        "11": {
+          "bytes": 134052,
+          "count": 607,
+          "hash": "71af73525087",
+          "url": "kyivska-oblast/houses-11.71af73525087.json"
+        },
+        "12": {
+          "bytes": 135937,
+          "count": 642,
+          "hash": "361c25df7876",
+          "url": "kyivska-oblast/houses-12.361c25df7876.json"
+        },
+        "13": {
+          "bytes": 217671,
+          "count": 1002,
+          "hash": "d5ce7360a975",
+          "url": "kyivska-oblast/houses-13.d5ce7360a975.json"
+        },
+        "14": {
+          "bytes": 261322,
+          "count": 1212,
+          "hash": "047a96ad3638",
+          "url": "kyivska-oblast/houses-14.047a96ad3638.json"
+        },
+        "15": {
+          "bytes": 196683,
+          "count": 899,
+          "hash": "251ab2325233",
+          "url": "kyivska-oblast/houses-15.251ab2325233.json"
+        },
+        "2": {
+          "bytes": 176818,
+          "count": 900,
+          "hash": "874e2b44f6d4",
+          "url": "kyivska-oblast/houses-2.874e2b44f6d4.json"
+        },
+        "3": {
+          "bytes": 163272,
+          "count": 754,
+          "hash": "a19b11a76b03",
+          "url": "kyivska-oblast/houses-3.a19b11a76b03.json"
+        },
+        "4": {
+          "bytes": 142168,
+          "count": 698,
+          "hash": "24753115deed",
+          "url": "kyivska-oblast/houses-4.24753115deed.json"
+        },
+        "5": {
+          "bytes": 134453,
+          "count": 652,
+          "hash": "470d742e7613",
+          "url": "kyivska-oblast/houses-5.470d742e7613.json"
+        },
+        "6": {
+          "bytes": 212087,
+          "count": 1058,
+          "hash": "0b16ca30e69f",
+          "url": "kyivska-oblast/houses-6.0b16ca30e69f.json"
+        },
+        "7": {
+          "bytes": 473794,
+          "count": 1772,
+          "hash": "c0fdd86f0fa3",
+          "url": "kyivska-oblast/houses-7.c0fdd86f0fa3.json"
+        },
+        "8": {
+          "bytes": 183941,
+          "count": 749,
+          "hash": "cf259711cde3",
+          "url": "kyivska-oblast/houses-8.cf259711cde3.json"
+        },
+        "9": {
+          "bytes": 242041,
+          "count": 1115,
+          "hash": "9ec49b9359d7",
+          "url": "kyivska-oblast/houses-9.9ec49b9359d7.json"
+        }
+      },
+      "housesCount": 14581,
+      "settlements": {
+        "bytes": 98591,
+        "count": 717,
+        "hash": "da5510b99f04",
+        "url": "kyivska-oblast/settlements.da5510b99f04.json"
+      },
+      "settlementsCount": 717,
+      "shards": {
+        "а": {
+          "bytes": 7945,
+          "count": 107,
+          "hash": "1f35d7512814",
+          "url": "kyivska-oblast/streets-а.1f35d7512814.json"
+        },
+        "б": {
+          "bytes": 150647,
+          "count": 1910,
+          "hash": "04798e020ebb",
+          "url": "kyivska-oblast/streets-б.04798e020ebb.json"
+        },
+        "в": {
+          "bytes": 88788,
+          "count": 1135,
+          "hash": "1c0a70dbe2b5",
+          "url": "kyivska-oblast/streets-в.1c0a70dbe2b5.json"
+        },
+        "г": {
+          "bytes": 83356,
+          "count": 1082,
+          "hash": "1791b41f0ff7",
+          "url": "kyivska-oblast/streets-г.1791b41f0ff7.json"
+        },
+        "д": {
+          "bytes": 39629,
+          "count": 525,
+          "hash": "b7361178c934",
+          "url": "kyivska-oblast/streets-д.b7361178c934.json"
+        },
+        "ж": {
+          "bytes": 8363,
+          "count": 107,
+          "hash": "ceaa1dc0cd8b",
+          "url": "kyivska-oblast/streets-ж.ceaa1dc0cd8b.json"
+        },
+        "з": {
+          "bytes": 36957,
+          "count": 486,
+          "hash": "c1ee4a1721bf",
+          "url": "kyivska-oblast/streets-з.c1ee4a1721bf.json"
+        },
+        "й": {
+          "bytes": 519,
+          "count": 5,
+          "hash": "32efb847422e",
+          "url": "kyivska-oblast/streets-й.32efb847422e.json"
+        },
+        "к": {
+          "bytes": 83996,
+          "count": 1095,
+          "hash": "a5b73969404c",
+          "url": "kyivska-oblast/streets-к.a5b73969404c.json"
+        },
+        "л": {
+          "bytes": 47231,
+          "count": 627,
+          "hash": "18f95c3d332e",
+          "url": "kyivska-oblast/streets-л.18f95c3d332e.json"
+        },
+        "м": {
+          "bytes": 74989,
+          "count": 969,
+          "hash": "3132193a2058",
+          "url": "kyivska-oblast/streets-м.3132193a2058.json"
+        },
+        "н": {
+          "bytes": 48289,
+          "count": 624,
+          "hash": "c677e33d48b6",
+          "url": "kyivska-oblast/streets-н.c677e33d48b6.json"
+        },
+        "о": {
+          "bytes": 28278,
+          "count": 372,
+          "hash": "af17fc3724df",
+          "url": "kyivska-oblast/streets-о.af17fc3724df.json"
+        },
+        "п": {
+          "bytes": 99963,
+          "count": 1285,
+          "hash": "6fb636a04c68",
+          "url": "kyivska-oblast/streets-п.6fb636a04c68.json"
+        },
+        "р": {
+          "bytes": 42976,
+          "count": 562,
+          "hash": "1caa78e40830",
+          "url": "kyivska-oblast/streets-р.1caa78e40830.json"
+        },
+        "с": {
+          "bytes": 96877,
+          "count": 1251,
+          "hash": "dede882621b2",
+          "url": "kyivska-oblast/streets-с.dede882621b2.json"
+        },
+        "т": {
+          "bytes": 49151,
+          "count": 640,
+          "hash": "acbfa9eee179",
+          "url": "kyivska-oblast/streets-т.acbfa9eee179.json"
+        },
+        "у": {
+          "bytes": 12116,
+          "count": 159,
+          "hash": "1119db759409",
+          "url": "kyivska-oblast/streets-у.1119db759409.json"
+        },
+        "ф": {
+          "bytes": 13282,
+          "count": 176,
+          "hash": "a28604de79a9",
+          "url": "kyivska-oblast/streets-ф.a28604de79a9.json"
+        },
+        "х": {
+          "bytes": 35311,
+          "count": 443,
+          "hash": "f66458404bbf",
+          "url": "kyivska-oblast/streets-х.f66458404bbf.json"
+        },
+        "ц": {
+          "bytes": 3427,
+          "count": 44,
+          "hash": "32bc03f755a0",
+          "url": "kyivska-oblast/streets-ц.32bc03f755a0.json"
+        },
+        "ч": {
+          "bytes": 21853,
+          "count": 286,
+          "hash": "e49dfa782923",
+          "url": "kyivska-oblast/streets-ч.e49dfa782923.json"
+        },
+        "ш": {
+          "bytes": 9430,
+          "count": 120,
+          "hash": "6903ad209260",
+          "url": "kyivska-oblast/streets-ш.6903ad209260.json"
+        },
+        "щ": {
+          "bytes": 3035,
+          "count": 39,
+          "hash": "97e905d335c2",
+          "url": "kyivska-oblast/streets-щ.97e905d335c2.json"
+        },
+        "ю": {
+          "bytes": 6119,
+          "count": 83,
+          "hash": "d0f06b322f2b",
+          "url": "kyivska-oblast/streets-ю.d0f06b322f2b.json"
+        },
+        "я": {
+          "bytes": 21835,
+          "count": 274,
+          "hash": "4ae60fae02f2",
+          "url": "kyivska-oblast/streets-я.4ae60fae02f2.json"
+        },
+        "є": {
+          "bytes": 2795,
+          "count": 39,
+          "hash": "a3eae9188c88",
+          "url": "kyivska-oblast/streets-є.a3eae9188c88.json"
+        },
+        "і": {
+          "bytes": 11764,
+          "count": 162,
+          "hash": "d8c0975675df",
+          "url": "kyivska-oblast/streets-і.d8c0975675df.json"
+        }
+      },
+      "streetsCount": 14607
+    },
+    "poltavska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 9771,
+          "count": 84,
+          "hash": "afe01f2a42d0",
+          "url": "poltavska-oblast/houses-0.afe01f2a42d0.json"
+        },
+        "1": {
+          "bytes": 15466,
+          "count": 103,
+          "hash": "6311d0aedf2f",
+          "url": "poltavska-oblast/houses-1.6311d0aedf2f.json"
+        },
+        "10": {
+          "bytes": 15003,
+          "count": 139,
+          "hash": "64f98dd7f239",
+          "url": "poltavska-oblast/houses-10.64f98dd7f239.json"
+        },
+        "11": {
+          "bytes": 15108,
+          "count": 115,
+          "hash": "24043f217fd9",
+          "url": "poltavska-oblast/houses-11.24043f217fd9.json"
+        },
+        "12": {
+          "bytes": 8414,
+          "count": 79,
+          "hash": "4e39a74ca6de",
+          "url": "poltavska-oblast/houses-12.4e39a74ca6de.json"
+        },
+        "13": {
+          "bytes": 12628,
+          "count": 111,
+          "hash": "51a0eada8d36",
+          "url": "poltavska-oblast/houses-13.51a0eada8d36.json"
+        },
+        "14": {
+          "bytes": 14494,
+          "count": 126,
+          "hash": "f59d5e89d9e7",
+          "url": "poltavska-oblast/houses-14.f59d5e89d9e7.json"
+        },
+        "15": {
+          "bytes": 14702,
+          "count": 137,
+          "hash": "eaf7ee8b9b62",
+          "url": "poltavska-oblast/houses-15.eaf7ee8b9b62.json"
+        },
+        "2": {
+          "bytes": 14701,
+          "count": 135,
+          "hash": "74bdbe067261",
+          "url": "poltavska-oblast/houses-2.74bdbe067261.json"
+        },
+        "3": {
+          "bytes": 13495,
+          "count": 106,
+          "hash": "99bee9314c78",
+          "url": "poltavska-oblast/houses-3.99bee9314c78.json"
+        },
+        "4": {
+          "bytes": 10314,
+          "count": 92,
+          "hash": "696db477da83",
+          "url": "poltavska-oblast/houses-4.696db477da83.json"
+        },
+        "5": {
+          "bytes": 8475,
+          "count": 87,
+          "hash": "745032684665",
+          "url": "poltavska-oblast/houses-5.745032684665.json"
+        },
+        "6": {
+          "bytes": 14705,
+          "count": 139,
+          "hash": "12dd2a240b0d",
+          "url": "poltavska-oblast/houses-6.12dd2a240b0d.json"
+        },
+        "7": {
+          "bytes": 27553,
+          "count": 193,
+          "hash": "9f0b8211b72e",
+          "url": "poltavska-oblast/houses-7.9f0b8211b72e.json"
+        },
+        "8": {
+          "bytes": 14438,
+          "count": 115,
+          "hash": "2c7376d2f04e",
+          "url": "poltavska-oblast/houses-8.2c7376d2f04e.json"
+        },
+        "9": {
+          "bytes": 12290,
+          "count": 118,
+          "hash": "0f199e3451cb",
+          "url": "poltavska-oblast/houses-9.0f199e3451cb.json"
+        }
+      },
+      "housesCount": 1879,
+      "settlements": {
+        "bytes": 121096,
+        "count": 936,
+        "hash": "5f03c42e2c18",
+        "url": "poltavska-oblast/settlements.5f03c42e2c18.json"
+      },
+      "settlementsCount": 936,
+      "shards": {
+        "а": {
+          "bytes": 884,
+          "count": 0,
+          "hash": "8c408552517b",
+          "url": "poltavska-oblast/streets-а.8c408552517b.json"
+        },
+        "б": {
+          "bytes": 9477,
+          "count": 35,
+          "hash": "a8757966b3e7",
+          "url": "poltavska-oblast/streets-б.a8757966b3e7.json"
+        },
+        "в": {
+          "bytes": 12099,
+          "count": 69,
+          "hash": "bd6082dfdb15",
+          "url": "poltavska-oblast/streets-в.bd6082dfdb15.json"
+        },
+        "г": {
+          "bytes": 22683,
+          "count": 211,
+          "hash": "cd1a46c7ce91",
+          "url": "poltavska-oblast/streets-г.cd1a46c7ce91.json"
+        },
+        "д": {
+          "bytes": 5993,
+          "count": 30,
+          "hash": "b2801d95d000",
+          "url": "poltavska-oblast/streets-д.b2801d95d000.json"
+        },
+        "ж": {
+          "bytes": 582,
+          "count": 0,
+          "hash": "7067bc1bb5c0",
+          "url": "poltavska-oblast/streets-ж.7067bc1bb5c0.json"
+        },
+        "з": {
+          "bytes": 5931,
+          "count": 26,
+          "hash": "b65439820aed",
+          "url": "poltavska-oblast/streets-з.b65439820aed.json"
+        },
+        "й": {
+          "bytes": 176,
+          "count": 0,
+          "hash": "9f11d74e02ba",
+          "url": "poltavska-oblast/streets-й.9f11d74e02ba.json"
+        },
+        "к": {
+          "bytes": 63146,
+          "count": 710,
+          "hash": "18306fb4991d",
+          "url": "poltavska-oblast/streets-к.18306fb4991d.json"
+        },
+        "л": {
+          "bytes": 12092,
+          "count": 97,
+          "hash": "1a6896459c00",
+          "url": "poltavska-oblast/streets-л.1a6896459c00.json"
+        },
+        "м": {
+          "bytes": 10831,
+          "count": 48,
+          "hash": "3997f8907603",
+          "url": "poltavska-oblast/streets-м.3997f8907603.json"
+        },
+        "н": {
+          "bytes": 5086,
+          "count": 17,
+          "hash": "e74ec670ffd8",
+          "url": "poltavska-oblast/streets-н.e74ec670ffd8.json"
+        },
+        "о": {
+          "bytes": 6328,
+          "count": 45,
+          "hash": "47816d001b85",
+          "url": "poltavska-oblast/streets-о.47816d001b85.json"
+        },
+        "п": {
+          "bytes": 36461,
+          "count": 364,
+          "hash": "2245efcbf909",
+          "url": "poltavska-oblast/streets-п.2245efcbf909.json"
+        },
+        "р": {
+          "bytes": 7307,
+          "count": 53,
+          "hash": "90e1a57f210a",
+          "url": "poltavska-oblast/streets-р.90e1a57f210a.json"
+        },
+        "с": {
+          "bytes": 13711,
+          "count": 60,
+          "hash": "7d2a02664a11",
+          "url": "poltavska-oblast/streets-с.7d2a02664a11.json"
+        },
+        "т": {
+          "bytes": 4062,
+          "count": 10,
+          "hash": "7515a4719ea2",
+          "url": "poltavska-oblast/streets-т.7515a4719ea2.json"
+        },
+        "у": {
+          "bytes": 2282,
+          "count": 20,
+          "hash": "22d78731a4f7",
+          "url": "poltavska-oblast/streets-у.22d78731a4f7.json"
+        },
+        "ф": {
+          "bytes": 624,
+          "count": 0,
+          "hash": "e922c4bb3337",
+          "url": "poltavska-oblast/streets-ф.e922c4bb3337.json"
+        },
+        "х": {
+          "bytes": 4200,
+          "count": 26,
+          "hash": "899f0f22a2d9",
+          "url": "poltavska-oblast/streets-х.899f0f22a2d9.json"
+        },
+        "ц": {
+          "bytes": 670,
+          "count": 0,
+          "hash": "0e193b464561",
+          "url": "poltavska-oblast/streets-ц.0e193b464561.json"
+        },
+        "ч": {
+          "bytes": 6300,
+          "count": 40,
+          "hash": "dbb16a0c99d4",
+          "url": "poltavska-oblast/streets-ч.dbb16a0c99d4.json"
+        },
+        "ш": {
+          "bytes": 3406,
+          "count": 0,
+          "hash": "fc6b1d4f5918",
+          "url": "poltavska-oblast/streets-ш.fc6b1d4f5918.json"
+        },
+        "щ": {
+          "bytes": 1161,
+          "count": 12,
+          "hash": "f0754901c6a6",
+          "url": "poltavska-oblast/streets-щ.f0754901c6a6.json"
+        },
+        "ю": {
+          "bytes": 471,
+          "count": 2,
+          "hash": "a263b5db7225",
+          "url": "poltavska-oblast/streets-ю.a263b5db7225.json"
+        },
+        "я": {
+          "bytes": 1670,
+          "count": 4,
+          "hash": "397cb9b73008",
+          "url": "poltavska-oblast/streets-я.397cb9b73008.json"
+        },
+        "є": {
+          "bytes": 718,
+          "count": 0,
+          "hash": "2ad1cedc7b0a",
+          "url": "poltavska-oblast/streets-є.2ad1cedc7b0a.json"
+        },
+        "і": {
+          "bytes": 488,
+          "count": 0,
+          "hash": "774ae177d192",
+          "url": "poltavska-oblast/streets-і.774ae177d192.json"
+        }
+      },
+      "streetsCount": 1879
+    },
+    "rivnenska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 4133,
+          "count": 16,
+          "hash": "29b6cd9eb921",
+          "url": "rivnenska-oblast/houses-0.29b6cd9eb921.json"
+        },
+        "1": {
+          "bytes": 8217,
+          "count": 27,
+          "hash": "5b7f619c9787",
+          "url": "rivnenska-oblast/houses-1.5b7f619c9787.json"
+        },
+        "10": {
+          "bytes": 2801,
+          "count": 26,
+          "hash": "89932decf330",
+          "url": "rivnenska-oblast/houses-10.89932decf330.json"
+        },
+        "11": {
+          "bytes": 1995,
+          "count": 21,
+          "hash": "447b048bc15f",
+          "url": "rivnenska-oblast/houses-11.447b048bc15f.json"
+        },
+        "12": {
+          "bytes": 3111,
+          "count": 10,
+          "hash": "65c54f2a45aa",
+          "url": "rivnenska-oblast/houses-12.65c54f2a45aa.json"
+        },
+        "13": {
+          "bytes": 941,
+          "count": 12,
+          "hash": "faa8f72e7ca1",
+          "url": "rivnenska-oblast/houses-13.faa8f72e7ca1.json"
+        },
+        "14": {
+          "bytes": 2947,
+          "count": 15,
+          "hash": "2eda87c516bc",
+          "url": "rivnenska-oblast/houses-14.2eda87c516bc.json"
+        },
+        "15": {
+          "bytes": 6045,
+          "count": 20,
+          "hash": "3e39a2c04c6f",
+          "url": "rivnenska-oblast/houses-15.3e39a2c04c6f.json"
+        },
+        "2": {
+          "bytes": 3735,
+          "count": 16,
+          "hash": "7a2e1dbe0d44",
+          "url": "rivnenska-oblast/houses-2.7a2e1dbe0d44.json"
+        },
+        "3": {
+          "bytes": 4009,
+          "count": 19,
+          "hash": "87107fc2c259",
+          "url": "rivnenska-oblast/houses-3.87107fc2c259.json"
+        },
+        "4": {
+          "bytes": 3934,
+          "count": 22,
+          "hash": "edb3737b5239",
+          "url": "rivnenska-oblast/houses-4.edb3737b5239.json"
+        },
+        "5": {
+          "bytes": 2943,
+          "count": 9,
+          "hash": "65cd61ef6765",
+          "url": "rivnenska-oblast/houses-5.65cd61ef6765.json"
+        },
+        "6": {
+          "bytes": 9737,
+          "count": 28,
+          "hash": "ad60309a706d",
+          "url": "rivnenska-oblast/houses-6.ad60309a706d.json"
+        },
+        "7": {
+          "bytes": 8020,
+          "count": 37,
+          "hash": "d706ac9dc181",
+          "url": "rivnenska-oblast/houses-7.d706ac9dc181.json"
+        },
+        "8": {
+          "bytes": 1788,
+          "count": 8,
+          "hash": "29d5465399aa",
+          "url": "rivnenska-oblast/houses-8.29d5465399aa.json"
+        },
+        "9": {
+          "bytes": 2635,
+          "count": 19,
+          "hash": "9ac9f61f62c0",
+          "url": "rivnenska-oblast/houses-9.9ac9f61f62c0.json"
+        }
+      },
+      "housesCount": 305,
+      "settlements": {
+        "bytes": 29642,
+        "count": 224,
+        "hash": "8e01481f5e9b",
+        "url": "rivnenska-oblast/settlements.8e01481f5e9b.json"
+      },
+      "settlementsCount": 224,
+      "shards": {
+        "б": {
+          "bytes": 27092,
+          "count": 385,
+          "hash": "b4871b3d5eea",
+          "url": "rivnenska-oblast/streets-б.b4871b3d5eea.json"
+        },
+        "в": {
+          "bytes": 22480,
+          "count": 321,
+          "hash": "f890671cba1f",
+          "url": "rivnenska-oblast/streets-в.f890671cba1f.json"
+        },
+        "г": {
+          "bytes": 16180,
+          "count": 225,
+          "hash": "bc6a33426b46",
+          "url": "rivnenska-oblast/streets-г.bc6a33426b46.json"
+        },
+        "д": {
+          "bytes": 22119,
+          "count": 319,
+          "hash": "1335588abc95",
+          "url": "rivnenska-oblast/streets-д.1335588abc95.json"
+        },
+        "з": {
+          "bytes": 19863,
+          "count": 276,
+          "hash": "c5021ebe0ab2",
+          "url": "rivnenska-oblast/streets-з.c5021ebe0ab2.json"
+        },
+        "к": {
+          "bytes": 41874,
+          "count": 606,
+          "hash": "b53cd8d92eb4",
+          "url": "rivnenska-oblast/streets-к.b53cd8d92eb4.json"
+        },
+        "л": {
+          "bytes": 1659,
+          "count": 16,
+          "hash": "e393699ca439",
+          "url": "rivnenska-oblast/streets-л.e393699ca439.json"
+        },
+        "м": {
+          "bytes": 11084,
+          "count": 136,
+          "hash": "9d12c05468ec",
+          "url": "rivnenska-oblast/streets-м.9d12c05468ec.json"
+        },
+        "н": {
+          "bytes": 6780,
+          "count": 93,
+          "hash": "ecad745138e2",
+          "url": "rivnenska-oblast/streets-н.ecad745138e2.json"
+        },
+        "о": {
+          "bytes": 19766,
+          "count": 285,
+          "hash": "1ad0c46245e4",
+          "url": "rivnenska-oblast/streets-о.1ad0c46245e4.json"
+        },
+        "п": {
+          "bytes": 5438,
+          "count": 68,
+          "hash": "4718293138c0",
+          "url": "rivnenska-oblast/streets-п.4718293138c0.json"
+        },
+        "р": {
+          "bytes": 12680,
+          "count": 182,
+          "hash": "e23289bf9020",
+          "url": "rivnenska-oblast/streets-р.e23289bf9020.json"
+        },
+        "с": {
+          "bytes": 25716,
+          "count": 368,
+          "hash": "f7677c90159c",
+          "url": "rivnenska-oblast/streets-с.f7677c90159c.json"
+        },
+        "т": {
+          "bytes": 11232,
+          "count": 165,
+          "hash": "b313500f2b8a",
+          "url": "rivnenska-oblast/streets-т.b313500f2b8a.json"
+        },
+        "у": {
+          "bytes": 548,
+          "count": 2,
+          "hash": "323e76633d23",
+          "url": "rivnenska-oblast/streets-у.323e76633d23.json"
+        },
+        "х": {
+          "bytes": 2153,
+          "count": 22,
+          "hash": "1ecba7af8ed3",
+          "url": "rivnenska-oblast/streets-х.1ecba7af8ed3.json"
+        },
+        "ш": {
+          "bytes": 4987,
+          "count": 74,
+          "hash": "8c15c5ed3b7e",
+          "url": "rivnenska-oblast/streets-ш.8c15c5ed3b7e.json"
+        },
+        "я": {
+          "bytes": 2363,
+          "count": 32,
+          "hash": "9ff3021ac147",
+          "url": "rivnenska-oblast/streets-я.9ff3021ac147.json"
+        },
+        "і": {
+          "bytes": 3683,
+          "count": 42,
+          "hash": "4ad6bd36886c",
+          "url": "rivnenska-oblast/streets-і.4ad6bd36886c.json"
+        }
+      },
+      "streetsCount": 3617
+    },
+    "sumska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 6097,
+          "count": 43,
+          "hash": "d44772d556c8",
+          "url": "sumska-oblast/houses-0.d44772d556c8.json"
+        },
+        "1": {
+          "bytes": 8626,
+          "count": 55,
+          "hash": "c122d07d0fe6",
+          "url": "sumska-oblast/houses-1.c122d07d0fe6.json"
+        },
+        "10": {
+          "bytes": 7514,
+          "count": 59,
+          "hash": "a9440cb2ea0c",
+          "url": "sumska-oblast/houses-10.a9440cb2ea0c.json"
+        },
+        "11": {
+          "bytes": 7031,
+          "count": 56,
+          "hash": "bc840da70e73",
+          "url": "sumska-oblast/houses-11.bc840da70e73.json"
+        },
+        "12": {
+          "bytes": 5897,
+          "count": 46,
+          "hash": "2e5b52dd7195",
+          "url": "sumska-oblast/houses-12.2e5b52dd7195.json"
+        },
+        "13": {
+          "bytes": 8524,
+          "count": 51,
+          "hash": "4384c3f8fc22",
+          "url": "sumska-oblast/houses-13.4384c3f8fc22.json"
+        },
+        "14": {
+          "bytes": 6437,
+          "count": 53,
+          "hash": "f92ddfed69e8",
+          "url": "sumska-oblast/houses-14.f92ddfed69e8.json"
+        },
+        "15": {
+          "bytes": 8948,
+          "count": 68,
+          "hash": "dbbba81957ba",
+          "url": "sumska-oblast/houses-15.dbbba81957ba.json"
+        },
+        "2": {
+          "bytes": 7119,
+          "count": 56,
+          "hash": "e0756c42bd58",
+          "url": "sumska-oblast/houses-2.e0756c42bd58.json"
+        },
+        "3": {
+          "bytes": 7542,
+          "count": 54,
+          "hash": "1ef87fb0cd68",
+          "url": "sumska-oblast/houses-3.1ef87fb0cd68.json"
+        },
+        "4": {
+          "bytes": 7674,
+          "count": 55,
+          "hash": "1226af4c7e71",
+          "url": "sumska-oblast/houses-4.1226af4c7e71.json"
+        },
+        "5": {
+          "bytes": 7445,
+          "count": 52,
+          "hash": "ce0f210585a2",
+          "url": "sumska-oblast/houses-5.ce0f210585a2.json"
+        },
+        "6": {
+          "bytes": 8117,
+          "count": 65,
+          "hash": "39be2cf1d500",
+          "url": "sumska-oblast/houses-6.39be2cf1d500.json"
+        },
+        "7": {
+          "bytes": 11092,
+          "count": 71,
+          "hash": "23623a83c30f",
+          "url": "sumska-oblast/houses-7.23623a83c30f.json"
+        },
+        "8": {
+          "bytes": 7331,
+          "count": 44,
+          "hash": "982cf840267e",
+          "url": "sumska-oblast/houses-8.982cf840267e.json"
+        },
+        "9": {
+          "bytes": 8027,
+          "count": 57,
+          "hash": "17cc57712e97",
+          "url": "sumska-oblast/houses-9.17cc57712e97.json"
+        }
+      },
+      "housesCount": 885,
+      "settlements": {
+        "bytes": 55508,
+        "count": 432,
+        "hash": "b47f34423977",
+        "url": "sumska-oblast/settlements.b47f34423977.json"
+      },
+      "settlementsCount": 432,
+      "shards": {
+        "а": {
+          "bytes": 1053,
+          "count": 0,
+          "hash": "a5aba136d2a1",
+          "url": "sumska-oblast/streets-а.a5aba136d2a1.json"
+        },
+        "б": {
+          "bytes": 5957,
+          "count": 16,
+          "hash": "723f3f6b40f1",
+          "url": "sumska-oblast/streets-б.723f3f6b40f1.json"
+        },
+        "в": {
+          "bytes": 2927,
+          "count": 0,
+          "hash": "d76200200259",
+          "url": "sumska-oblast/streets-в.d76200200259.json"
+        },
+        "г": {
+          "bytes": 4081,
+          "count": 1,
+          "hash": "3f095d03de15",
+          "url": "sumska-oblast/streets-г.3f095d03de15.json"
+        },
+        "д": {
+          "bytes": 1995,
+          "count": 1,
+          "hash": "bad9e4cafa57",
+          "url": "sumska-oblast/streets-д.bad9e4cafa57.json"
+        },
+        "ж": {
+          "bytes": 585,
+          "count": 0,
+          "hash": "20cdad4b323b",
+          "url": "sumska-oblast/streets-ж.20cdad4b323b.json"
+        },
+        "з": {
+          "bytes": 2424,
+          "count": 1,
+          "hash": "a134f221f0cc",
+          "url": "sumska-oblast/streets-з.a134f221f0cc.json"
+        },
+        "к": {
+          "bytes": 11020,
+          "count": 70,
+          "hash": "5b506966cf19",
+          "url": "sumska-oblast/streets-к.5b506966cf19.json"
+        },
+        "л": {
+          "bytes": 3437,
+          "count": 27,
+          "hash": "e5c668b27cb2",
+          "url": "sumska-oblast/streets-л.e5c668b27cb2.json"
+        },
+        "м": {
+          "bytes": 2711,
+          "count": 0,
+          "hash": "24b4870d992b",
+          "url": "sumska-oblast/streets-м.24b4870d992b.json"
+        },
+        "н": {
+          "bytes": 2509,
+          "count": 18,
+          "hash": "5f31d07c7be5",
+          "url": "sumska-oblast/streets-н.5f31d07c7be5.json"
+        },
+        "о": {
+          "bytes": 2635,
+          "count": 15,
+          "hash": "f3eacb314577",
+          "url": "sumska-oblast/streets-о.f3eacb314577.json"
+        },
+        "п": {
+          "bytes": 6237,
+          "count": 21,
+          "hash": "a3fe4216f6ee",
+          "url": "sumska-oblast/streets-п.a3fe4216f6ee.json"
+        },
+        "р": {
+          "bytes": 3044,
+          "count": 18,
+          "hash": "c39fa6f2f732",
+          "url": "sumska-oblast/streets-р.c39fa6f2f732.json"
+        },
+        "с": {
+          "bytes": 51918,
+          "count": 562,
+          "hash": "952704c7f73f",
+          "url": "sumska-oblast/streets-с.952704c7f73f.json"
+        },
+        "т": {
+          "bytes": 1948,
+          "count": 3,
+          "hash": "981214775d17",
+          "url": "sumska-oblast/streets-т.981214775d17.json"
+        },
+        "у": {
+          "bytes": 379,
+          "count": 0,
+          "hash": "0fb71e29d6de",
+          "url": "sumska-oblast/streets-у.0fb71e29d6de.json"
+        },
+        "ф": {
+          "bytes": 161,
+          "count": 0,
+          "hash": "58436713454c",
+          "url": "sumska-oblast/streets-ф.58436713454c.json"
+        },
+        "х": {
+          "bytes": 1154,
+          "count": 0,
+          "hash": "5c11b5b4bef9",
+          "url": "sumska-oblast/streets-х.5c11b5b4bef9.json"
+        },
+        "ц": {
+          "bytes": 173,
+          "count": 0,
+          "hash": "708dda33f0d9",
+          "url": "sumska-oblast/streets-ц.708dda33f0d9.json"
+        },
+        "ч": {
+          "bytes": 1701,
+          "count": 0,
+          "hash": "45d476a5ae79",
+          "url": "sumska-oblast/streets-ч.45d476a5ae79.json"
+        },
+        "ш": {
+          "bytes": 10358,
+          "count": 132,
+          "hash": "bec1f7ba639a",
+          "url": "sumska-oblast/streets-ш.bec1f7ba639a.json"
+        },
+        "щ": {
+          "bytes": 361,
+          "count": 0,
+          "hash": "31c3e66885c6",
+          "url": "sumska-oblast/streets-щ.31c3e66885c6.json"
+        },
+        "ю": {
+          "bytes": 243,
+          "count": 0,
+          "hash": "b0cb3b8b9b32",
+          "url": "sumska-oblast/streets-ю.b0cb3b8b9b32.json"
+        },
+        "я": {
+          "bytes": 1220,
+          "count": 0,
+          "hash": "4aff1a4c150f",
+          "url": "sumska-oblast/streets-я.4aff1a4c150f.json"
+        },
+        "і": {
+          "bytes": 367,
+          "count": 0,
+          "hash": "94a31381af7c",
+          "url": "sumska-oblast/streets-і.94a31381af7c.json"
+        }
+      },
+      "streetsCount": 885
+    },
+    "ternopilska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 145673,
+          "count": 402,
+          "hash": "7336af54dd6d",
+          "url": "ternopilska-oblast/houses-0.7336af54dd6d.json"
+        },
+        "1": {
+          "bytes": 163609,
+          "count": 444,
+          "hash": "3814bcf6cf01",
+          "url": "ternopilska-oblast/houses-1.3814bcf6cf01.json"
+        },
+        "10": {
+          "bytes": 176029,
+          "count": 535,
+          "hash": "fefcf914d54f",
+          "url": "ternopilska-oblast/houses-10.fefcf914d54f.json"
+        },
+        "11": {
+          "bytes": 225360,
+          "count": 709,
+          "hash": "3aa9d572d1af",
+          "url": "ternopilska-oblast/houses-11.3aa9d572d1af.json"
+        },
+        "12": {
+          "bytes": 236186,
+          "count": 653,
+          "hash": "29f154711ff4",
+          "url": "ternopilska-oblast/houses-12.29f154711ff4.json"
+        },
+        "13": {
+          "bytes": 137285,
+          "count": 409,
+          "hash": "f92cbb9d0893",
+          "url": "ternopilska-oblast/houses-13.f92cbb9d0893.json"
+        },
+        "14": {
+          "bytes": 196264,
+          "count": 502,
+          "hash": "7fbd79aa6fc8",
+          "url": "ternopilska-oblast/houses-14.7fbd79aa6fc8.json"
+        },
+        "15": {
+          "bytes": 297122,
+          "count": 814,
+          "hash": "9128a99ebc5d",
+          "url": "ternopilska-oblast/houses-15.9128a99ebc5d.json"
+        },
+        "2": {
+          "bytes": 278812,
+          "count": 671,
+          "hash": "e8bff06f54df",
+          "url": "ternopilska-oblast/houses-2.e8bff06f54df.json"
+        },
+        "3": {
+          "bytes": 286756,
+          "count": 843,
+          "hash": "ac2469e5d937",
+          "url": "ternopilska-oblast/houses-3.ac2469e5d937.json"
+        },
+        "4": {
+          "bytes": 311040,
+          "count": 825,
+          "hash": "c1bdb53c91e2",
+          "url": "ternopilska-oblast/houses-4.c1bdb53c91e2.json"
+        },
+        "5": {
+          "bytes": 216380,
+          "count": 591,
+          "hash": "d962d3ed12bf",
+          "url": "ternopilska-oblast/houses-5.d962d3ed12bf.json"
+        },
+        "6": {
+          "bytes": 743284,
+          "count": 1325,
+          "hash": "43558d1f3c05",
+          "url": "ternopilska-oblast/houses-6.43558d1f3c05.json"
+        },
+        "7": {
+          "bytes": 326420,
+          "count": 854,
+          "hash": "80215200e15d",
+          "url": "ternopilska-oblast/houses-7.80215200e15d.json"
+        },
+        "8": {
+          "bytes": 260756,
+          "count": 755,
+          "hash": "f637b8cfa52b",
+          "url": "ternopilska-oblast/houses-8.f637b8cfa52b.json"
+        },
+        "9": {
+          "bytes": 194687,
+          "count": 539,
+          "hash": "344f288c0865",
+          "url": "ternopilska-oblast/houses-9.344f288c0865.json"
+        }
+      },
+      "housesCount": 10871,
+      "settlements": {
+        "bytes": 120034,
+        "count": 955,
+        "hash": "9f94f895888c",
+        "url": "ternopilska-oblast/settlements.9f94f895888c.json"
+      },
+      "settlementsCount": 955,
+      "shards": {
+        "а": {
+          "bytes": 3415,
+          "count": 35,
+          "hash": "f453657fa5b5",
+          "url": "ternopilska-oblast/streets-а.f453657fa5b5.json"
+        },
+        "б": {
+          "bytes": 102022,
+          "count": 1200,
+          "hash": "826a09fbd268",
+          "url": "ternopilska-oblast/streets-б.826a09fbd268.json"
+        },
+        "в": {
+          "bytes": 79344,
+          "count": 904,
+          "hash": "5536b66c9072",
+          "url": "ternopilska-oblast/streets-в.5536b66c9072.json"
+        },
+        "г": {
+          "bytes": 60161,
+          "count": 680,
+          "hash": "fd6c5a2b1488",
+          "url": "ternopilska-oblast/streets-г.fd6c5a2b1488.json"
+        },
+        "д": {
+          "bytes": 37678,
+          "count": 426,
+          "hash": "70db5d3e90ea",
+          "url": "ternopilska-oblast/streets-д.70db5d3e90ea.json"
+        },
+        "ж": {
+          "bytes": 8711,
+          "count": 97,
+          "hash": "613bef883b6e",
+          "url": "ternopilska-oblast/streets-ж.613bef883b6e.json"
+        },
+        "з": {
+          "bytes": 63335,
+          "count": 714,
+          "hash": "3c537ae6cbc5",
+          "url": "ternopilska-oblast/streets-з.3c537ae6cbc5.json"
+        },
+        "й": {
+          "bytes": 1550,
+          "count": 18,
+          "hash": "1244fc227b1d",
+          "url": "ternopilska-oblast/streets-й.1244fc227b1d.json"
+        },
+        "к": {
+          "bytes": 103682,
+          "count": 1186,
+          "hash": "6693ab466ba2",
+          "url": "ternopilska-oblast/streets-к.6693ab466ba2.json"
+        },
+        "л": {
+          "bytes": 36547,
+          "count": 432,
+          "hash": "46727298b4ef",
+          "url": "ternopilska-oblast/streets-л.46727298b4ef.json"
+        },
+        "м": {
+          "bytes": 60036,
+          "count": 642,
+          "hash": "4fb3bdc9ccf6",
+          "url": "ternopilska-oblast/streets-м.4fb3bdc9ccf6.json"
+        },
+        "н": {
+          "bytes": 29420,
+          "count": 332,
+          "hash": "163747b5c887",
+          "url": "ternopilska-oblast/streets-н.163747b5c887.json"
+        },
+        "о": {
+          "bytes": 21875,
+          "count": 247,
+          "hash": "cedda022a5fa",
+          "url": "ternopilska-oblast/streets-о.cedda022a5fa.json"
+        },
+        "п": {
+          "bytes": 77200,
+          "count": 881,
+          "hash": "8bbed0966cee",
+          "url": "ternopilska-oblast/streets-п.8bbed0966cee.json"
+        },
+        "р": {
+          "bytes": 24776,
+          "count": 279,
+          "hash": "77e70247e88a",
+          "url": "ternopilska-oblast/streets-р.77e70247e88a.json"
+        },
+        "с": {
+          "bytes": 81432,
+          "count": 920,
+          "hash": "5f22493b3f17",
+          "url": "ternopilska-oblast/streets-с.5f22493b3f17.json"
+        },
+        "т": {
+          "bytes": 61415,
+          "count": 689,
+          "hash": "0862aff2c037",
+          "url": "ternopilska-oblast/streets-т.0862aff2c037.json"
+        },
+        "у": {
+          "bytes": 11114,
+          "count": 128,
+          "hash": "9e1e9a3f50f6",
+          "url": "ternopilska-oblast/streets-у.9e1e9a3f50f6.json"
+        },
+        "ф": {
+          "bytes": 1402,
+          "count": 12,
+          "hash": "25eb18145b67",
+          "url": "ternopilska-oblast/streets-ф.25eb18145b67.json"
+        },
+        "х": {
+          "bytes": 15113,
+          "count": 162,
+          "hash": "e75ae15fc21e",
+          "url": "ternopilska-oblast/streets-х.e75ae15fc21e.json"
+        },
+        "ц": {
+          "bytes": 5294,
+          "count": 61,
+          "hash": "83acda8e3373",
+          "url": "ternopilska-oblast/streets-ц.83acda8e3373.json"
+        },
+        "ч": {
+          "bytes": 23071,
+          "count": 263,
+          "hash": "3bc2994b66c4",
+          "url": "ternopilska-oblast/streets-ч.3bc2994b66c4.json"
+        },
+        "ш": {
+          "bytes": 22368,
+          "count": 256,
+          "hash": "df3ee20a4815",
+          "url": "ternopilska-oblast/streets-ш.df3ee20a4815.json"
+        },
+        "щ": {
+          "bytes": 2034,
+          "count": 20,
+          "hash": "f9b322abe5d8",
+          "url": "ternopilska-oblast/streets-щ.f9b322abe5d8.json"
+        },
+        "ю": {
+          "bytes": 1878,
+          "count": 19,
+          "hash": "7bd0802daf8d",
+          "url": "ternopilska-oblast/streets-ю.7bd0802daf8d.json"
+        },
+        "я": {
+          "bytes": 9227,
+          "count": 101,
+          "hash": "2c671aaf2aa3",
+          "url": "ternopilska-oblast/streets-я.2c671aaf2aa3.json"
+        },
+        "є": {
+          "bytes": 308,
+          "count": 2,
+          "hash": "d3723f4a98ab",
+          "url": "ternopilska-oblast/streets-є.d3723f4a98ab.json"
+        },
+        "і": {
+          "bytes": 14316,
+          "count": 165,
+          "hash": "680afa6c85e2",
+          "url": "ternopilska-oblast/streets-і.680afa6c85e2.json"
+        }
+      },
+      "streetsCount": 10871
+    },
+    "zakarpatska-oblast": {
+      "houses": {
+        "0": {
+          "bytes": 223199,
+          "count": 358,
+          "hash": "06da2ff4fe77",
+          "url": "zakarpatska-oblast/houses-0.06da2ff4fe77.json"
+        },
+        "1": {
+          "bytes": 319371,
+          "count": 631,
+          "hash": "40012720047d",
+          "url": "zakarpatska-oblast/houses-1.40012720047d.json"
+        },
+        "10": {
+          "bytes": 307709,
+          "count": 728,
+          "hash": "620eddd560c9",
+          "url": "zakarpatska-oblast/houses-10.620eddd560c9.json"
+        },
+        "11": {
+          "bytes": 172688,
+          "count": 355,
+          "hash": "2058774822eb",
+          "url": "zakarpatska-oblast/houses-11.2058774822eb.json"
+        },
+        "12": {
+          "bytes": 176039,
+          "count": 365,
+          "hash": "b703e54c750b",
+          "url": "zakarpatska-oblast/houses-12.b703e54c750b.json"
+        },
+        "13": {
+          "bytes": 314605,
+          "count": 559,
+          "hash": "64919d5d89a9",
+          "url": "zakarpatska-oblast/houses-13.64919d5d89a9.json"
+        },
+        "14": {
+          "bytes": 189428,
+          "count": 462,
+          "hash": "c4229c02ba47",
+          "url": "zakarpatska-oblast/houses-14.c4229c02ba47.json"
+        },
+        "15": {
+          "bytes": 154542,
+          "count": 340,
+          "hash": "19126f26ee14",
+          "url": "zakarpatska-oblast/houses-15.19126f26ee14.json"
+        },
+        "2": {
+          "bytes": 176538,
+          "count": 382,
+          "hash": "c6d1e3ee0e3e",
+          "url": "zakarpatska-oblast/houses-2.c6d1e3ee0e3e.json"
+        },
+        "3": {
+          "bytes": 186892,
+          "count": 430,
+          "hash": "50b441f05abc",
+          "url": "zakarpatska-oblast/houses-3.50b441f05abc.json"
+        },
+        "4": {
+          "bytes": 279095,
+          "count": 520,
+          "hash": "350ddd063b86",
+          "url": "zakarpatska-oblast/houses-4.350ddd063b86.json"
+        },
+        "5": {
+          "bytes": 153822,
+          "count": 365,
+          "hash": "c5a7009e77ef",
+          "url": "zakarpatska-oblast/houses-5.c5a7009e77ef.json"
+        },
+        "6": {
+          "bytes": 170625,
+          "count": 474,
+          "hash": "0b975682c241",
+          "url": "zakarpatska-oblast/houses-6.0b975682c241.json"
+        },
+        "7": {
+          "bytes": 925442,
+          "count": 1076,
+          "hash": "09864b84fbbc",
+          "url": "zakarpatska-oblast/houses-7.09864b84fbbc.json"
+        },
+        "8": {
+          "bytes": 450907,
+          "count": 736,
+          "hash": "7e922ac5faaf",
+          "url": "zakarpatska-oblast/houses-8.7e922ac5faaf.json"
+        },
+        "9": {
+          "bytes": 194264,
+          "count": 482,
+          "hash": "9cdb33e1051e",
+          "url": "zakarpatska-oblast/houses-9.9cdb33e1051e.json"
+        }
+      },
+      "housesCount": 8263,
+      "settlements": {
+        "bytes": 71526,
+        "count": 546,
+        "hash": "b6133e85feb9",
+        "url": "zakarpatska-oblast/settlements.b6133e85feb9.json"
+      },
+      "settlementsCount": 546,
+      "shards": {
+        "а": {
+          "bytes": 1776,
+          "count": 21,
+          "hash": "8e4331ce543c",
+          "url": "zakarpatska-oblast/streets-а.8e4331ce543c.json"
+        },
+        "б": {
+          "bytes": 53450,
+          "count": 774,
+          "hash": "1c03cac3eecc",
+          "url": "zakarpatska-oblast/streets-б.1c03cac3eecc.json"
+        },
+        "в": {
+          "bytes": 77711,
+          "count": 1133,
+          "hash": "fb7ab43159ea",
+          "url": "zakarpatska-oblast/streets-в.fb7ab43159ea.json"
+        },
+        "г": {
+          "bytes": 21286,
+          "count": 297,
+          "hash": "b76773e87987",
+          "url": "zakarpatska-oblast/streets-г.b76773e87987.json"
+        },
+        "д": {
+          "bytes": 20701,
+          "count": 307,
+          "hash": "d1378979b128",
+          "url": "zakarpatska-oblast/streets-д.d1378979b128.json"
+        },
+        "е": {
+          "bytes": 745,
+          "count": 11,
+          "hash": "3aa71fdbb9db",
+          "url": "zakarpatska-oblast/streets-е.3aa71fdbb9db.json"
+        },
+        "ж": {
+          "bytes": 3205,
+          "count": 43,
+          "hash": "b1df87e26aa7",
+          "url": "zakarpatska-oblast/streets-ж.b1df87e26aa7.json"
+        },
+        "з": {
+          "bytes": 16200,
+          "count": 226,
+          "hash": "65feccbbce82",
+          "url": "zakarpatska-oblast/streets-з.65feccbbce82.json"
+        },
+        "к": {
+          "bytes": 51833,
+          "count": 735,
+          "hash": "2aa6dc2a7739",
+          "url": "zakarpatska-oblast/streets-к.2aa6dc2a7739.json"
+        },
+        "л": {
+          "bytes": 19077,
+          "count": 268,
+          "hash": "ced5cd505877",
+          "url": "zakarpatska-oblast/streets-л.ced5cd505877.json"
+        },
+        "м": {
+          "bytes": 47609,
+          "count": 655,
+          "hash": "1609cad1fb29",
+          "url": "zakarpatska-oblast/streets-м.1609cad1fb29.json"
+        },
+        "н": {
+          "bytes": 24811,
+          "count": 354,
+          "hash": "486db7940870",
+          "url": "zakarpatska-oblast/streets-н.486db7940870.json"
+        },
+        "о": {
+          "bytes": 21164,
+          "count": 310,
+          "hash": "66053e158095",
+          "url": "zakarpatska-oblast/streets-о.66053e158095.json"
+        },
+        "п": {
+          "bytes": 23623,
+          "count": 312,
+          "hash": "dd9a492659d9",
+          "url": "zakarpatska-oblast/streets-п.dd9a492659d9.json"
+        },
+        "р": {
+          "bytes": 19652,
+          "count": 268,
+          "hash": "e0569729505d",
+          "url": "zakarpatska-oblast/streets-р.e0569729505d.json"
+        },
+        "с": {
+          "bytes": 39820,
+          "count": 568,
+          "hash": "471d99a167c1",
+          "url": "zakarpatska-oblast/streets-с.471d99a167c1.json"
+        },
+        "т": {
+          "bytes": 32140,
+          "count": 453,
+          "hash": "7117121b20f2",
+          "url": "zakarpatska-oblast/streets-т.7117121b20f2.json"
+        },
+        "у": {
+          "bytes": 36407,
+          "count": 528,
+          "hash": "9a216aac52df",
+          "url": "zakarpatska-oblast/streets-у.9a216aac52df.json"
+        },
+        "ф": {
+          "bytes": 2715,
+          "count": 39,
+          "hash": "1c3460223a15",
+          "url": "zakarpatska-oblast/streets-ф.1c3460223a15.json"
+        },
+        "х": {
+          "bytes": 19206,
+          "count": 277,
+          "hash": "d7d2322148a1",
+          "url": "zakarpatska-oblast/streets-х.d7d2322148a1.json"
+        },
+        "ц": {
+          "bytes": 432,
+          "count": 5,
+          "hash": "fee57ce68046",
+          "url": "zakarpatska-oblast/streets-ц.fee57ce68046.json"
+        },
+        "ч": {
+          "bytes": 18753,
+          "count": 270,
+          "hash": "42bd8922cac9",
+          "url": "zakarpatska-oblast/streets-ч.42bd8922cac9.json"
+        },
+        "ш": {
+          "bytes": 5919,
+          "count": 83,
+          "hash": "ff1e01eff003",
+          "url": "zakarpatska-oblast/streets-ш.ff1e01eff003.json"
+        },
+        "щ": {
+          "bytes": 500,
+          "count": 4,
+          "hash": "1009d551f508",
+          "url": "zakarpatska-oblast/streets-щ.1009d551f508.json"
+        },
+        "я": {
+          "bytes": 6492,
+          "count": 89,
+          "hash": "17069660eda0",
+          "url": "zakarpatska-oblast/streets-я.17069660eda0.json"
+        },
+        "і": {
+          "bytes": 15820,
+          "count": 233,
+          "hash": "1ead0a5030ca",
+          "url": "zakarpatska-oblast/streets-і.1ead0a5030ca.json"
+        }
+      },
+      "streetsCount": 8263
+    }
+  },
+  "version": 2
+}

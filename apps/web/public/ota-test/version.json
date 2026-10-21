@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-10-20T15:06:20.000Z",
+  "version": "2.26.0",
+  "jsBundle": {
+    "url": "https://svitlo-ua-4ze.pages.dev/ota-test/garbage-1.gz",
+    "sha256": "dca5e70bccf612d275e6f1368daa024b413441016fe46509c5f5026c64bad624",
+    "sizeBytes": 400095,
+    "version": "2.26.0"
+  }
+}

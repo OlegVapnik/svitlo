@@ -1,0 +1,391 @@
+{
+  "from": "2026-10-01",
+  "to": "2026-10-21",
+  "generatedAt": "2026-10-18T23:09:24.551Z",
+  "days": [
+    {
+      "key": "day:2026-10-12",
+      "label": "12 жовт.",
+      "start": "2026-10-12T00:00:00.000Z",
+      "end": "2026-10-12T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 360,
+      "poweredMinutes": 1080,
+      "reliabilityPct": 75,
+      "hasData": true,
+      "outageCount": 18
+    },
+    {
+      "key": "day:2026-10-13",
+      "label": "13 жовт.",
+      "start": "2026-10-13T00:00:00.000Z",
+      "end": "2026-10-13T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 240,
+      "poweredMinutes": 1200,
+      "reliabilityPct": 83.3,
+      "hasData": true,
+      "outageCount": 14
+    },
+    {
+      "key": "day:2026-10-14",
+      "label": "14 жовт.",
+      "start": "2026-10-14T00:00:00.000Z",
+      "end": "2026-10-14T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 420,
+      "poweredMinutes": 1020,
+      "reliabilityPct": 70.8,
+      "hasData": true,
+      "outageCount": 20
+    },
+    {
+      "key": "day:2026-10-15",
+      "label": "15 жовт.",
+      "start": "2026-10-15T00:00:00.000Z",
+      "end": "2026-10-15T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 300,
+      "poweredMinutes": 1140,
+      "reliabilityPct": 79.2,
+      "hasData": true,
+      "outageCount": 16
+    },
+    {
+      "key": "day:2026-10-16",
+      "label": "16 жовт.",
+      "start": "2026-10-16T00:00:00.000Z",
+      "end": "2026-10-16T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 275,
+      "poweredMinutes": 1165,
+      "reliabilityPct": 80.9,
+      "hasData": true,
+      "outageCount": 14
+    },
+    {
+      "key": "day:2026-10-17",
+      "label": "17 жовт.",
+      "start": "2026-10-17T00:00:00.000Z",
+      "end": "2026-10-17T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 180,
+      "poweredMinutes": 1260,
+      "reliabilityPct": 87.5,
+      "hasData": true,
+      "outageCount": 12
+    },
+    {
+      "key": "day:2026-10-18",
+      "label": "18 жовт.",
+      "start": "2026-10-18T00:00:00.000Z",
+      "end": "2026-10-18T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 373,
+      "poweredMinutes": 1067,
+      "reliabilityPct": 74.1,
+      "hasData": true,
+      "outageCount": 149
+    },
+    {
+      "key": "day:2026-10-19",
+      "label": "19 жовт.",
+      "start": "2026-10-19T00:00:00.000Z",
+      "end": "2026-10-19T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 320,
+      "poweredMinutes": 1120,
+      "reliabilityPct": 77.8,
+      "hasData": true,
+      "outageCount": 128
+    },
+    {
+      "key": "day:2026-10-20",
+      "label": "20 жовт.",
+      "start": "2026-10-20T00:00:00.000Z",
+      "end": "2026-10-20T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 300,
+      "poweredMinutes": 1140,
+      "reliabilityPct": 79.2,
+      "hasData": true,
+      "outageCount": 130
+    },
+    {
+      "key": "day:2026-10-21",
+      "label": "21 жовт.",
+      "start": "2026-10-21T00:00:00.000Z",
+      "end": "2026-10-21T23:59:59.999Z",
+      "windowMinutes": 1440,
+      "outageMinutes": 313,
+      "poweredMinutes": 1127,
+      "reliabilityPct": 78.3,
+      "hasData": true,
+      "outageCount": 140
+    }
+  ],
+  "weeks": [
+    {
+      "key": "week:2026-10-05",
+      "label": "5 жовт. – 11 жовт.",
+      "start": "2026-10-05T00:00:00.000Z",
+      "end": "2026-10-11T23:59:59.999Z",
+      "windowMinutes": 10080,
+      "outageMinutes": 1820,
+      "poweredMinutes": 8260,
+      "reliabilityPct": 81.9,
+      "hasData": true,
+      "outageCount": 95
+    },
+    {
+      "key": "week:2026-10-12",
+      "label": "12 жовт. – 18 жовт.",
+      "start": "2026-10-12T00:00:00.000Z",
+      "end": "2026-10-18T23:59:59.999Z",
+      "windowMinutes": 10080,
+      "outageMinutes": 2148,
+      "poweredMinutes": 7932,
+      "reliabilityPct": 78.7,
+      "hasData": true,
+      "outageCount": 243
+    },
+    {
+      "key": "week:2026-10-19",
+      "label": "19 жовт. – 25 жовт.",
+      "start": "2026-10-19T00:00:00.000Z",
+      "end": "2026-10-25T23:59:59.999Z",
+      "windowMinutes": 4320,
+      "outageMinutes": 933,
+      "poweredMinutes": 3387,
+      "reliabilityPct": 78.4,
+      "hasData": true,
+      "outageCount": 398
+    }
+  ],
+  "months": [
+    {
+      "key": "month:2026-09",
+      "label": "вересень 2026 р.",
+      "start": "2026-09-01T00:00:00.000Z",
+      "end": "2026-09-30T23:59:59.999Z",
+      "windowMinutes": 43200,
+      "outageMinutes": 5120,
+      "poweredMinutes": 38080,
+      "reliabilityPct": 88.1,
+      "hasData": true,
+      "outageCount": 412
+    },
+    {
+      "key": "month:2026-10",
+      "label": "жовтень 2026 р.",
+      "start": "2026-10-01T00:00:00.000Z",
+      "end": "2026-10-21T23:59:59.999Z",
+      "windowMinutes": 30240,
+      "outageMinutes": 6240,
+      "poweredMinutes": 24000,
+      "reliabilityPct": 79.4,
+      "hasData": true,
+      "outageCount": 820
+    }
+  ],
+  "groups": [
+    {
+      "queue": "5/1",
+      "windowMinutes": 4320,
+      "outageMinutes": 1110,
+      "poweredMinutes": 3210,
+      "reliabilityPct": 74.3,
+      "hasData": true
+    },
+    {
+      "queue": "5/2",
+      "windowMinutes": 4320,
+      "outageMinutes": 1110,
+      "poweredMinutes": 3210,
+      "reliabilityPct": 74.3,
+      "hasData": true
+    },
+    {
+      "queue": "6/2",
+      "windowMinutes": 4320,
+      "outageMinutes": 1110,
+      "poweredMinutes": 3210,
+      "reliabilityPct": 74.3,
+      "hasData": true
+    },
+    {
+      "queue": "1/1",
+      "windowMinutes": 4320,
+      "outageMinutes": 1050,
+      "poweredMinutes": 3270,
+      "reliabilityPct": 75.7,
+      "hasData": true
+    },
+    {
+      "queue": "2/2",
+      "windowMinutes": 4320,
+      "outageMinutes": 990,
+      "poweredMinutes": 3330,
+      "reliabilityPct": 77.1,
+      "hasData": true
+    },
+    {
+      "queue": "2/1",
+      "windowMinutes": 4320,
+      "outageMinutes": 960,
+      "poweredMinutes": 3360,
+      "reliabilityPct": 77.8,
+      "hasData": true
+    },
+    {
+      "queue": "3/1",
+      "windowMinutes": 4320,
+      "outageMinutes": 960,
+      "poweredMinutes": 3360,
+      "reliabilityPct": 77.8,
+      "hasData": true
+    },
+    {
+      "queue": "6/1",
+      "windowMinutes": 4320,
+      "outageMinutes": 960,
+      "poweredMinutes": 3360,
+      "reliabilityPct": 77.8,
+      "hasData": true
+    },
+    {
+      "queue": "1/2",
+      "windowMinutes": 4320,
+      "outageMinutes": 870,
+      "poweredMinutes": 3450,
+      "reliabilityPct": 79.9,
+      "hasData": true
+    },
+    {
+      "queue": "3/2",
+      "windowMinutes": 4320,
+      "outageMinutes": 840,
+      "poweredMinutes": 3480,
+      "reliabilityPct": 80.6,
+      "hasData": true
+    },
+    {
+      "queue": "4/2",
+      "windowMinutes": 4320,
+      "outageMinutes": 840,
+      "poweredMinutes": 3480,
+      "reliabilityPct": 80.6,
+      "hasData": true
+    },
+    {
+      "queue": "4/1",
+      "windowMinutes": 4320,
+      "outageMinutes": 810,
+      "poweredMinutes": 3510,
+      "reliabilityPct": 81.3,
+      "hasData": true
+    }
+  ],
+  "byRegionSummary": [
+    {
+      "region": "kyiv-city",
+      "nameUa": "Київ",
+      "windowMinutes": 2880,
+      "outageMinutes": 951,
+      "poweredMinutes": 1929,
+      "reliabilityPct": 67,
+      "outageCount": 1901,
+      "hasData": true,
+      "daysKnown": 2
+    },
+    {
+      "region": "kiivska-oblast",
+      "nameUa": "Київська область",
+      "windowMinutes": 1440,
+      "outageMinutes": 400,
+      "poweredMinutes": 1040,
+      "reliabilityPct": 72.2,
+      "outageCount": 21,
+      "hasData": true,
+      "daysKnown": 1
+    },
+    {
+      "region": "kyivska-oblast",
+      "nameUa": "Київська область",
+      "windowMinutes": 2880,
+      "outageMinutes": 755,
+      "poweredMinutes": 2125,
+      "reliabilityPct": 73.8,
+      "outageCount": 302,
+      "hasData": true,
+      "daysKnown": 2
+    },
+    {
+      "region": "cherkaska-oblast",
+      "nameUa": "Черкаська область",
+      "windowMinutes": 1440,
+      "outageMinutes": 355,
+      "poweredMinutes": 1085,
+      "reliabilityPct": 75.3,
+      "outageCount": 30,
+      "hasData": true,
+      "daysKnown": 1
+    },
+    {
+      "region": "zhytomyrska-oblast",
+      "nameUa": "Житомирська область",
+      "windowMinutes": 2880,
+      "outageMinutes": 680,
+      "poweredMinutes": 2200,
+      "reliabilityPct": 76.4,
+      "outageCount": 161,
+      "hasData": true,
+      "daysKnown": 2
+    },
+    {
+      "region": "chernihivska-oblast",
+      "nameUa": "Чернігівська область",
+      "windowMinutes": 4320,
+      "outageMinutes": 968,
+      "poweredMinutes": 3352,
+      "reliabilityPct": 77.6,
+      "outageCount": 291,
+      "hasData": true,
+      "daysKnown": 3
+    },
+    {
+      "region": "poltavska-oblast",
+      "nameUa": "Полтавська область",
+      "windowMinutes": 4320,
+      "outageMinutes": 940,
+      "poweredMinutes": 3380,
+      "reliabilityPct": 78.2,
+      "outageCount": 273,
+      "hasData": true,
+      "daysKnown": 3
+    },
+    {
+      "region": "sumska-oblast",
+      "nameUa": "Сумська область",
+      "windowMinutes": 2880,
+      "outageMinutes": 618,
+      "poweredMinutes": 2262,
+      "reliabilityPct": 78.5,
+      "outageCount": 247,
+      "hasData": true,
+      "daysKnown": 2
+    },
+    {
+      "region": "kharkivska-oblast",
+      "nameUa": "Харківська область",
+      "windowMinutes": 2880,
+      "outageMinutes": 600,
+      "poweredMinutes": 2280,
+      "reliabilityPct": 79.2,
+      "outageCount": 143,
+      "hasData": true,
+      "daysKnown": 2
+    }
+  ],
+  "queue": null
+}

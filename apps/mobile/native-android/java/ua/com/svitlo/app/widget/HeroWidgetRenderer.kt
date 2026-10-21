@@ -347,7 +347,10 @@ class HeroWidgetRenderer(private val density: Float) {
         textPaint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         textPaint.textSize = unit(11f)
         textPaint.color = Color.parseColor("#A1A1AA")
-        val cleanDetail = if (data.detail.equals("null", ignoreCase = true)) "" else data.detail
+        var cleanDetail = if (data.detail.equals("null", ignoreCase = true)) "" else data.detail
+        if (cleanDetail.startsWith("Світло є. ")) {
+            cleanDetail = cleanDetail.removePrefix("Світло є. ")
+        }
         val detailMaxWidth = max(0f, width - pad * 2 - timerWidth - unit(8f))
         canvas.drawText(
             fit(cleanDetail, unit(11f), detailMaxWidth),

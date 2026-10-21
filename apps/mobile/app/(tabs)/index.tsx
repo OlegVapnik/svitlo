@@ -210,9 +210,9 @@ export default function HomeScreen() {
     }
     if (state === 'on') {
       if (summary?.nextStartsAt) {
-        return `Світло є. Наступне відключення о ${minutesToHm(minutesOfDay(summary.nextStartsAt, today))}`;
+        return `Наступне відключення о ${minutesToHm(minutesOfDay(summary.nextStartsAt, today))}`;
       }
-      return 'Світло є. Відключень не заплановано';
+      return 'Відключень за графіком не заплановано';
     }
     if (state === 'allClear') return 'Світло є, відключень на добу немає';
     return 'Графік ще не опубліковано';
