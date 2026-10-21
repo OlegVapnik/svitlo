@@ -1,0 +1,16 @@
+{
+  "name": "svitlo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build --workspace @svitlo/web && npm run build --workspace @svitlo/api"
+  },
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "apps/mobile",
+    "packages/shared",
+    "packages/core"
+  ]
+}

@@ -1,0 +1,75 @@
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { cn } from '../../lib/cn.js';
+import { hapticTick } from '../../lib/haptics.js';
+
+/**
+ * Переключатель «Сьогодні / Завтра» над шкалой 24 часа.
+ *
+ * Почему не радиокнопки и не табы, а две крупные кнопки: это самый частый переход на
+ * главной (спросить «а завтра?»), и он должен стоять одно касание от шкалы. Радиокнопки
+ * визуально мельчат, а полноценный tablist с ролями здесь избыточен — это не навигация
+ * по разделам, а выбор одного из двух наборов данных, поэтому роль группы честнее.
+ *
+ * Высота 44px: палец, а не курсор.
+ *
+ * Подписи не обрезаются: `truncate` здесь превращал «Сьогодні» в «Сього…», и человек
+ * переставал различать дни. Переключатель не сжимается (`shrink-0`), а в узком экране
+ * растягивается до ширины контейнера — места для двух коротких слов там хватает всегда.
+ */
+export interface DaySegmentProps {
+  /** Ключ выбранного дня: YYYY-MM-DD. */
+  value: string;
+  /** Подписи дней для активного и соседнего. */
+  today: string;
+  tomorrow: string;
+  onChange: (date: string) => void;
+  className?: string;
+}
+
+export const DaySegment: React.FC<DaySegmentProps> = ({ value, today, tomorrow, onChange, className }) => {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      role="group"
+      aria-label={t('timeline.daySegmentLabel')}
+      className={// `flex`, а не `inline-flex`: в блочном родителе `w-full` у inline-flex отрабатывает
+      // по-разному, и переключатель вылезал за границу секции.
+      cn('flex h-11 min-w-0 shrink-0 rounded-lg border border-border bg-surface-container p-0.5', className)}
+    >
+      <button
+        type="button"
+        aria-pressed={value === 'today'}
+        onClick={() => {
+          hapticTick('select');
+          onChange('today');
+        }}
+        className={cn(
+          'min-h-10 min-w-0 flex-1 whitespace-nowrap rounded-md px-2 text-center text-xs font-semibold transition-colors sm:px-3.5 sm:text-sm',
+          value === 'today'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-muted',
+        )}
+      >
+        {today}
+      </button>
+      <button
+        type="button"
+        aria-pressed={value === 'tomorrow'}
+        onClick={() => {
+          hapticTick('select');
+          onChange('tomorrow');
+        }}
+        className={cn(
+          'min-h-10 min-w-0 flex-1 whitespace-nowrap rounded-md px-2 text-center text-xs font-semibold transition-colors sm:px-3.5 sm:text-sm',
+          value === 'tomorrow'
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-muted',
+        )}
+      >
+        {tomorrow}
+      </button>
+    </div>
+  );
+};

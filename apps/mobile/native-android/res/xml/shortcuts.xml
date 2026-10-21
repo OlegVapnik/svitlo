@@ -1,0 +1,51 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="home"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_home"
+        android:shortcutLongLabel="@string/shortcut_home_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="svitlo:///"
+            android:targetPackage="ua.com.svitlo.app"
+            android:targetClass="ua.com.svitlo.app.MainActivity" />
+        <categories android:name="android.shortcut.conversation" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="search"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_search"
+        android:shortcutLongLabel="@string/shortcut_search_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="svitlo:///search"
+            android:targetPackage="ua.com.svitlo.app"
+            android:targetClass="ua.com.svitlo.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="monitor"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_monitor"
+        android:shortcutLongLabel="@string/shortcut_monitor_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="svitlo:///monitor"
+            android:targetPackage="ua.com.svitlo.app"
+            android:targetClass="ua.com.svitlo.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="news"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_news"
+        android:shortcutLongLabel="@string/shortcut_news_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="svitlo:///info"
+            android:targetPackage="ua.com.svitlo.app"
+            android:targetClass="ua.com.svitlo.app.MainActivity" />
+    </shortcut>
+</shortcuts>

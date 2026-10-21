@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  4×1: «сутки по часам». Зона обновления — правая часть строки статуса, где нарисованы остаток
+  и глиф «↻». Клик по чипу очереди здесь не вешаем: на высоте в одну ячейку его зона не совпала
+  бы с рисунком, а промахи по «невидимым кнопкам» — ровно то, на что жаловались.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <View
+        android:id="@+id/widget_open"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/widget_label"
+        android:focusable="true" />
+
+    <ImageView
+        android:id="@+id/widget_canvas"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="fitCenter" />
+
+    <View
+        android:id="@+id/widget_refresh"
+        android:layout_width="52dp"
+        android:layout_height="56dp"
+        android:layout_gravity="top|end"
+        android:clickable="true"
+        android:contentDescription="@string/widget_refresh"
+        android:focusable="true" />
+</FrameLayout>

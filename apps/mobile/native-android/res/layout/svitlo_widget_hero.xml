@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  4×2: полная карточка. Bitmap рисуется ровно в пикселях ячейки (см. HeroWidgetRenderer),
+  поэтому `fitCenter` ничего не деформирует: при точном совпадении размеров он равен 1:1,
+  а при расхождении — вписывает без растягивания по одной оси.
+
+  Порядок детей = порядок слоёв: сначала прозрачная зона «открыть приложение», затем картинка,
+  поверх — зоны действий. Зоны совпадают с нарисованными элементами: «ЧЕРГА 20/1» вверху
+  справа и «↻ 07:42» внизу справа.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <View
+        android:id="@+id/widget_open"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/widget_label"
+        android:focusable="true" />
+
+    <ImageView
+        android:id="@+id/widget_canvas"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="fitCenter" />
+
+    <View
+        android:id="@+id/widget_queue"
+        android:layout_width="96dp"
+        android:layout_height="34dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="6dp"
+        android:clickable="true"
+        android:contentDescription="@string/widget_next_queue"
+        android:focusable="true" />
+
+    <View
+        android:id="@+id/widget_refresh"
+        android:layout_width="102dp"
+        android:layout_height="26dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginBottom="6dp"
+        android:layout_marginEnd="8dp"
+        android:clickable="true"
+        android:contentDescription="@string/widget_refresh"
+        android:focusable="true" />
+</FrameLayout>

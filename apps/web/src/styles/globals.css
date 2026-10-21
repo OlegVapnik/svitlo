@@ -1,0 +1,629 @@
+@import "tailwindcss";
+
+/* Тёмная тема переключается классом .dark на <html> (в v4 по умолчанию — prefers-color-scheme). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Системный стек вместо внешнего Inter: PWA работает при отключённом свете и плохой сети,
+     а загрузка веб-шрифта — это лишний запрос, FOUT и пустой экран в оффлайне. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Время, проценты и номера очередей ровнее в столбик (00:00–06:00, 99.2%, черга 3). */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Скругления строгие и «собранные»: 12px — кнопки и чипы, 16px — обычные карточки,
+     24px — только главный Hero. Раздутые радиусы (40px+) убраны: премиальность в этом
+     интерфейсе даёт тонкая грань 1px и блик, а не надутая форма. */
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+
+  /* Дисплейный шрифт grok (Unbounded/Manrope) не тянем веб-шрифтом: PWA должна открываться
+     в оффлайне без сети. Токен введён, чтобы герой и цифры брали один стек (и чтобы позже
+     подставить самохостинг одной строкой, без правки разметки). */
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Высота панелей — тональная (см. surface-container-*). Панель держится на двух вещах:
+     верхний блик по грани (inset) и очень мягкая тень под ней. На OLED тень почти не видна,
+     поэтому блик важнее — он читается на любом экране и не «подсвечивает» фон. */
+  --shadow-card: inset 0 1px 0 0 var(--md-highlight-top), 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-pop: inset 0 1px 0 0 var(--md-highlight-top), 0 18px 40px -24px rgb(0 0 0 / 0.65);
+
+  /* Цвета статуса сети переехали в палитру темы: см. @theme inline ниже (--color-status-*). */
+
+  /* --- M3 Expressive: пружинная физика движения ---
+     Material 3 Expressive заменяет линейные ease на «spring»-кривые с перебегом: короткий
+     overshoot даёт ощущение физического предмета, который докатился и остановился. Быстрая
+     кривая — для смены формы и цвета (морфинг кнопки, выбор группы), обычная — для появления
+     и перемещения блоков. Значения — из спеки M3 Expressive motion. */
+  --ease-m3-expressive-fast: cubic-bezier(0.42, 1.67, 0.21, 0.9);
+  --ease-m3-expressive-default: cubic-bezier(0.22, 1.25, 0.36, 1);
+  --ease-m3-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-fade-in: fade-in 220ms ease-out both;
+  --animate-rise: rise 260ms ease-out both;
+  --animate-pulse-soft: pulse-soft 2.4s ease-in-out infinite;
+  --animate-timeline-breathe: timeline-breathe 3.4s ease-in-out infinite;
+  /* Волна прогресса течёт вперёд бесконечно: сдвиг ровно на одну длину волны (28px, см.
+     WAVELENGTH в WavyProgressBar) делает цикл бесшовным — тайл повтора встаёт сам в себя.
+     Скорость приходит с элемента через inline animationDuration: у спокойных состояний
+     волна течёт медленнее, но форма и высота не меняются, поэтому полоса не «дёргается». */
+  --animate-wave-slide: wave-slide 1.3s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+  @keyframes timeline-breathe {
+    0%, 100% { filter: saturate(0.9); }
+    50% { filter: saturate(1.2); }
+  }
+  /* Непрерывное движение волнистой змейки (M3 Wavy progress): сдвигаем тайл волны на одну
+     длину. Сдвиг берём из --wave-shift, поэтому одна и та же анимация обслуживает и бодрую
+     волну, и затухающий пунктир — разной остаётся только скорость. */
+  @keyframes wave-slide {
+    from { transform: translateX(0); }
+    to { transform: translateX(var(--wave-shift, -28px)); }
+  }
+}
+/* Семантические цвета привязаны к переменным темы. `inline` обязателен: утилита получает ровно
+   hsl(var(--background)), поэтому .dark подменяет значение в рантайме, а не на этапе сборки.
+   Как следствие работают и модификаторы прозрачности: bg-primary/10, border-primary/40. */
+@theme inline {
+  /* --- M3 Expressive: тональные роли поверхностей ---
+     Уровни разделяются светлотой (surface-container-*), а не тенью: на OLED тень не видна и
+     стоит перерисовки. Значения живут в :root/.dark как --md-* — одна точка правки на тему. */
+  --color-surface: var(--md-surface);
+  --color-surface-dim: var(--md-surface-dim);
+  --color-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-surface-container-low: var(--md-surface-container-low);
+  --color-surface-container: var(--md-surface-container);
+  --color-surface-container-high: var(--md-surface-container-high);
+  --color-surface-container-highest: var(--md-surface-container-highest);
+  --color-on-surface: var(--md-on-surface);
+  --color-on-surface-variant: var(--md-on-surface-variant);
+  --color-outline: var(--md-outline);
+  --color-outline-variant: var(--md-outline-variant);
+
+  /* --- Интерактивный акцент: чистый электрический изумруд. Он НЕ зависит от состояния сети:
+     статус больше не перекрашивает кнопки, навигацию и фон — иначе оболочка приложения
+     становилась тревожной всякий раз, когда где-то нет света, а сам статус переставал
+     читаться. Состояние несут бейдж, таймер, линия прогресса и свечение (--color-status*). */
+  --color-primary: var(--md-primary);
+  --color-on-primary: var(--md-on-primary);
+  --color-primary-container: var(--md-primary-container);
+  --color-on-primary-container: var(--md-on-primary-container);
+
+  /* --- Статус сети: ТОЛЬКО бейдж, текст таймера, линия прогресс-бара и радиальное свечение.
+     Значения приходят от `data-power-state` (палитра ниже) и меняются вместе с состоянием.
+     Карточку или фон в «грязный» цвет они не красят никогда. */
+  --color-status: var(--md-status);
+  --color-status-text: var(--md-status-text);
+  --color-status-soft: var(--md-status-soft);
+  --color-status-border: var(--md-status-border);
+
+  /* Грань и хвост прогресса. `hairline` — та самая деликатная линия в один пиксель вместо
+     разделителей и рамок (в тёмной теме ровно 6% белого), `track` — оставшаяся часть полосы
+     прогресса (12% белого). Оба токена меняются с темой, поэтому светлая тема не «слепнет». */
+  --color-hairline: var(--md-hairline);
+  --color-track: var(--md-track);
+
+  /* --- Legacy-роли → те же M3-переменные. Утилиты bg-card / text-muted-foreground /
+     border-border остались в разметке десятков компонентов: пусть указывают на M3-тон, тогда
+     редизайн не превращается в переписывание всех файлов. `bg-card` — это КАРТОЧКА (#131318
+     в тёмной теме), а не вторичный фон: один токен описывает все панели приложения. --- */
+  --color-background: var(--md-surface-dim);
+  --color-foreground: var(--md-on-surface);
+  --color-card: var(--md-surface-container);
+  --color-card-foreground: var(--md-on-surface);
+  --color-card-raised: var(--md-surface-container-high);
+  --color-popover: var(--md-surface-container-high);
+  --color-popover-foreground: var(--md-on-surface);
+  --color-primary-foreground: var(--md-on-primary);
+  --color-secondary: var(--md-surface-container-high);
+  --color-secondary-foreground: var(--md-on-surface);
+  --color-muted: var(--md-surface-container-high);
+  --color-muted-foreground: var(--md-on-surface-variant);
+  --color-accent: var(--md-surface-container-high);
+  --color-accent-foreground: var(--md-on-surface);
+  --color-border: var(--md-outline-variant);
+  --color-input: var(--md-outline-variant);
+  --color-ring: var(--md-primary);
+  --color-border-strong: var(--md-outline);
+
+  /* Статусы сети — отдельные роли, а не производные от primary: «скоро вимкнуть» не должен
+     красить кнопки так же, как «світла немає». */
+  --color-destructive: var(--md-destructive);
+  --color-destructive-foreground: var(--md-on-destructive);
+  --color-success: var(--md-success);
+  --color-success-foreground: var(--md-on-success);
+  --color-warning: var(--md-warning);
+  --color-warning-foreground: var(--md-on-warning);
+  --color-info: var(--md-info);
+  --color-info-foreground: var(--md-on-info);
+  --color-unknown: var(--md-unknown);
+  --color-unknown-soft: var(--md-unknown-soft);
+  --color-level-high: var(--md-level-high);
+  --color-info-soft: var(--md-info-soft);
+  --color-status-stable: var(--md-success);
+  --color-status-warning: var(--md-warning);
+  --color-status-emergency: var(--md-destructive);
+
+  /* Псевдонимы «сырых» оттенков Tailwind, которые остались в 8 компонентах статусов
+     (PowerSummaryCard, ReliabilityCard, IncidentBanner, OutageCalendar, OutageTimeline,
+     OutageMap, QueueScheduleBar, IncidentsPage). Значение ведёт в M3-роль, поэтому
+     `text-emerald-600 dark:text-emerald-400` — теперь один токен, меняющийся с темой.
+     Постепенная замена на семантические классы — отдельным шагом. */
+  --color-emerald-400: var(--md-success);
+  --color-emerald-500: var(--md-success);
+  --color-emerald-600: var(--md-success);
+  --color-lime-400: var(--md-level-high);
+  --color-lime-500: var(--md-level-high);
+  --color-lime-600: var(--md-level-high);
+  --color-amber-400: var(--md-warning);
+  --color-amber-500: var(--md-warning);
+  --color-amber-600: var(--md-warning);
+  --color-red-400: var(--md-destructive);
+  --color-red-500: var(--md-destructive);
+  --color-red-600: var(--md-destructive);
+  --color-blue-100: var(--md-info-soft);
+  --color-blue-200: var(--md-info);
+  --color-blue-800: var(--md-info);
+  --color-blue-900: var(--md-info-soft);
+}
+
+@layer base {
+  /* В v4 цвет рамок по умолчанию — currentColor (в v3 был серый). Возвращаем токен темы,
+     чтобы просто `border` не «наследовал» цвет текста и границы не пропадали. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--md-outline-variant);
+  }
+
+  /* Верхний блик панелей: тонкая светлая линия по верхней грани. Именно она, а не тень, даёт
+     «стеклянную» глубину на тёмном фоне. Правило по классу, а не по компоненту: панели
+     собраны из bg-card / bg-surface-container в десятках файлов, и переписывать их ради одного
+     блика нельзя. Если у элемента задана своя тень (shadow-xs, shadow-pop), она честно
+     перекрывает блик — утилиты Tailwind идут слоем выше базового. */
+  .bg-card,
+  .bg-surface-container,
+  .bg-surface-container-low,
+  .bg-surface-container-lowest {
+    box-shadow: inset 0 1px 0 0 var(--md-highlight-top);
+  }
+
+  /* --- Светлая тема: чистый снег и графит ---
+     Никаких «бумажных» зелёных оттенков: фон #F8FAFC (Slate 50), карточка строго белая,
+     грани — #E2E8F0. Контраст (посчитан): on-surface #0F172A на #FFFFFF — 17.9:1,
+     on-surface-variant #64748B — 4.8:1, акцент #047857 на белом — 5.5:1: всё выше AA для
+     мелкого текста. */
+  :root {
+    /* Поверхности */
+    --md-surface: #f8fafc;
+    --md-surface-dim: #f1f5f9;
+    --md-surface-container-lowest: #ffffff;
+    --md-surface-container-low: #ffffff;
+    --md-surface-container: #ffffff;
+    --md-surface-container-high: #f1f5f9;
+    --md-surface-container-highest: #e2e8f0;
+    --md-on-surface: #0f172a;
+    --md-on-surface-variant: #64748b;
+    --md-outline: #94a3b8;
+    --md-outline-variant: #e2e8f0;
+
+    /* Интерактивный акцент: на светлом фоне читается только тёмный изумруд, светлый «выгорает» */
+    --md-primary: #047857;
+    --md-on-primary: #ffffff;
+    --md-primary-container: rgb(4 120 87 / 0.12);
+    --md-on-primary-container: #065f46;
+
+    /* Статусы сети. Фиксированные роли: ими красятся бейджи, капсулы шкалы и точки. */
+    --md-success: #059669;
+    --md-on-success: #ffffff;
+    --md-warning: #d97706;
+    --md-on-warning: #ffffff;
+    --md-destructive: #e11d48;
+    --md-on-destructive: #ffffff;
+    --md-info: #2563eb;
+    --md-on-info: #ffffff;
+    --md-unknown: #71717a;
+    --md-unknown-soft: rgb(113 113 122 / 0.12);
+    --md-level-high: #65a30d;
+    --md-info-soft: rgb(37 99 235 / 0.1);
+
+    /* Грань, хвост прогресса и верхний блик панелей */
+    --md-hairline: rgb(15 23 42 / 0.08);
+    --md-track: rgb(15 23 42 / 0.12);
+    --md-highlight-top: rgb(15 23 42 / 0.04);
+
+    /* Дефолт до первого замера статуса — «нет данных». Честный нейтральный серый, а не
+       зелёный: пустой график нельзя показывать как «світло є». */
+    --md-status: #71717a;
+    --md-status-text: #52525b;
+    --md-status-soft: rgb(113 113 122 / 0.1);
+    --md-status-border: rgb(113 113 122 / 0.25);
+
+    /* Сила свечения под Hero: 10% — фон остаётся чистым, но подсветка видна. */
+    --glow-strength: 0.1;
+
+    --radius: 1rem;
+  }
+
+  /* --- Динамика состояния сети ---
+     Атрибут `data-power-state` пишет хук usePowerState на <html>, и статус теперь красит
+     ТОЛЬКО бейдж, таймер, линию прогресса и свечение под Hero. Фон, карточки, кнопки и
+     навигация от состояния не зависят: строгий интерфейс не должен «краснеть» из-за того,
+     что где-то нет света.
+     Селектор без :root — намеренно: тот же атрибут ставит на себя сам Hero, а он может
+     показывать график на завтра, пока страница показывает сегодняшний. */
+  [data-power-state='on'] {
+    --md-status: #059669;
+    --md-status-text: #047857;
+    --md-status-soft: rgb(5 150 105 / 0.1);
+    --md-status-border: rgb(5 150 105 / 0.25);
+  }
+  /* День опубликован без отключений — тот же изумруд, что «світло є»: для человека это
+     одинаково хороший факт. Отличается только повод (нет интервалов), не цвет. */
+  [data-power-state='allClear'] {
+    --md-status: #059669;
+    --md-status-text: #047857;
+    --md-status-soft: rgb(5 150 105 / 0.1);
+    --md-status-border: rgb(5 150 105 / 0.25);
+  }
+  [data-power-state='warning'] {
+    --md-status: #d97706;
+    --md-status-text: #b45309;
+    --md-status-soft: rgb(217 119 6 / 0.1);
+    --md-status-border: rgb(217 119 6 / 0.25);
+  }
+  [data-power-state='off'] {
+    --md-status: #e11d48;
+    --md-status-text: #be123c;
+    --md-status-soft: rgb(225 29 72 / 0.1);
+    --md-status-border: rgb(225 29 72 / 0.25);
+  }
+  /* Нет данных — графит. Никогда не зелёный: пустой график нельзя показать как «світло є». */
+  [data-power-state='unknown'] {
+    --md-status: #71717a;
+    --md-status-text: #52525b;
+    --md-status-soft: rgb(113 113 122 / 0.1);
+    --md-status-border: rgb(113 113 122 / 0.25);
+  }
+
+  /* --- Тёмная тема: строгий Obsidian (Zinc) ---
+     Фон #09090B — чистый антрацит без примеси зелёного, карточка #131318 отделяется от фона
+     тоном и гранью 1px, а не тенью. Контраст (посчитан, не на глаз): on-surface #FAFAFA на
+     #09090B — 19.1:1, on-surface-variant #A1A1AA — 7.8:1 на фоне и 7.2:1 на карточке,
+     изумруд #10B981 — 7.8:1, текст таймера в состоянии «світло є» #34D399 на карточке — 9.6:1,
+     в отключении #FB7185 — 6.9:1. Всё выше AA, включая мелкий текст. */
+  .dark {
+    /* Поверхности */
+    --md-surface: #09090b;
+    --md-surface-dim: #09090b;
+    --md-surface-container-lowest: #09090b;
+    --md-surface-container-low: #0e0e12;
+    --md-surface-container: #131318;
+    --md-surface-container-high: #1b1b22;
+    --md-surface-container-highest: #23232c;
+    --md-on-surface: #fafafa;
+    --md-on-surface-variant: #a1a1aa;
+    --md-outline: #3f3f46;
+    --md-outline-variant: rgb(255 255 255 / 0.08);
+
+    /* Интерактивный акцент: чистый изумруд с почти чёрным текстом (7.8:1) */
+    --md-primary: #10b981;
+    --md-on-primary: #09090b;
+    --md-primary-container: rgb(16 185 129 / 0.14);
+    --md-on-primary-container: #6ee7b7;
+
+    /* Статусы сети: Emerald / Amber / Rose / Zinc — и только они */
+    --md-success: #10b981;
+    --md-on-success: #09090b;
+    --md-warning: #f59e0b;
+    --md-on-warning: #09090b;
+    --md-destructive: #f43f5e;
+    --md-on-destructive: #09090b;
+    --md-info: #3b82f6;
+    --md-on-info: #09090b;
+    --md-unknown: #71717a;
+    --md-unknown-soft: rgb(113 113 122 / 0.14);
+    --md-level-high: #a3e635;
+    --md-info-soft: rgb(59 130 246 / 0.14);
+
+    /* Грань 1px и верхний блик: именно они дают «ювелирный» вид, а не крупные скругления */
+    --md-hairline: rgb(255 255 255 / 0.06);
+    --md-track: rgb(255 255 255 / 0.12);
+    --md-highlight-top: rgb(255 255 255 / 0.05);
+
+    --md-status: #71717a;
+    --md-status-text: #a1a1aa;
+    --md-status-soft: rgb(113 113 122 / 0.12);
+    --md-status-border: rgb(113 113 122 / 0.25);
+
+    --glow-strength: 0.1;
+    --radius: 1rem;
+  }
+
+  /* Тёмная тема: те же четыре состояния, но светлые тона — на антраците только они дают
+     нужный контраст для текста таймера и линии прогресса. Оба селектора нужны: атрибут стоит
+     и на <html> (пишет usePowerState), и на самом Hero внутри тёмной страницы. */
+  .dark[data-power-state='on'],
+  .dark [data-power-state='on'],
+  .dark[data-power-state='allClear'],
+  .dark [data-power-state='allClear'] {
+    --md-status: #10b981;
+    --md-status-text: #34d399;
+    --md-status-soft: rgb(16 185 129 / 0.12);
+    --md-status-border: rgb(16 185 129 / 0.25);
+  }
+  .dark[data-power-state='warning'],
+  .dark [data-power-state='warning'] {
+    --md-status: #f59e0b;
+    --md-status-text: #fbbf24;
+    --md-status-soft: rgb(245 158 11 / 0.12);
+    --md-status-border: rgb(245 158 11 / 0.25);
+  }
+  .dark[data-power-state='off'],
+  .dark [data-power-state='off'] {
+    --md-status: #f43f5e;
+    --md-status-text: #fb7185;
+    --md-status-soft: rgb(244 63 94 / 0.12);
+    --md-status-border: rgb(244 63 94 / 0.25);
+  }
+  .dark[data-power-state='unknown'],
+  .dark [data-power-state='unknown'] {
+    --md-status: #71717a;
+    --md-status-text: #a1a1aa;
+    --md-status-soft: rgb(113 113 122 / 0.12);
+    --md-status-border: rgb(113 113 122 / 0.25);
+  }
+
+  html {
+    /* Безопасные зоны телефона в CSS-пикселях. В браузере их знает env(safe-area-inset-*),
+       а Android-WebView (нативная обёртка) inset'ы строки состояния в CSS НЕ отдаёт — поэтому
+       нативная сторона измеряет их сама (MainActivity → window.SvitloInsets) и пишет сюда,
+       см. src/hooks/useSafeAreaInsets.ts. По умолчанию 0 — тогда работает только env(). */
+    --safe-top: 0px;
+    --safe-bottom: 0px;
+    scroll-behavior: smooth;
+    color-scheme: light;
+    background-color: var(--md-surface-dim);
+    color: var(--md-on-surface);
+    -webkit-tap-highlight-color: transparent;
+    /* Android WebView и Chrome умеют «раздувать» текст (font boosting) и применять системный
+       масштаб шрифта. Для документа это нормально, для панели управления — нет: подписи
+       перестают помещаться, а сетка остаётся прежней. Фиксируем масштаб текста 1:1; зум
+       страницы (pinch) в браузере при этом остаётся доступным. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  .dark html,
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    /* Верх і низ безпечних зон живут на самих панелях (`.pt-safe` у шапки, `.pb-safe` у нижньої
+       навігації), а не тут. Причина: шапка `sticky` — padding предка її не зсуває, і при
+       прокручуванні вона прилипала до y=0 та налазила на строку стану телефона. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Двойной тап по кнопке больше не масштабирует страницу: в приложении это читалось как
+       случайный зум, после которого интерфейс «уезжал». Pinch-zoom (доступность) не затронут. */
+    touch-action: manipulation;
+  }
+
+  /* Все цифры — табличные: без этого «2:00» и «12:00» прыгают по ширине каждую секунду,
+     когда таймер тикает. Применяем к цифрам глобально, а не к каждому компоненту. */
+  body {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Крупный моноширинный таймер в Hero. Стек системный: подключать веб-шрифт ради одного
+     числа нельзя — это лишний запрос и пустой экран в офлайне. */
+  .font-timer {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* Мягкое радиальное свечение статуса под Hero. Живёт у верхнего края и читается как
+     «подсветка сверху», а не как заливка: сила 10% (--glow-strength), то есть фон остаётся
+     графитовым, а оттенок состояния виден. Цвет берётся из --md-status, который ставит
+     `data-power-state` — на <html> (usePowerState) или на самом Hero. */
+  .status-glow::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 45%;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      70% 120% at 50% 0%,
+      color-mix(in oklab, var(--md-status) calc(var(--glow-strength) * 100%), transparent) 0%,
+      transparent 72%
+    );
+    transition: background 700ms var(--ease-m3-standard), opacity 700ms ease;
+  }
+
+  /* Режим «Економія заряду»: гасим анимации и свечение, оставляем чистый чёрный фон.
+     Ставится классом на <html>, чтобы отключить всё разом, а не по месту. */
+  .battery-saver {
+    --glow-strength: 0;
+  }
+  .battery-saver *,
+  .battery-saver *::before,
+  .battery-saver *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  /* Уважение к системной настройке: пользователь просил меньше движения — убираем всё,
+     включая наше свечение. Это требование доступности, а не украшение. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::after,
+    ::before {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .status-glow::before {
+      display: none;
+    }
+  }
+
+  /* Фокус виден всегда — интерфейсом пользуются и с клавиатуры, и с ТВ-пульта. */
+  :focus-visible {
+    outline: 2px solid var(--md-primary);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--md-primary) 25%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* В v4 утилита `container` больше не читает theme.container из конфига: центрирование и
+   адаптивные отступы задаются вручную. Повторяем прежнее поведение (padding 1rem/1.25rem/2rem). */
+@utility container {
+  margin-inline: auto;
+  padding-inline: 1rem;
+  @media (width >= 40rem) {
+    padding-inline: 1.25rem;
+  }
+  @media (width >= 64rem) {
+    padding-inline: 2rem;
+  }
+}
+
+/* В v4 нет namespace для z-index, а «магическое» число z-[60] в разметке читается хуже токена. */
+@utility z-60 {
+  z-index: 60;
+}
+
+@layer utilities {
+  /* Цифры в статистике/времени не «прыгают» при обновлении раз в 30 секунд. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Верхний отступ под строку состояния телефона: максимум из системного значения браузера
+     и измеренного нативной обёрткой (--safe-top). Нужен на sticky-шапке: только так её
+     содержимое уезжает ниже часов/иконок батареи, а её фон закрашивает саму зону. */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), var(--safe-top, 0px));
+  }
+
+  /* Нижний отступ под мобильную навигацию с учётом «жеста» iPhone/Android. */
+  .pb-safe {
+    padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom, 0px)) + 0.5rem);
+  }
+
+  /* Мягкий приход контента при переключении таба (свайпом или тапом по нижней панели).
+     Почему transition, а не @keyframes: анимация требует перезапуска при каждой смене
+     маршрута, а перезапуск через смену animation-name заставляет перемонтировать страницу
+     (терялись бы фильтры в ленте новостей). Переход же начинается с разного состояния —
+     его достаточно сбросить на кадр, и браузер сам доиграет движение.
+     Сдвиг 12px и 240ms — из шкалы движения M3: быстрее выглядит как рывок, медленнее —
+     как «подвисание» интерфейса. Отключение — общее: prefers-reduced-motion и «Економія
+     заряду» гасят длительность перехода (см. блоки выше). */
+  .tab-enter {
+    --tab-shift: 0px;
+    opacity: 0;
+    transform: translate3d(var(--tab-shift), 0, 0);
+    transition:
+      opacity 240ms var(--ease-m3-standard),
+      transform 240ms var(--ease-m3-standard);
+  }
+
+  /* Следующий таб приходит справа, предыдущий — слева: контент движется в ту же сторону,
+     куда «уехала» лента, и палец не теряет связь с экраном. */
+  .tab-enter[data-nav-direction='next'] {
+    --tab-shift: 12px;
+  }
+
+  .tab-enter[data-nav-direction='prev'] {
+    --tab-shift: -12px;
+  }
+
+  .tab-enter-shown {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+
+  /* Розкриття релізу в історії оновлень. Анімуємо grid-template-rows 0fr → 1fr: браузер сам
+     рахує висоту, без читань offsetHeight у JS і без примусового layout на кожному кадрі.
+     Уміст при цьому монтується лише для відкритого релізу (React.memo у компоненті). */
+  .release-reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    animation: release-reveal 220ms var(--ease-m3-standard) forwards;
+  }
+
+  .release-reveal > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  @keyframes release-reveal {
+    to {
+      grid-template-rows: 1fr;
+    }
+  }
+}
+
+/* Native Android interaction styles are scoped to the shell; browser selection stays enabled. */
+@layer base {
+  /* Browser site keeps normal text selection and browser gestures. */
+  .native-app,
+  .native-app body,
+  .native-app #root {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  .native-app img,
+  .native-app svg,
+  .native-app a,
+  .native-app button {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+
+  .native-app input,
+  .native-app textarea,
+  .native-app [contenteditable='true'],
+  .native-app .selectable-text {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}

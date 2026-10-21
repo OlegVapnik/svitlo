@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    // Відносні імпорти тут — з розширенням `.ts`: цей пакет виконується Node'ом як TS-джерело
+    // (type stripping не резолвить `./x.js` → `x.ts`), а флаг переписує специфікатори на `.js`
+    // при збірці (див. tsconfig.base.json і packages/shared/src/index.ts).
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"]
+}
