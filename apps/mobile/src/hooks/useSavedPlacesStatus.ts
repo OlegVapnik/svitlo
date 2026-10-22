@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useQueries } from '@svitlo/core';
+import { readRegionScheduleSnapshot, useQueries } from '@svitlo/core';
 import { api } from '@svitlo/core/api/client';
 import { canonicalQueueCode, queueCodeMatches } from '@svitlo/core/lib/queue';
 import { minutesOfDay, minutesToHm, scheduleWindow, OFF_STATE_CODE } from '@svitlo/core/lib/scheduleWindow';
@@ -20,6 +20,7 @@ export interface PlaceLiveStatus {
 /**
  * Загружает срезы расписаний для всех уникальных регионов в закладках пользователя
  * и рассчитывает точное состояние питания для каждого места (до скольки свет / отключение).
+ * При монтировании мгновенно использует офлайн-снапшоты, чтобы статус не мигал серым.
  */
 export function useSavedPlacesStatus(
   places: SavedPlace[],
@@ -44,6 +45,17 @@ export function useSavedPlacesStatus(
           })),
         };
       },
+      initialData: () => {
+        const snapshot = readRegionScheduleSnapshot(region);
+        if (!snapshot || !Array.isArray(snapshot.buckets)) return undefined;
+        return {
+          region,
+          data: snapshot.buckets.map((item) => ({
+            ...item,
+            queue: canonicalQueueCode(region, item.queue),
+          })),
+        };
+      },
       staleTime: 60_000,
       refetchInterval: 30_000,
     })),
@@ -53,10 +65,20 @@ export function useSavedPlacesStatus(
     const statusByPlaceId: Record<string, PlaceLiveStatus> = {};
     const nowMs = now.getTime();
 
-    // Индексируем данные по регионам
+    // Индексируем данные по регионам (сперва снапшоты для фолбэка, затем свежие данные)
     const regionDataMap = new Map<string, GroupOutageSummary[]>();
+    for (const region of uniqueRegions) {
+      const snap = readRegionScheduleSnapshot(region);
+      if (snap?.buckets) {
+        regionDataMap.set(
+          region,
+          snap.buckets.map((b) => ({ ...b, queue: canonicalQueueCode(region, b.queue) })),
+        );
+      }
+    }
+
     for (const q of regionQueries) {
-      if (q.data?.region && Array.isArray(q.data.data)) {
+      if (q.data?.region && Array.isArray(q.data.data) && q.data.data.length > 0) {
         regionDataMap.set(q.data.region, q.data.data);
       }
     }
@@ -109,5 +131,6 @@ export function useSavedPlacesStatus(
     }
 
     return statusByPlaceId;
-  }, [places, regionQueries, today, now]);
+  }, [places, regionQueries, uniqueRegions, today, now]);
 }
+

@@ -132,14 +132,9 @@ export function SavedPlacesCarousel({
               </View>
 
               <View className="min-w-0">
-                <View className="flex-row items-center gap-1.5">
-                  <Text numberOfLines={1} className="text-xs font-bold text-foreground">
-                    {place.label}
-                  </Text>
-                  <Text className="text-[11px] font-bold" style={{ color: tone.color }}>
-                    {tone.symbol}
-                  </Text>
-                </View>
+                <Text numberOfLines={1} className="text-xs font-bold text-foreground">
+                  {place.label}
+                </Text>
                 <Text className="text-[11px] font-semibold text-muted-foreground">
                   {place.queue} {live.timeLabel ? `· ${live.timeLabel}` : ''}
                 </Text>
