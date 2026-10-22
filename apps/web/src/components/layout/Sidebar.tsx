@@ -56,13 +56,6 @@ export const Sidebar = () => {
         <RailLink key={item.to} item={item} />
       ))}
 
-      <p className="mt-auto px-1 pt-4 text-center text-[9px] leading-tight text-on-surface-variant/70">
-        {t('common.serverHint')}
-        {/* Метка сборки: на телефоне сразу видно, какая версия приложения установлена. */}
-        <span className="mt-1 block font-mono break-all text-[9px] text-on-surface-variant/50">
-          build {__BUILD_ID__}
-        </span>
-      </p>
     </nav>
   );
 };

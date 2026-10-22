@@ -11,8 +11,10 @@ interface QueueSelectorProps {
   onSelect: (queue: string) => void;
   className?: string;
   disabled?: boolean;
-  /** Компактная кнопка справа от подписи «Черга:» (например, «У закладки»). */
+  /** Опціональна дія або елемент у заголовку */
   headerAction?: React.ReactNode;
+  /** Приховати заголовок із підписом "Черга:" */
+  hideHeader?: boolean;
 }
 
 export const QueueSelector: React.FC<QueueSelectorProps> = ({
@@ -22,6 +24,7 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
   className,
   disabled = false,
   headerAction,
+  hideHeader = false,
 }) => {
   const { t } = useTranslation();
 
@@ -37,13 +40,15 @@ export const QueueSelector: React.FC<QueueSelectorProps> = ({
 
   return (
     <div className={cn('space-y-2', className)}>
-      <div className="flex min-h-9 items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
-          <Layers className="h-3.5 w-3.5" aria-hidden />
-          {t('queues.queueLabel')}:
-        </span>
-        {headerAction}
-      </div>
+      {!hideHeader && (
+        <div className="flex min-h-9 items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
+            <Layers className="h-3.5 w-3.5" aria-hidden />
+            {t('queues.queueLabel')}:
+          </span>
+          {headerAction}
+        </div>
+      )}
 
       {isLargeList ? (
         <div className="relative inline-flex items-center">

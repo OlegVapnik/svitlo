@@ -636,11 +636,6 @@ export const HomePage: React.FC = () => {
           <PowerSummaryCard summary={status?.powerSummary} isLoading={statusLoading} />
         </div>
       </div>
-
-      <SourceHealthBanner />
-
-      {/* Версия сборки: видно сразу, без поиска по меню. */}
-      <BuildStamp />
     </div>
   );
 };

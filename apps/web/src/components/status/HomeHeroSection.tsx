@@ -510,46 +510,40 @@ export const HomeHeroSection: React.FC = () => {
         </div>
       )}
 
-      {/* 2. Панель керування: вибір черги та перемикач дати.
-          `sm:flex-wrap` і `min-w-0` — не косметика: вибір черги зафіксовано на w-78,
-          а рядок «У закладки + Сьогодні/Завтра» не сжимався, і коли сумарна ширина
-          перевищувала ширину hero, флекс-строка виходила за межі секції та
-          заїжджала на сусідній картці стану енергосистеми. */}
-      {/* Панель управления. Сетка 12 групп обязана занимать всю ширину: рядом с широкой
-          кнопкой «У закладки» она сжималась до пары пикселей, и группы наезжали друг на друга.
-          Поэтому закладка переехала компактной звёздочкой в заголовок «Черга:», а ряд остался
-          один: сетка + переключатель даты. */}
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+      {/* 2. Панель керування: перемикач дати та вибір черги в одній зручній картці */}
+      <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-hairline bg-surface-container-low/60 p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2">
+          {/* Перемикач дати: Сьогодні / Завтра */}
+          <DaySegment
+            value={selectedDayOffset === 0 ? 'today' : 'tomorrow'}
+            today={t('outages.today')}
+            tomorrow={t('outages.tomorrow')}
+            onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
+            className="w-full sm:w-auto"
+          />
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-hairline bg-surface-container text-on-surface hover:bg-surface-container-high"
+            disabled={!selectedQueue}
+            onClick={saveCurrentAsBookmark}
+            aria-label={t('home.addToBookmarks')}
+            title={t('home.addToBookmarks')}
+          >
+            <Star className="h-4 w-4" aria-hidden />
+          </Button>
+        </div>
+
+        {/* Вибір черги: чиста рівна сітка 6×2 без зайвого тексту «Черга:» */}
         <QueueSelector
           queues={availableQueues}
           selectedQueue={selectedQueue}
           onSelect={selectQueue}
           disabled={scheduleLoading}
-          className="w-full min-w-0 sm:flex-1"
-          headerAction={
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full p-0"
-              disabled={!selectedQueue}
-              onClick={saveCurrentAsBookmark}
-              aria-label={t('home.addToBookmarks')}
-              title={t('home.addToBookmarks')}
-            >
-              <Star className="h-4 w-4" aria-hidden />
-            </Button>
-          }
-        />
-
-        {/* Перемикач дати: Сьогодні / Завтра. Прежний был 28px высотой и ролью tablist
-            без реальных панелей — мелкая цель для пальца и роли враньё. Новый — 44px. */}
-        <DaySegment
-          value={selectedDayOffset === 0 ? 'today' : 'tomorrow'}
-          today={t('outages.today')}
-          tomorrow={t('outages.tomorrow')}
-          onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
-          className="w-full sm:w-auto"
+          hideHeader
+          className="w-full min-w-0"
         />
       </div>
 
