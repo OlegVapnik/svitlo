@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { NativeModules, TurboModuleRegistry } from 'react-native';
+import { NativeModules, Platform, TurboModuleRegistry } from 'react-native';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { useAppVersion } from '@svitlo/core/api/queries';
@@ -86,7 +86,11 @@ function pendingKey(update: PendingUpdate): string {
 export function UpdateProvider({ children }: { children: ReactNode }) {
   const versionQuery = useAppVersion();
   const apkInfo: AppVersionInfo | null = versionQuery.data?.data ?? null;
-  const apkUpdate = Boolean(apkInfo && isNewerVersion(apkInfo.version, APP_VERSION));
+  // OTA-бандл — Android Hermes-файл, а APK ставит только Android PackageInstaller.
+  // На iOS обновления приходят из App Store; скачивать android.bundle туда нельзя —
+  // нативный загрузчик его не поймёт, а приложение останется без рабочего JS.
+  const isAndroid = Platform.OS === 'android';
+  const apkUpdate = Boolean(isAndroid && apkInfo && isNewerVersion(apkInfo.version, APP_VERSION));
 
   const [otaVersion, setOtaVersion] = useState<string | null>(null);
   const [otaSize, setOtaSize] = useState<number | null>(null);
@@ -99,6 +103,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isAndroid) return;
     // Успешный монтаж = прошлый бандл рабочий: снимаем маркер отката и фиксируем SHA.
     // Ждём подтверждение, иначе `pendingOtaVersion()` успевает прочитать старый meta.json
     // и на один кадр показывает капсулу про уже применённое обновление.
@@ -109,9 +114,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       // APK, предлагать его как обновление нельзя.
       if (version && compareVersions(version, APP_VERSION) >= 0) setOtaVersion(version);
     })();
-  }, []);
+  }, [isAndroid]);
 
   useEffect(() => {
+    if (!isAndroid) return;
     let active = true;
     const check = async () => {
       const info = await fetchOtaBundleInfo();
@@ -135,10 +141,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       active = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [isAndroid]);
 
   useEffect(() => {
-    if (!apkInfo || !apkUpdate) {
+    if (!isAndroid || !apkInfo || !apkUpdate) {
       setApkReady(false);
       return;
     }
@@ -169,7 +175,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   }, [apkInfo, apkUpdate, otaSha, otaSize, otaVersion]);
 
   const startDownload = useCallback(() => {
-    if (!apkInfo || phase === 'downloading' || phase === 'verifying') return;
+    if (!isAndroid || !apkInfo || phase === 'downloading' || phase === 'verifying') return;
     setError(null);
     setPhase('downloading');
     setProgress(0);
@@ -189,10 +195,10 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       setPhase('error');
       setError('Не вдалося завантажити APK. Перевірте зв’язок і спробуйте ще раз.');
     })();
-  }, [apkInfo, phase]);
+  }, [apkInfo, isAndroid, phase]);
 
   const apply = useCallback(() => {
-    if (!pending) return;
+    if (!isAndroid || !pending) return;
     if (pending.kind === 'apk') {
       if (!apkInfo) return;
       if (!apkReady) {
@@ -234,7 +240,7 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     // Старая сборка без нативного модуля: обещать мгновенное применение нельзя, но и молчать
     // о том, что бандл уже на диске, — тоже.
     setError('Оновлення застосується після наступного запуску застосунку.');
-  }, [apkInfo, apkReady, pending, startDownload]);
+  }, [apkInfo, apkReady, isAndroid, pending, startDownload]);
 
   const value = useMemo<UpdateContextValue>(
     () => ({

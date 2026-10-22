@@ -23,11 +23,17 @@ export default defineConfig({
       // в режиме `selfDestroying` он и не нужен — service worker сам удаляет свои кэши.
       selfDestroying: true,
       manifest: {
+        id: '/',
         name: 'Svitlo — Чернігів',
         short_name: 'Svitlo',
         lang: 'uk',
+        dir: 'ltr',
         start_url: '/',
+        scope: '/',
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui'],
+        orientation: 'portrait',
+        categories: ['utilities', 'productivity'],
         // Цвета манифеста видит система ДО загрузки CSS: по ним окрашивается строка состояния
         // установленного приложения и фон окна при запуске. Здесь — фон тёмной темы из
         // globals.css (--md-surface-dim), иначе при старте мелькала бы старая болотная заливка.
@@ -35,18 +41,30 @@ export default defineConfig({
         background_color: '#09090b',
         icons: [
           {
-            src: '/icons/icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'any'
           },
           {
             // Отдельная maskable-версия: у неё фон без скруглений, а молния уже внутри
             // безопасной зоны. Иначе Android обрезает углы и края иконки.
-            src: '/icons/icon-maskable.svg',
+            src: '/icons/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: '/icons/icon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
-            purpose: 'maskable'
+            purpose: 'any'
           }
         ]
       },

@@ -1,5 +1,6 @@
 import notifee, { EventType } from '@notifee/react-native';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 
 import { ACTION_REFRESH, ACTION_SHARE } from '@/lib/notifications';
 
@@ -34,6 +35,10 @@ function publish(action: NotificationAction | null): void {
  * один, поэтому кнопка срабатывает в обоих случаях. Вызывается один раз из корневого layout.
  */
 export function registerNotificationActions(): () => void {
+  // На iOS кнопок действий у локальных уведомлений нет: Notifee там не нужен, а его
+  // foreground-подписка на неподключённом модуле только логировала бы ошибку.
+  if (Platform.OS !== 'android') return () => {};
+
   const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
     if (type !== EventType.ACTION_PRESS) return;
     publish(parseAction(detail.pressAction?.id));

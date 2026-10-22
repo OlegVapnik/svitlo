@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 4×1: широкая строка статуса и шкала с подписями 00:00…24:00. -->
+<!-- 4×1 «Таймлайн Суток»: статус, таймер и шкала 00…24. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:initialLayout="@layout/svitlo_widget_hero_medium"
+    android:description="@string/widget_desc_timeline"
+    android:initialLayout="@layout/svitlo_widget_timeline"
     android:minHeight="40dp"
     android:minResizeHeight="40dp"
     android:minResizeWidth="250dp"
     android:minWidth="250dp"
+    android:previewLayout="@layout/svitlo_widget_timeline"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="1"
     android:targetCellWidth="4"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen" />

@@ -11,6 +11,7 @@ import { UpdateGate } from '../changelog/UpdateModal.js';
 import { cn } from '../../lib/cn.js';
 import { Header } from './Header.js';
 import { BottomNav } from './BottomNav.js';
+import { IosInstallHint } from './IosInstallHint.js';
 import { Sidebar } from './Sidebar.js';
 
 /**
@@ -74,6 +75,7 @@ export const AppShell = () => {
       </main>
     </div>
     <BottomNav />
+    <IosInstallHint />
     <UpdateGate info={appVersion.data?.data ?? null} />
   </div>
   );

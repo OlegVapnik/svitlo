@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  4×1 «Таймлайн Суток». Верхняя строка — статус, название места и крупный таймер;
+  снизу — шкала 24 часов. Растр только у шкалы (480×24, RGB_565 ≈ 23 КБ), подписи
+  00…24 и весь остальной текст — нативные TextView.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_panel"
+    android:paddingHorizontal="10dp"
+    android:paddingVertical="7dp">
+
+    <TextView
+        android:id="@+id/widget_cycle"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/widget_cycle_place"
+        android:focusable="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="20dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_dot"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:text="●"
+                android:textColor="#FFFFFF"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/widget_place"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_no_data"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_timer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="—"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_refresh"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/widget_pill"
+                android:clickable="true"
+                android:contentDescription="@string/widget_refresh"
+                android:focusable="true"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="↻"
+                android:textColor="#D4D4D8"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="14dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_pill"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/widget_pill"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="1dp"
+                android:text="@string/widget_no_data"
+                android:textColor="#FFFFFF"
+                android:textSize="8sp" />
+
+            <TextView
+                android:id="@+id/widget_detail"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_open_hint"
+                android:textColor="#D4D4D8"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/widget_scale"
+            android:layout_width="match_parent"
+            android:layout_height="18dp"
+            android:layout_marginTop="3dp"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+                style="@style/WidgetScaleLabel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="start"
+                android:text="00" />
+
+            <TextView
+                style="@style/WidgetScaleLabel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="06" />
+
+            <TextView
+                style="@style/WidgetScaleLabel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="12" />
+
+            <TextView
+                style="@style/WidgetScaleLabel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="18" />
+
+            <TextView
+                style="@style/WidgetScaleLabel"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:text="24" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

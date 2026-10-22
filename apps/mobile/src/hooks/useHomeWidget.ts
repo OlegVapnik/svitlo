@@ -5,7 +5,7 @@ import type { ScheduleWindow } from '@svitlo/core/lib/scheduleWindow';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
 import { buildNotificationBanner } from '@/lib/notification-preview';
-import { consumeWidgetAction, pushWidgetSnapshot } from '@/lib/widget';
+import { consumeWidgetAction, pushWidgetSnapshot, type WidgetSnapshotExtras } from '@/lib/widget';
 import type { PowerState } from '@/theme/ThemeProvider';
 
 interface Params {
@@ -16,8 +16,11 @@ interface Params {
   now: Date;
   queue: string | null;
   detail: string;
+  /** Дані, яких немає у плашці: назва місця, підсумки за сьогодні/завтра та список місць. */
+  extras?: WidgetSnapshotExtras;
   onRefresh: () => void;
   onNextQueue: () => void;
+  onCycleBookmark: () => void;
 }
 
 /**
@@ -39,8 +42,10 @@ export function useHomeWidget({
   now,
   queue,
   detail,
+  extras,
   onRefresh,
   onNextQueue,
+  onCycleBookmark,
 }: Params) {
   // Ключ снимка: минута + значимые поля. Ссылки на `summary`/`intervals` меняются на каждый
   // рендер экрана, и без ключа виджет перерисовывался бы на любое движение UI.
@@ -56,17 +61,25 @@ export function useHomeWidget({
     summary?.nextStartsAt ?? '',
     summary?.offMinutes ?? 0,
     intervals.map((item) => `${item.startsAt}-${item.endsAt}-${item.stateCode}`).join(','),
+    extras?.placeLabel ?? '',
+    extras?.todayOffMinutes ?? '',
+    extras?.tomorrowOffMinutes ?? '',
+    extras?.places.map((place) => `${place.queue}:${place.state}:${place.timeLabel}`).join(','),
   ].join('|');
 
   useEffect(() => {
-    pushWidgetSnapshot(
-      buildNotificationBanner({ state, summary, intervals, date, now, queue, detail }),
-    );
+    const timer = setTimeout(() => {
+      pushWidgetSnapshot(
+        buildNotificationBanner({ state, summary, intervals, date, now, queue, detail }),
+        extras,
+      );
+    }, 250);
+    return () => clearTimeout(timer);
   }, [snapshotKey]);
 
   // Колбэки держим в ref: подписка на AppState не должна пересоздаваться на каждый рендер.
-  const handlers = useRef({ onRefresh, onNextQueue });
-  handlers.current = { onRefresh, onNextQueue };
+  const handlers = useRef({ onRefresh, onNextQueue, onCycleBookmark });
+  handlers.current = { onRefresh, onNextQueue, onCycleBookmark };
 
   useEffect(() => {
     let active = true;
@@ -77,6 +90,7 @@ export function useHomeWidget({
       if (!active || !action) return;
       if (action === 'refresh') handlers.current.onRefresh();
       if (action === 'next_queue') handlers.current.onNextQueue();
+      if (action === 'cycle_bookmark') handlers.current.onCycleBookmark();
     };
 
     void drain();

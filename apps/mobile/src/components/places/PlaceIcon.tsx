@@ -66,4 +66,20 @@ export function iconLabel(icon: PlaceIcon): string {
   return META[icon].label;
 }
 
+/** Емодзі для нативних віджетів: там немає Ionicons, а емодзі є в системному шрифті. */
+const EMBLEM: Record<PlaceIcon, string> = {
+  home: '🏠',
+  work: '💼',
+  family: '👨‍👩‍👧',
+  dacha: '🌳',
+  garage: '🚗',
+  office: '🏢',
+  school: '🎓',
+  star: '⭐',
+};
+
+export function placeIconEmoji(icon: PlaceIcon): string {
+  return EMBLEM[icon] ?? '⭐';
+}
+
 export { PLACE_ICONS };

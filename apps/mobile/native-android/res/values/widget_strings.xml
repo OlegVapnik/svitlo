@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_label">Svitlo</string>
+    <string name="widget_label_capsule">Svitlo · Капсула</string>
+    <string name="widget_label_timeline">Svitlo · Таймлайн</string>
+    <string name="widget_label_command">Svitlo · Командний центр</string>
+    <string name="widget_label_places">Svitlo · Мої місця</string>
+    <string name="widget_desc_capsule">Статус, таймер і точний час наступного включення</string>
+    <string name="widget_desc_timeline">Доба за годинами з поточною позначкою</string>
+    <string name="widget_desc_command">Таймер, шкала й підсумки за сьогодні та завтра</string>
+    <string name="widget_desc_places">До трьох збережених місць зі статусом одночасно</string>
+    <string name="widget_loading">Завантаження…</string>
+    <string name="widget_no_data">Немає даних</string>
+    <string name="widget_schedule_pending">Графік очікується</string>
+    <string name="widget_open_hint">Відкрийте Svitlo, щоб завантажити графік</string>
     <string name="widget_refresh">Оновити дані</string>
     <string name="widget_next_queue">Наступна черга</string>
+    <string name="widget_cycle_place">Наступне збережене місце</string>
+    <string name="widget_open_app">Відкрити Svitlo</string>
+    <string name="widget_today">Сьогодні</string>
+    <string name="widget_tomorrow">Завтра</string>
+    <string name="widget_places_title">Мої місця</string>
+    <string name="widget_places_empty">Додайте місце в застосунку Svitlo</string>
 </resources>

@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { readRegionScheduleSnapshot, useQueries } from '@svitlo/core';
-import { api } from '@svitlo/core/api/client';
+import { upcomingGroupOutagesQueryOptions } from '@svitlo/core/api/queries';
 import { canonicalQueueCode, queueCodeMatches } from '@svitlo/core/lib/queue';
 import { minutesOfDay, minutesToHm, scheduleWindow, OFF_STATE_CODE } from '@svitlo/core/lib/scheduleWindow';
 import { SOON_MINUTES } from '@svitlo/core/lib/day-status';
-import type { GroupOutageSummary, ScheduleIntervalUtc } from '@svitlo/shared';
+import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
 type ScheduleBucket = { queue: string; date: string; intervals: ScheduleIntervalUtc[] };
 
@@ -36,30 +36,17 @@ export function useSavedPlacesStatus(
 
   const regionQueries = useQueries({
     queries: uniqueRegions.map((region) => ({
-      queryKey: ['upcomingGroupOutages', region, 2],
-      queryFn: async ({ signal }: { signal?: AbortSignal }) => {
-        const response = await api.fetchUpcomingGroupOutages(region, 2, signal);
-        return {
-          region,
-          data: (response?.data ?? []).map((item: GroupOutageSummary) => ({
-            ...item,
-            queue: canonicalQueueCode(region, item.queue),
-          })),
-        };
-      },
+      ...upcomingGroupOutagesQueryOptions(region, 2),
       initialData: () => {
         const snapshot = readRegionScheduleSnapshot(region);
         if (!snapshot || !Array.isArray(snapshot.buckets)) return undefined;
         return {
-          region,
           data: snapshot.buckets.map((item) => ({
             ...item,
             queue: canonicalQueueCode(region, item.queue),
           })),
         };
       },
-      staleTime: 60_000,
-      refetchInterval: 30_000,
     })),
   });
 
@@ -79,11 +66,13 @@ export function useSavedPlacesStatus(
       }
     }
 
-    for (const q of regionQueries) {
-      if (q.data?.region && Array.isArray(q.data.data) && q.data.data.length > 0) {
-        regionDataMap.set(q.data.region, q.data.data);
+    regionQueries.forEach((query, index) => {
+      const region = uniqueRegions[index];
+      const data = query.data?.data;
+      if (region && Array.isArray(data) && data.length > 0) {
+        regionDataMap.set(region, data);
       }
-    }
+    });
 
     for (const place of places) {
       const regionUpcoming = regionDataMap.get(place.regionCpu) ?? [];

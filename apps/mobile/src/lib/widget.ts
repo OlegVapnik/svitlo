@@ -17,7 +17,39 @@ interface SvitloWidgetBridge {
   notificationIcon?: string;
 }
 
-export type WidgetAction = 'refresh' | 'next_queue';
+export type WidgetAction = 'refresh' | 'next_queue' | 'cycle_bookmark';
+
+/** Одно збережене місце для віджета «Радар моїх місць». */
+export interface WidgetPlaceSnapshot {
+  /** Емодзі іконки місця: 🏠, 💼, 🌳 тощо. */
+  icon: string;
+  label: string;
+  queue: string;
+  /** `on` | `warning` | `off` | `unknown` — той самий стан, що в Hero-картці. */
+  state: string;
+  /** Короткий час: «до 09:00», «цілий день», порожньо. */
+  timeLabel: string;
+  /** Підпис: «Світло є», «Скоро вимкнуть», «Вимкнено», «Немає даних». */
+  statusText: string;
+}
+
+/**
+ * Додаткові поля віджета, яких немає у плашці шторки.
+ *
+ * Нативні макети — декларативні `RemoteViews`: увесь текст і кнопки малює система, тому
+ * заздалегідь відформатовані рядки приходять звідси. Це тримає одну логіку форматування
+ * (JS) і не дублює українські відмінки в Kotlin.
+ */
+export interface WidgetSnapshotExtras {
+  /** «🏠 Дім · 6/1» або «Черга 6/1», якщо місце не збережене. */
+  placeLabel: string;
+  /** Скільки хвилин без світла за сьогодні; `null` — графіка немає. */
+  todayOffMinutes: number | null;
+  /** Скільки хвилин без світла завтра; `null` — графік ще не опубліковано. */
+  tomorrowOffMinutes: number | null;
+  /** До трьох місць для віджета «Радар». */
+  places: WidgetPlaceSnapshot[];
+}
 
 const bridge: SvitloWidgetBridge | undefined = NativeModules.SvitloWidget;
 
@@ -43,7 +75,11 @@ export function isWidgetAvailable(): boolean {
  * JSON плоский и короткий: нативный рендер ждёт ровно эти поля (см. `WidgetPayload.kt`),
  * лишние он игнорирует. `slots` — 48 получасовых кодов, `nowFraction` — позиция «зараз».
  */
-export function pushWidgetSnapshot(banner: NotificationBanner, updatedAt = Date.now()): void {
+export function pushWidgetSnapshot(
+  banner: NotificationBanner,
+  extras?: WidgetSnapshotExtras,
+  updatedAt = Date.now(),
+): void {
   if (!bridge) return;
   const payload = {
     state: banner.state,
@@ -57,6 +93,10 @@ export function pushWidgetSnapshot(banner: NotificationBanner, updatedAt = Date.
     nowFraction: banner.nowFraction,
     offMinutes: banner.offMinutes,
     updatedAt,
+    placeLabel: extras?.placeLabel ?? '',
+    todayOffMinutes: extras?.todayOffMinutes ?? null,
+    tomorrowOffMinutes: extras?.tomorrowOffMinutes ?? null,
+    places: extras?.places ?? [],
   };
   try {
     bridge.update(JSON.stringify(payload));
@@ -70,7 +110,9 @@ export async function consumeWidgetAction(): Promise<WidgetAction | null> {
   if (!bridge) return null;
   try {
     const action = await bridge.consumeAction();
-    return action === 'refresh' || action === 'next_queue' ? action : null;
+    return action === 'refresh' || action === 'next_queue' || action === 'cycle_bookmark'
+      ? action
+      : null;
   } catch {
     return null;
   }

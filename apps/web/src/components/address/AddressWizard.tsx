@@ -30,6 +30,7 @@ import { Button } from '../ui/Button.js';
 import { Badge } from '../ui/Badge.js';
 import { Skeleton } from '../ui/Skeleton.js';
 import { cn } from '../../lib/cn.js';
+import { normalizeAddress } from '@svitlo/core/lib/address';
 import { formatKyivTime } from '../../lib/date.js';
 import { formatQueueLabel } from '../../lib/queue-label.js';
 import { operatorLink } from '../../lib/operator-links.js';
@@ -125,6 +126,7 @@ export const AddressWizard: React.FC = () => {
 
   const [settlement, setSettlement] = useState('');
   const [selectedSettlement, setSelectedSettlement] = useState<string | null>(null);
+  const [selectedSettlementQueue, setSelectedSettlementQueue] = useState<string | null>(null);
   const [street, setStreet] = useState('');
   const [selectedStreet, setSelectedStreet] = useState<string | null>(null);
   const [house, setHouse] = useState('');
@@ -141,8 +143,17 @@ export const AddressWizard: React.FC = () => {
   const autoResolvedStreet = useRef<string | null>(null);
 
   const resolve = useAddressLookup();
+  const settlementsQuery = useAddressSettlements(currentRegion, settlement);
   const streetsQuery = useAddressStreets(currentRegion, settlement, street);
-  const housesQuery = useAddressHouses(currentRegion, settlement, street);
+  const exactStreet = useMemo(() => {
+    const needle = normalizeAddress(street);
+    if (needle.length < 2) return '';
+    const match = (streetsQuery.data?.data ?? []).find(
+      (item) => item.normalized === needle || normalizeAddress(item.name) === needle,
+    );
+    return match?.name ?? '';
+  }, [street, streetsQuery.data]);
+  const housesQuery = useAddressHouses(currentRegion, settlement, exactStreet);
   const queuesQuery = useQueues(currentRegion);
   const today = kyivToday();
   const manualScheduleQuery = useQueueSchedule(manualQueue ?? undefined, today, currentRegion);
@@ -164,6 +175,7 @@ export const AddressWizard: React.FC = () => {
   useEffect(() => {
     setSettlement(currentRegion === 'kyiv-city' ? 'Київ' : '');
     setSelectedSettlement(currentRegion === 'kyiv-city' ? 'Київ' : null);
+    setSelectedSettlementQueue(null);
     setStreet('');
     setSelectedStreet(null);
     setHouse('');
@@ -190,8 +202,14 @@ export const AddressWizard: React.FC = () => {
   };
 
   const chooseSettlement = (name: string) => {
+    const match = (settlementsQuery.data?.data ?? []).find(
+      (item) => item.name === name || normalizeAddress(item.name) === normalizeAddress(name),
+    );
     setSettlement(name);
     setSelectedSettlement(name);
+    setSelectedSettlementQueue(
+      match?.wholeSettlementQueue ?? (match?.queues?.length === 1 ? match.queues[0]! : null),
+    );
     setStreet('');
     setSelectedStreet(null);
     setHouse('');
@@ -202,11 +220,11 @@ export const AddressWizard: React.FC = () => {
   // НП, у которого на всё поселение одна очередь: `resolve` отдаёт
   // `reason: "whole-settlement"` вместе с готовым расписанием. Дополнительный шаг
   // «улица» тут ничего не различает, поэтому сразу показываем подгруппу и график.
-  const wholeSettlementQueue = streetsQuery.data?.wholeSettlementQueue ?? null;
+  const wholeSettlementQueue = !street.trim() ? selectedSettlementQueue : null;
   useEffect(() => {
-    if (!settlement.trim() || !wholeSettlementQueue || street.trim() || result) return;
+    if (!settlement.trim() || !wholeSettlementQueue || street.trim() || result || resolve.isPending) return;
     void submit({ settlement });
-  }, [settlement, wholeSettlementQueue, street, result]);
+  }, [settlement, wholeSettlementQueue, street, result, resolve.isPending]);
 
   // Улица с одной группой у всех домов тоже не требует шага «дом»: пак отдаёт
   // `wholeStreetQueue`, поэтому сразу показываем график. Ручной ввод дома это не блокирует.
@@ -403,6 +421,7 @@ export const AddressWizard: React.FC = () => {
             onChange={(event) => {
               setSettlement(event.target.value);
               setSelectedSettlement(null);
+              setSelectedSettlementQueue(null);
               setStreet('');
               setSelectedStreet(null);
               setHouse('');
@@ -445,15 +464,15 @@ export const AddressWizard: React.FC = () => {
               className="h-11 w-full rounded-xl border border-input bg-transparent px-3 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
             />
             <StreetChips
-              options={streetsQuery.data?.data ?? []}
+              options={street.trim().length >= 2 ? (streetsQuery.data?.data ?? []) : []}
               query={street}
               onPick={chooseStreet}
-              loading={streetsQuery.isFetching}
+              loading={streetsQuery.isFetching && street.trim().length >= 2}
             />
-            {streetsQuery.data?.wholeSettlementQueue && !street && (
+            {wholeSettlementQueue && !street && (
               <p className="text-[11px] font-semibold text-success">
                 {t('addressWizard.wholeSettlementQueue', {
-                  queue: formatQueueLabel(streetsQuery.data.wholeSettlementQueue, currentRegion),
+                  queue: formatQueueLabel(wholeSettlementQueue, currentRegion),
                 })}
               </p>
             )}

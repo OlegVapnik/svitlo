@@ -2,7 +2,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { gunzipSync } from 'fflate';
 import { sha256 } from 'js-sha256';
 
+import { verifyOtaManifestSignature } from '@svitlo/core/lib/ota-signature';
 import type { AppVersionInfo } from '@svitlo/shared';
+
+import { OTA_PUBLIC_KEYS } from './ota-key';
 
 /**
  * Тихий OTA JS-бандла — второй контур обновления.
@@ -374,11 +377,17 @@ export async function fetchOtaBundleInfo(): Promise<OtaBundleInfo | null> {
         headers: { accept: 'application/json', 'cache-control': 'no-cache' },
       });
       if (!response.ok) continue;
-      const data = (await response.json()) as { jsBundle?: AppVersionInfo['jsBundle'] };
-      const info = data.jsBundle;
-      if (info?.url && info.sha256 && info.version) {
-        return info;
+      const data = (await response.json()) as Record<string, unknown>;
+      const info = data.jsBundle as AppVersionInfo['jsBundle'] | undefined;
+      if (!info?.url || !info.sha256 || !info.version) continue;
+      // Підпис перевіряємо ДО будь-якого завантаження: SHA-256 у маніфесті захищає лише
+      // від обриву файлу, але не від підміни самого маніфесту на CDN.
+      const verification = verifyOtaManifestSignature(data, OTA_PUBLIC_KEYS);
+      if (!verification.ok) {
+        log('маніфест відкинуто', base, verification.reason);
+        continue;
       }
+      return info;
     } catch {
       // Пробуем следующий источник (GitHub -> Pages fallback)
     }

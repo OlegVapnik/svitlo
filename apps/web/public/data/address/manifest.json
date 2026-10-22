@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-21T17:26:44Z",
+  "generatedAt": "2026-10-22T16:58:04Z",
   "regions": {
     "chernihivska-oblast": {
       "houses": {
@@ -394,110 +394,110 @@
     "kyivska-oblast": {
       "houses": {
         "0": {
-          "bytes": 151972,
-          "count": 639,
-          "hash": "e2abd16df863",
-          "url": "kyivska-oblast/houses-0.e2abd16df863.json"
+          "bytes": 180408,
+          "count": 718,
+          "hash": "526139304a89",
+          "url": "kyivska-oblast/houses-0.526139304a89.json"
         },
         "1": {
-          "bytes": 160453,
-          "count": 692,
-          "hash": "03e374222958",
-          "url": "kyivska-oblast/houses-1.03e374222958.json"
+          "bytes": 194809,
+          "count": 777,
+          "hash": "3ff1c7c57486",
+          "url": "kyivska-oblast/houses-1.3ff1c7c57486.json"
         },
         "10": {
-          "bytes": 245916,
-          "count": 1190,
-          "hash": "4370658651ea",
-          "url": "kyivska-oblast/houses-10.4370658651ea.json"
+          "bytes": 271006,
+          "count": 1285,
+          "hash": "0da4c15d09fe",
+          "url": "kyivska-oblast/houses-10.0da4c15d09fe.json"
         },
         "11": {
-          "bytes": 134052,
-          "count": 607,
-          "hash": "71af73525087",
-          "url": "kyivska-oblast/houses-11.71af73525087.json"
+          "bytes": 153825,
+          "count": 665,
+          "hash": "fc867e49651d",
+          "url": "kyivska-oblast/houses-11.fc867e49651d.json"
         },
         "12": {
-          "bytes": 135937,
-          "count": 642,
-          "hash": "361c25df7876",
-          "url": "kyivska-oblast/houses-12.361c25df7876.json"
+          "bytes": 162178,
+          "count": 700,
+          "hash": "53789b2badf2",
+          "url": "kyivska-oblast/houses-12.53789b2badf2.json"
         },
         "13": {
-          "bytes": 217671,
-          "count": 1002,
-          "hash": "d5ce7360a975",
-          "url": "kyivska-oblast/houses-13.d5ce7360a975.json"
+          "bytes": 245579,
+          "count": 1081,
+          "hash": "ea8807a5dd97",
+          "url": "kyivska-oblast/houses-13.ea8807a5dd97.json"
         },
         "14": {
-          "bytes": 261322,
-          "count": 1212,
-          "hash": "047a96ad3638",
-          "url": "kyivska-oblast/houses-14.047a96ad3638.json"
+          "bytes": 305955,
+          "count": 1304,
+          "hash": "88989a0605ac",
+          "url": "kyivska-oblast/houses-14.88989a0605ac.json"
         },
         "15": {
-          "bytes": 196683,
-          "count": 899,
-          "hash": "251ab2325233",
-          "url": "kyivska-oblast/houses-15.251ab2325233.json"
+          "bytes": 226685,
+          "count": 969,
+          "hash": "d9e992ca9786",
+          "url": "kyivska-oblast/houses-15.d9e992ca9786.json"
         },
         "2": {
-          "bytes": 176818,
-          "count": 900,
-          "hash": "874e2b44f6d4",
-          "url": "kyivska-oblast/houses-2.874e2b44f6d4.json"
+          "bytes": 206572,
+          "count": 990,
+          "hash": "d281d2024326",
+          "url": "kyivska-oblast/houses-2.d281d2024326.json"
         },
         "3": {
-          "bytes": 163272,
-          "count": 754,
-          "hash": "a19b11a76b03",
-          "url": "kyivska-oblast/houses-3.a19b11a76b03.json"
+          "bytes": 190187,
+          "count": 836,
+          "hash": "98e4f4879900",
+          "url": "kyivska-oblast/houses-3.98e4f4879900.json"
         },
         "4": {
-          "bytes": 142168,
-          "count": 698,
-          "hash": "24753115deed",
-          "url": "kyivska-oblast/houses-4.24753115deed.json"
+          "bytes": 159724,
+          "count": 770,
+          "hash": "73df6ba50a55",
+          "url": "kyivska-oblast/houses-4.73df6ba50a55.json"
         },
         "5": {
-          "bytes": 134453,
-          "count": 652,
-          "hash": "470d742e7613",
-          "url": "kyivska-oblast/houses-5.470d742e7613.json"
+          "bytes": 153156,
+          "count": 723,
+          "hash": "0a8c03e8d155",
+          "url": "kyivska-oblast/houses-5.0a8c03e8d155.json"
         },
         "6": {
-          "bytes": 212087,
-          "count": 1058,
-          "hash": "0b16ca30e69f",
-          "url": "kyivska-oblast/houses-6.0b16ca30e69f.json"
+          "bytes": 238828,
+          "count": 1143,
+          "hash": "5bd08cbf576a",
+          "url": "kyivska-oblast/houses-6.5bd08cbf576a.json"
         },
         "7": {
-          "bytes": 473794,
-          "count": 1772,
-          "hash": "c0fdd86f0fa3",
-          "url": "kyivska-oblast/houses-7.c0fdd86f0fa3.json"
+          "bytes": 518639,
+          "count": 1880,
+          "hash": "5c4fc15d1a34",
+          "url": "kyivska-oblast/houses-7.5c4fc15d1a34.json"
         },
         "8": {
-          "bytes": 183941,
-          "count": 749,
-          "hash": "cf259711cde3",
-          "url": "kyivska-oblast/houses-8.cf259711cde3.json"
+          "bytes": 204786,
+          "count": 812,
+          "hash": "66f203843612",
+          "url": "kyivska-oblast/houses-8.66f203843612.json"
         },
         "9": {
-          "bytes": 242041,
-          "count": 1115,
-          "hash": "9ec49b9359d7",
-          "url": "kyivska-oblast/houses-9.9ec49b9359d7.json"
+          "bytes": 276652,
+          "count": 1222,
+          "hash": "406b903045c3",
+          "url": "kyivska-oblast/houses-9.406b903045c3.json"
         }
       },
-      "housesCount": 14581,
+      "housesCount": 15875,
       "settlements": {
-        "bytes": 98591,
-        "count": 717,
-        "hash": "da5510b99f04",
-        "url": "kyivska-oblast/settlements.da5510b99f04.json"
+        "bytes": 99570,
+        "count": 723,
+        "hash": "571d1230804e",
+        "url": "kyivska-oblast/settlements.571d1230804e.json"
       },
-      "settlementsCount": 717,
+      "settlementsCount": 723,
       "shards": {
         "а": {
           "bytes": 7945,
@@ -506,10 +506,10 @@
           "url": "kyivska-oblast/streets-а.1f35d7512814.json"
         },
         "б": {
-          "bytes": 150647,
-          "count": 1910,
-          "hash": "04798e020ebb",
-          "url": "kyivska-oblast/streets-б.04798e020ebb.json"
+          "bytes": 186973,
+          "count": 2350,
+          "hash": "c429c92aaefb",
+          "url": "kyivska-oblast/streets-б.c429c92aaefb.json"
         },
         "в": {
           "bytes": 88788,
@@ -548,10 +548,10 @@
           "url": "kyivska-oblast/streets-й.32efb847422e.json"
         },
         "к": {
-          "bytes": 83996,
-          "count": 1095,
-          "hash": "a5b73969404c",
-          "url": "kyivska-oblast/streets-к.a5b73969404c.json"
+          "bytes": 95002,
+          "count": 1241,
+          "hash": "cd1cb5633b9a",
+          "url": "kyivska-oblast/streets-к.cd1cb5633b9a.json"
         },
         "л": {
           "bytes": 47231,
@@ -584,10 +584,10 @@
           "url": "kyivska-oblast/streets-п.6fb636a04c68.json"
         },
         "р": {
-          "bytes": 42976,
-          "count": 562,
-          "hash": "1caa78e40830",
-          "url": "kyivska-oblast/streets-р.1caa78e40830.json"
+          "bytes": 49366,
+          "count": 646,
+          "hash": "c31858e9f109",
+          "url": "kyivska-oblast/streets-р.c31858e9f109.json"
         },
         "с": {
           "bytes": 96877,
@@ -596,10 +596,10 @@
           "url": "kyivska-oblast/streets-с.dede882621b2.json"
         },
         "т": {
-          "bytes": 49151,
-          "count": 640,
-          "hash": "acbfa9eee179",
-          "url": "kyivska-oblast/streets-т.acbfa9eee179.json"
+          "bytes": 62306,
+          "count": 808,
+          "hash": "56868bcc82de",
+          "url": "kyivska-oblast/streets-т.56868bcc82de.json"
         },
         "у": {
           "bytes": 12116,
@@ -608,10 +608,10 @@
           "url": "kyivska-oblast/streets-у.1119db759409.json"
         },
         "ф": {
-          "bytes": 13282,
-          "count": 176,
-          "hash": "a28604de79a9",
-          "url": "kyivska-oblast/streets-ф.a28604de79a9.json"
+          "bytes": 33262,
+          "count": 421,
+          "hash": "4a5da1dd787f",
+          "url": "kyivska-oblast/streets-ф.4a5da1dd787f.json"
         },
         "х": {
           "bytes": 35311,
@@ -662,13 +662,13 @@
           "url": "kyivska-oblast/streets-є.a3eae9188c88.json"
         },
         "і": {
-          "bytes": 11764,
-          "count": 162,
-          "hash": "d8c0975675df",
-          "url": "kyivska-oblast/streets-і.d8c0975675df.json"
+          "bytes": 29540,
+          "count": 375,
+          "hash": "ae30ce505af7",
+          "url": "kyivska-oblast/streets-і.ae30ce505af7.json"
         }
       },
-      "streetsCount": 14607
+      "streetsCount": 15903
     },
     "poltavska-oblast": {
       "houses": {

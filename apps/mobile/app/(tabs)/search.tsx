@@ -1,4 +1,4 @@
-import { ScrollView } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AddressLookup } from '@/components/address/AddressLookup';
@@ -16,6 +16,11 @@ export default function SearchScreen() {
   return (
     <SwipeableScreen>
       <SafeAreaView className="flex-1 bg-surface-dim" edges={['top']}>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+      >
       <ScrollView
         contentContainerStyle={{ gap: 16, paddingHorizontal: 16, paddingBottom: 32, paddingTop: 12 }}
         keyboardShouldPersistTaps="handled"
@@ -26,6 +31,7 @@ export default function SearchScreen() {
         <AddressLookup />
         <SavedPlacesSection />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
     </SwipeableScreen>
   );

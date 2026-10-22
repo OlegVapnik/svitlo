@@ -26,6 +26,7 @@ import { canonicalQueueCode, canonicalQueueListForRegion } from '../lib/queue';
 import { api } from './client';
 import { fetchPackHouses, fetchPackStreets, resolvePackAddress, searchPackSettlements } from './address-packs';
 import { pickRegionSchedule, writeRegionScheduleSnapshot } from './offline-region-schedules';
+import { useDebouncedValue } from '../lib/use-debounced-value';
 
 type OutageFilters = {
   query?: string;
@@ -160,28 +161,30 @@ export const useQueues = (region?: string) =>
  * приходить одним запитом на область, тому достатньо одного візиту зі зв'язкою, щоб в офлайні
  * працювали ВСІ кнопки груп (1/1…6/2), а не лише та, яку натиснули востаннє.
  */
+export const upcomingGroupOutagesQueryOptions = (region?: string, days = 2) => ({
+  queryKey: ['upcomingGroupOutages', region, days],
+  queryFn: async ({ signal }: { signal?: AbortSignal }) => {
+    const response = await api.fetchUpcomingGroupOutages(region, days, signal);
+    // Коды груп зводимо до канонічної форми області (Київ: «3» → «3/1»): інакше активна група
+    // в сітці не знаходила свої інтервали, а офлайн-снимок писався під іншою кодировкою.
+    const data = (response?.data ?? []).map((item: GroupOutageSummary) => ({
+      ...item,
+      queue: canonicalQueueCode(region, item.queue),
+    }));
+    // Пишемо лише успішну непорожню відповідь: невдача чи порожня відповідь не мають затерти
+    // вчорашній робочий графік, бо інакше після однієї помилки офлайн стане порожнім назавжди.
+    if (region && data.length > 0) {
+      writeRegionScheduleSnapshot(region, data);
+    }
+    return { ...response, data };
+  },
+  enabled: Boolean(region),
+  staleTime: 60_000,
+  refetchInterval: OUTAGE_POLL_MS,
+});
+
 export const useUpcomingGroupOutages = (region?: string, days = 2) =>
-  useQuery<{ data: GroupOutageSummary[] }>({
-    queryKey: ['upcomingGroupOutages', region, days],
-    queryFn: async ({ signal }) => {
-      const response = await api.fetchUpcomingGroupOutages(region, days, signal);
-      // Коди груп зводимо до канонічної форми області (Київ: «3» → «3/1»): інакше активна група
-      // в сітці не знаходила свої інтервали, а офлайн-снимок писався під іншою кодировкою.
-      const data = (response?.data ?? []).map((item: GroupOutageSummary) => ({
-        ...item,
-        queue: canonicalQueueCode(region, item.queue),
-      }));
-      // Пишемо лише успішну непорожню відповідь: невдача чи порожня відповідь не мають затерти
-      // вчорашній робочий графік, бо інакше після однієї помилки офлайн стане порожнім назавжди.
-      if (region && data.length > 0) {
-        writeRegionScheduleSnapshot(region, data);
-      }
-      return { ...response, data };
-    },
-    enabled: Boolean(region),
-    staleTime: 60_000,
-    refetchInterval: OUTAGE_POLL_MS,
-  });
+  useQuery<{ data: GroupOutageSummary[] }>(upcomingGroupOutagesQueryOptions(region, days));
 
 /**
  * Каталог областей з дзеркала (GET /api/v1/regions, контракт /tmp/API-CONTRACT-regions.md).
@@ -381,34 +384,39 @@ export const useNewsSources = () =>
  * Статический пак — не кеш, а замена D1-поиску: пока он есть, ввод символов не тратит
  * `rows_read`. Сервер остаётся фолбэком для областей без паков и на время обновления сборки.
  */
-export const useAddressSettlements = (region: string, query: string) =>
-  useQuery<{
+export const useAddressSettlements = (region: string, query: string) => {
+  const debouncedQuery = useDebouncedValue(query);
+  return useQuery<{
     data: Array<{
       name: string;
       normalized?: string;
       defaultQueue?: string | null;
       queues?: string[];
+      wholeSettlementQueue?: string | null;
       streetsCount?: number;
     }>;
   }>({
-    queryKey: ['addressSettlements', region, query],
+    queryKey: ['addressSettlements', region, debouncedQuery],
     queryFn: async ({ signal }) => {
-      const pack = await searchPackSettlements(region, query);
+      const pack = await searchPackSettlements(region, debouncedQuery);
       if (pack) {
         return {
           data: pack.map((item) => ({
             name: item.name,
             normalized: item.normalized,
             queues: item.queues,
+            wholeSettlementQueue: item.wholeSettlementQueue ?? null,
             streetsCount: item.streetsCount,
           })),
         };
       }
-      return api.fetchAddressSettlements({ region, q: query }, signal);
+      return api.fetchAddressSettlements({ region, q: debouncedQuery }, signal);
     },
-    enabled: region.length > 0 && query.trim().length >= 2,
+    // Пустой запрос не ищем: справочник НП большой, а подсказки всё равно начинаются с 2 символов.
+    enabled: region.length > 0 && debouncedQuery.trim().length >= 2,
     staleTime: 10 * 60_000,
   });
+};
 
 /**
  * Улицы выбранного НП: быстрые чипы под полем поиска.
@@ -416,17 +424,21 @@ export const useAddressSettlements = (region: string, query: string) =>
  * Это query, а не part of resolve: улицы нужны ещё до ввода дома, и один запрос покрывает
  * весь экран. Кэш 5 минут — справочник меняется при импорте, а не каждую минуту.
  */
-export const useAddressStreets = (region: string, settlement: string, query: string) =>
-  useQuery<AddressStreetsResponse>({
-    queryKey: ['addressStreets', region, settlement, query],
+export const useAddressStreets = (region: string, settlement: string, query: string) => {
+  const debouncedQuery = useDebouncedValue(query);
+  return useQuery<AddressStreetsResponse>({
+    queryKey: ['addressStreets', region, settlement, debouncedQuery],
     queryFn: async ({ signal }) => {
-      const pack = await fetchPackStreets(region, settlement, query);
+      const pack = await fetchPackStreets(region, settlement, debouncedQuery);
       if (pack) return pack;
-      return api.fetchAddressStreets({ region, settlement, q: query }, signal);
+      return api.fetchAddressStreets({ region, settlement, q: debouncedQuery }, signal);
     },
-    enabled: region.length > 0 && settlement.trim().length >= 2,
+    // Без введённой улицы запрос не нужен: для Києва он читает шард на 2 400 вулиць,
+    // а серверный фолбэк — до 4 000 строк D1 на каждый символ.
+    enabled: region.length > 0 && settlement.trim().length >= 2 && debouncedQuery.trim().length >= 2,
     staleTime: 5 * 60_000,
   });
+};
 
 /** Дома выбранной улицы с группами — чипы номеров и их очередь. */
 export const useAddressHouses = (region: string, settlement: string, street: string) =>

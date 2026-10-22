@@ -11,6 +11,7 @@ import {
   useQueues,
   useQueueSchedule,
 } from '@svitlo/core/api/queries';
+import { normalizeAddress } from '@svitlo/core/lib/address';
 import { formatKyivTime, formatTimeRange } from '@svitlo/core/lib/date';
 import { formatQueueLabel } from '@svitlo/core/lib/queue-label';
 import type { AddressHouseOption, AddressResolveResult, QueueScheduleData } from '@svitlo/shared';
@@ -66,6 +67,7 @@ export function AddressLookup() {
   const [street, setStreet] = useState('');
   const [house, setHouse] = useState('');
   const [result, setResult] = useState<AddressResolveResult | null>(null);
+  const [selectedSettlementQueue, setSelectedSettlementQueue] = useState<string | null>(null);
   const [manualQueue, setManualQueue] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
@@ -75,7 +77,17 @@ export function AddressLookup() {
   const today = useMemo(() => kyivToday(), []);
   const settlementsQuery = useAddressSettlements(currentRegion, settlement);
   const streetsQuery = useAddressStreets(currentRegion, settlement, street);
-  const housesQuery = useAddressHouses(currentRegion, settlement, street);
+  // Дома запрашиваем только когда введённая улица точно совпала с известной: иначе каждый
+  // символ «Хрещатик» уходил бы в серверный справочник и читал до 200 строк D1.
+  const exactStreet = useMemo(() => {
+    const needle = normalizeAddress(street);
+    if (needle.length < 2) return '';
+    const match = (streetsQuery.data?.data ?? []).find(
+      (item) => item.normalized === needle || normalizeAddress(item.name) === needle,
+    );
+    return match?.name ?? '';
+  }, [street, streetsQuery.data]);
+  const housesQuery = useAddressHouses(currentRegion, settlement, exactStreet);
   const queuesQuery = useQueues(currentRegionData.cpu);
   const resolve = useAddressLookup();
   const manualScheduleQuery = useQueueSchedule(manualQueue ?? undefined, today, currentRegion);
@@ -86,6 +98,7 @@ export function AddressLookup() {
     setSettlement(currentRegion === 'kyiv-city' ? 'Київ' : '');
     setStreet('');
     setHouse('');
+    setSelectedSettlementQueue(null);
     setResult(null);
     setManualQueue(null);
     setSaveOpen(false);
@@ -116,7 +129,7 @@ export function AddressLookup() {
     }
   };
 
-  const wholeSettlementQueue = streetsQuery.data?.wholeSettlementQueue ?? null;
+  const wholeSettlementQueue = !street.trim() ? selectedSettlementQueue : null;
   const wholeStreetQueue = housesQuery.data?.wholeStreetQueue ?? null;
 
   useEffect(() => {
@@ -153,8 +166,8 @@ export function AddressLookup() {
   }, [currentRegion, settlement, settlementsQuery.data]);
 
   const streetOptions = useMemo(
-    () => (streetsQuery.data?.data ?? []).slice(0, 18),
-    [streetsQuery.data],
+    () => (street.trim().length >= 2 ? (streetsQuery.data?.data ?? []).slice(0, 18) : []),
+    [street, streetsQuery.data],
   );
 
   const houseOptions = useMemo(
@@ -221,9 +234,16 @@ export function AddressLookup() {
   };
 
   const chooseSettlement = (name: string) => {
+    const match = (settlementsQuery.data?.data ?? []).find(
+      (item) => item.name === name || normalizeAddress(item.name) === normalizeAddress(name),
+    );
+    const queue =
+      match?.wholeSettlementQueue ??
+      (match?.queues?.length === 1 ? match.queues[0]! : null);
     setSettlement(name);
     setStreet('');
     setHouse('');
+    setSelectedSettlementQueue(queue);
     setResult(null);
     setManualQueue(null);
     autoResolved.current = null;
@@ -259,6 +279,7 @@ export function AddressLookup() {
             setSettlement(value);
             setStreet('');
             setHouse('');
+            setSelectedSettlementQueue(null);
             setResult(null);
             setManualQueue(null);
             autoResolved.current = null;
@@ -294,7 +315,7 @@ export function AddressLookup() {
           />
           {streetOptions.length > 0 ? (
             <Chips options={streetOptions.map((item) => item.name)} onPick={chooseStreet} active={street} title="Вулиці" />
-          ) : streetsQuery.isFetching && street.length >= 2 ? (
+          ) : streetsQuery.isFetching && street.trim().length >= 2 ? (
             <ActivityIndicator color={palette.mutedForeground} />
           ) : null}
           {wholeSettlementQueue ? (

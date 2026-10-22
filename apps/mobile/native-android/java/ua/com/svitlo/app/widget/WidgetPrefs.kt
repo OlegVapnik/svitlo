@@ -21,11 +21,10 @@ object WidgetPrefs {
     fun readPayload(context: Context): String? = prefs(context).getString(KEY_PAYLOAD, null)
 
     /**
-     * Клик по зоне виджета: provider кладёт действие сюда и открывает приложение.
+     * Клик по зоне виджета: receiver кладёт действие сюда и открывает приложение.
      *
-     * Через Intent extra нельзя: Activity в `singleTask` не обновляет `getIntent()` при
-     * `onNewIntent`, и повторный клик по «Оновити» терялся бы. `SharedPreferences`
-     * доставляет действие в обоих случаях — и при холодном старте, и при живом процессе.
+     * Запись происходит только в `onReceive`, а не при создании `PendingIntent`: иначе
+     * отложенное действие срабатывало бы при следующем открытии без клика.
      */
     fun writeAction(context: Context, action: String) {
         prefs(context).edit().putString(KEY_ACTION, action).apply()

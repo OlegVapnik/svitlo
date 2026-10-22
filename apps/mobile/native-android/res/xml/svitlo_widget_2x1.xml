@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 2×1: только состояние, чип очереди и суточная шкала. updatePeriodMillis=0 — данные из приложения. -->
+<!--
+  2×1 «Капсула-Датчик». updatePeriodMillis=30 хв — системный минимум; чаще виджет
+  обновляет приложение снимком из JS. Нулевые размеры при первом добавлении не страшны:
+  макет декларативный, без Bitmap под пиксели лаунчера.
+-->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:initialLayout="@layout/svitlo_widget_hero_narrow"
+    android:description="@string/widget_desc_capsule"
+    android:initialLayout="@layout/svitlo_widget_capsule"
     android:minHeight="40dp"
     android:minResizeHeight="40dp"
     android:minResizeWidth="110dp"
     android:minWidth="110dp"
+    android:previewLayout="@layout/svitlo_widget_capsule"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="1"
     android:targetCellWidth="2"
-    android:updatePeriodMillis="0"
+    android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen" />

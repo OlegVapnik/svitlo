@@ -1,4 +1,6 @@
 import notifee, { AndroidImportance, AndroidStyle, AndroidVisibility } from '@notifee/react-native';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 
 import { renderNotificationBanner, type NotificationBanner } from '@/lib/notification-banner';
 import { notificationIconName } from '@/lib/widget';
@@ -9,6 +11,25 @@ export const ALERT_CHANNEL = 'power-alerts';
 /** id кнопок-действий: их ловит `notification-actions.ts`. */
 export const ACTION_SHARE = 'share';
 export const ACTION_REFRESH = 'refresh';
+
+/**
+ * Android-плашку рисует Notifee: он умеет постоянные уведомления, хронометр и картинку.
+ * На iOS таких возможностей нет, поэтому там работает обычное локальное уведомление
+ * через `expo-notifications`. Разделение по платформе обязательно: Android-каналы,
+ * `smallIcon` и `ongoing` на iOS либо падают, либо игнорируются.
+ */
+const IS_ANDROID = Platform.OS === 'android';
+
+if (!IS_ANDROID) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 export interface LiveNotificationPayload {
   title: string;
@@ -26,7 +47,7 @@ export interface LiveNotificationPayload {
 let channelsReady = false;
 
 async function ensureChannels() {
-  if (channelsReady) return;
+  if (!IS_ANDROID || channelsReady) return;
   await notifee.createChannel({
     id: LIVE_CHANNEL,
     name: 'Стан світла',
@@ -45,9 +66,55 @@ async function ensureChannels() {
   channelsReady = true;
 }
 
+/** Есть ли у пользователя право показывать уведомления на iOS. */
+async function iosNotificationsAllowed(): Promise<boolean> {
+  const settings = await Notifications.getPermissionsAsync();
+  return (
+    settings.granted ||
+    settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+  );
+}
+
+function canUseIosNotifications(): Promise<boolean> {
+  return iosNotificationsAllowed().catch(() => false);
+}
+
+async function showIosNotification(
+  identifier: string,
+  title: string,
+  body: string,
+  playSound: boolean,
+): Promise<void> {
+  if (!(await canUseIosNotifications())) return;
+  await Notifications.scheduleNotificationAsync({
+    identifier,
+    content: {
+      title,
+      body,
+      sound: playSound ? 'default' : false,
+      data: { svitlo: true },
+    },
+    trigger: null,
+  });
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
-  const settings = await notifee.requestPermission();
-  return settings.authorizationStatus >= 1;
+  if (IS_ANDROID) {
+    const settings = await notifee.requestPermission();
+    return settings.authorizationStatus >= 1;
+  }
+
+  const settings = await Notifications.requestPermissionsAsync({
+    ios: {
+      allowAlert: true,
+      allowBadge: true,
+      allowSound: true,
+    },
+  });
+  return (
+    settings.granted ||
+    settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+  );
 }
 
 /**
@@ -80,6 +147,13 @@ const NOTIFICATION_ACTIONS = [
  * и без расхода батареи. Прогресс обновляется, когда экран пересчитывает состояние (раз в 30 с).
  */
 export async function showLiveNotification(payload: LiveNotificationPayload): Promise<void> {
+  if (!IS_ANDROID) {
+    // На iOS постоянных уведомлений нет: показываем актуальный статус обычной плашкой.
+    // Идентификатор один и тот же — новое уведомление заменяет предыдущее, а не копится.
+    await showIosNotification('svitlo-live', payload.title, payload.body, false);
+    return;
+  }
+
   await ensureChannels();
   const picture = payload.banner ? await renderNotificationBanner(payload.banner) : null;
 
@@ -124,7 +198,12 @@ export async function showLiveNotification(payload: LiveNotificationPayload): Pr
 
 export async function hideLiveNotification(): Promise<void> {
   try {
-    await notifee.cancelNotification('svitlo-live');
+    if (IS_ANDROID) {
+      await notifee.cancelNotification('svitlo-live');
+    } else {
+      await Notifications.dismissNotificationAsync('svitlo-live');
+      await Notifications.cancelScheduledNotificationAsync('svitlo-live');
+    }
   } catch {
     /* плашки уже нет */
   }
@@ -140,6 +219,16 @@ export async function notifyEarlyPower(
   offUntil: string | null,
   banner?: NotificationBanner | null,
 ): Promise<void> {
+  const title = "Світло з'явилося раніше графіка?";
+  const body = offUntil
+    ? `За графіком відключення до ${offUntil}, але живлення відновлено!`
+    : 'За графіком зараз відключення, але живлення відновлено!';
+
+  if (!IS_ANDROID) {
+    await showIosNotification('svitlo-early-power', title, body, true);
+    return;
+  }
+
   await ensureChannels();
   const picture = banner ? await renderNotificationBanner(banner) : null;
 
@@ -159,10 +248,8 @@ export async function notifyEarlyPower(
 
   await notifee.displayNotification({
     id: 'svitlo-early-power',
-    title: "Світло з'явилося раніше графіка?",
-    body: offUntil
-      ? `За графіком відключення до ${offUntil}, але живлення відновлено!`
-      : 'За графіком зараз відключення, але живлення відновлено!',
+    title,
+    body,
     android,
   });
 }

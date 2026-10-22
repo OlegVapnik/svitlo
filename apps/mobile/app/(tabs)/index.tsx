@@ -4,20 +4,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 
+import { api } from '@svitlo/core/api/client';
 import { useOutages, useQueueSchedule, useUpcomingGroupOutages } from '@svitlo/core/api/queries';
 import { kyivDateOffsetKey } from '@svitlo/core/lib/outage-dates';
-import { queueCodeMatches } from '@svitlo/core/lib/queue';
+import { canonicalQueueCode, queueCodeMatches } from '@svitlo/core/lib/queue';
 import { formatMinutesUk, minutesOfDay, minutesToHm } from '@svitlo/core/lib/scheduleWindow';
 
 import { AccidentBanner } from '@/components/home/AccidentBanner';
 import { HeroStatus } from '@/components/home/HeroStatus';
+import { placeIconEmoji } from '@/components/places/PlaceIcon';
 import { SavedPlacesCarousel } from '@/components/places/SavedPlacesCarousel';
 import { Timeline24h } from '@/components/schedule/Timeline24h';
 import { QueueGrid } from '@/components/home/QueueGrid';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useRegion } from '@/context/RegionContext';
 import { useSettings } from '@/context/SettingsContext';
+import { useApplySavedPlace } from '@/hooks/useApplySavedPlace';
 import { useEarlyPowerDetector } from '@/hooks/useEarlyPowerDetector';
 import { useHomeWidget } from '@/hooks/useHomeWidget';
 import { useLiveNotification } from '@/hooks/useLiveNotification';
@@ -30,13 +34,14 @@ import { useSyncStatus } from '@/context/SyncContext';
 import { triggerSoftHaptic } from '@/lib/haptics';
 import { powerStateFromSchedule, unwrapSchedule } from '@/lib/power-state';
 import { useNotificationAction, type NotificationAction } from '@/lib/notification-actions';
+import type { WidgetSnapshotExtras } from '@/lib/widget';
 import { useTheme } from '@/theme/ThemeProvider';
 import { SwipeableScreen } from '@/components/navigation/SwipeableScreen';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { currentRegion, currentRegionData } = useRegion();
-  const { palette, setPowerState } = useTheme();
+  const { palette } = useTheme();
   const { selectedQueue, selectQueue } = useRegionQueue(currentRegion, currentRegionData.queues ?? []);
   const { liveNotification, earlyLightDetector } = useSettings();
   const today = useMemo(() => kyivDateOffsetKey(0), []);
@@ -44,6 +49,34 @@ export default function HomeScreen() {
   const tomorrow = useMemo(() => kyivDateOffsetKey(1), []);
   const { places } = useSavedPlaces();
   const placesStatusMap = useSavedPlacesStatus(places, today, now);
+  const applyPlace = useApplySavedPlace();
+  const activePlace = useMemo(
+    () =>
+      places.find(
+        (place) =>
+          place.regionCpu === currentRegion &&
+          selectedQueue != null &&
+          queueCodeMatches(place.regionCpu, place.queue, selectedQueue),
+      ) ?? null,
+    [places, currentRegion, selectedQueue],
+  );
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (places.length === 0) return;
+    const timer = setTimeout(() => {
+      for (const place of places) {
+        const queue = canonicalQueueCode(place.regionCpu, place.queue);
+        void queryClient.prefetchQuery({
+          queryKey: ['queueSchedule', queue, today, place.regionCpu],
+          queryFn: () => api.fetchQueueSchedule(queue, today, place.regionCpu),
+          staleTime: 60_000,
+          retry: 0,
+        });
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [places, today, queryClient]);
   const [selectedDay, setSelectedDay] = useState<'today' | 'tomorrow'>('today');
   const activeDate = selectedDay === 'today' ? today : tomorrow;
 
@@ -273,6 +306,40 @@ export default function HomeScreen() {
     selectQueue(queues[(index + 1) % queues.length]);
   }, [currentRegionData.queues, selectedQueue, selectQueue]);
 
+  // Тап по капсулі/заголовку віджета: наступне збережене місце, а якщо місць немає — наступна черга.
+  const cycleBookmark = useCallback(() => {
+    if (places.length === 0) {
+      nextQueue();
+      return;
+    }
+    const index = activePlace ? places.indexOf(activePlace) : -1;
+    applyPlace(places[(index + 1) % places.length]);
+  }, [places, activePlace, applyPlace, nextQueue]);
+
+  const widgetExtras = useMemo<WidgetSnapshotExtras>(
+    () => ({
+      placeLabel: activePlace
+        ? `${placeIconEmoji(activePlace.icon)} ${activePlace.label} · ${activePlace.queue}`
+        : selectedQueue
+          ? `Черга ${selectedQueue}`
+          : 'Мій графік',
+      todayOffMinutes: todaySummary ? todaySummary.offMinutes : null,
+      tomorrowOffMinutes: tomorrowSummary ? tomorrowSummary.offMinutes : null,
+      places: places.slice(0, 3).map((place) => {
+        const live = placesStatusMap[place.id];
+        return {
+          icon: placeIconEmoji(place.icon),
+          label: place.label,
+          queue: place.queue,
+          state: live?.state ?? 'unknown',
+          timeLabel: live?.timeLabel ?? '',
+          statusText: live?.statusText ?? 'Немає даних',
+        };
+      }),
+    }),
+    [activePlace, places, placesStatusMap, selectedQueue, todaySummary, tomorrowSummary],
+  );
+
   useHomeWidget({
     state,
     summary,
@@ -281,13 +348,12 @@ export default function HomeScreen() {
     now,
     queue: selectedQueue,
     detail: liveDetail,
+    extras: widgetExtras,
     onRefresh: sync.refresh,
     onNextQueue: nextQueue,
+    onCycleBookmark: cycleBookmark,
   });
 
-  useEffect(() => {
-    setPowerState(state);
-  }, [setPowerState, state]);
 
   return (
     <SwipeableScreen>

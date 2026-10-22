@@ -6,83 +6,67 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
-import android.graphics.Typeface
+import android.util.Log
+import android.view.View
 import android.widget.RemoteViews
 import ua.com.svitlo.app.R
-import kotlin.math.roundToInt
 
 /**
- * Провайдер виджету: читає дані з `SharedPreferences`, малює Bitmap і оновлює всі
- * екземпляри на робочому столі.
+ * Провайдер домашнього виджета.
  *
- * Три підкласи — три розміри з маніфесту, і три різних макети: 2×1 показує статус одним
- * поглядом, 4×1 — добу за годинами, 4×2 — повну картку з деталями і оновленням. Макет
- * вибирається по фактичній комірці від лаунчера, тому ресайз не ламає вёрстку.
+ * Данные приходят из `SharedPreferences` (пишет JS через `SvitloWidgetModule`), а разметка —
+ * обычные XML-макеты с нативными `TextView`/`ImageView`. Никакого Canvas и полноэкранного
+ * Bitmap: именно они давали «Не вдаётся завантажити віджет» на HyperOS/One UI, потому что
+ * картинка 4×2 в ARGB_8888 весит больше лимита Binder (~1 МБ). Единственный растр — шкала
+ * суток 480×24 в RGB_565 (≈23 КБ), см. [WidgetTimeline].
  *
- * Захист від OEM-лаунчерів (HyperOS / OneUI / Android < 12):
- * – Вся логіка render обгорнута в try/catch — будь-який збій Canvas не роббить виджет.
- * – При збої малюється мінімальний fallback-bitmap (темний фон + текст «Немає даних»).
- * – Розміри Bitmap затискаються в [1..2048]×[1..1024] щоб уникнути OOM.
- * – Негативні значення OPTION_APPWIDGET_MIN_WIDTH/HEIGHT (деякі лаунчери) замінюються fallback.
- * – SharedPreferences читається через applicationContext щоб уникнути cross-process ізоляції MIUI.
+ * Клики не пишут `pending_action` при создании `PendingIntent`: действие едет в
+ * `Intent.action` и сохраняется только в [WidgetActionReceiver.onReceive], то есть по факту
+ * нажатия. Иначе «Оновити» срабатывало бы при следующем открытии приложения без клика.
  */
 open class SvitloWidgetProvider : AppWidgetProvider() {
+
+    /** Макет конкретного размера; переопределяется подклассами. */
+    protected open val layoutId: Int
+        get() = R.layout.svitlo_widget_command
 
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        appWidgetIds.forEach { update(context, appWidgetManager, it, fallbackSize) }
+        appWidgetIds.forEach { update(context, appWidgetManager, it, layoutId) }
     }
 
-    /** Ресайз виджету: лаунчер змінює розміри комірок — перемальовуємо під нову геометрію. */
+    /**
+     * Ресайз не меняет макет: все размеры резиновые (`match_parent`, `layout_weight`), а
+     * `RemoteViews` не пересобирается под пиксели лаунчера. Поэтому достаточно перепривязать
+     * данные — это дешево и не зависит от того, прислал ли OEM корректные OPTION_* размеры.
+     */
     override fun onAppWidgetOptionsChanged(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetId: Int,
         newOptions: android.os.Bundle,
     ) {
-        update(context, appWidgetManager, appWidgetId, fallbackSize)
+        update(context, appWidgetManager, appWidgetId, layoutId)
     }
 
-    /**
-     * Розмір «за замовчуванням» для свого класу виджету: потрібен тільки до того, як лаунчер
-     * надішле реальні опції. Перевизначається підкласами, щоб 2×1 не малювався макетом 4×2.
-     */
-    protected open val fallbackSize: IntArray
-        get() = intArrayOf(FALLBACK_WIDTH_DP, FALLBACK_HEIGHT_DP)
-
     companion object {
-        /** id-зони «Оновити»: JS прочитає дію і запустить sync. */
-        const val ACTION_REFRESH = "refresh"
-        /** id-зони «Наступна черга». */
-        const val ACTION_NEXT_QUEUE = "next_queue"
-
-        /** Запасні розміри, якщо лаунчер ще не відіслав опції (перше додавання виджету). */
-        private const val FALLBACK_WIDTH_DP = 250
-        private const val FALLBACK_HEIGHT_DP = 110
-
-        /** Максимальні розміри Bitmap: запобігає OOM на HyperOS/MIUI з обмеженою пам'яттю. */
-        private const val MAX_BITMAP_WIDTH = 2048
-        private const val MAX_BITMAP_HEIGHT = 1024
+        private const val TAG = "SvitloWidget"
 
         private val providers: List<SvitloWidgetProvider> = listOf(
             SvitloWidget2x1(),
             SvitloWidget4x1(),
             SvitloWidget4x2(),
+            SvitloWidgetPlaces4x2(),
         )
 
         fun updateAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             for (provider in providers) {
                 val ids = manager.getAppWidgetIds(ComponentName(context, provider::class.java))
-                ids.forEach { update(context, manager, it, provider.fallbackSize) }
+                ids.forEach { update(context, manager, it, provider.layoutId) }
             }
         }
 
@@ -90,162 +74,222 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             context: Context,
             manager: AppWidgetManager,
             widgetId: Int,
-            fallback: IntArray,
+            layoutId: Int,
         ) {
-            // Весь update обгорнутий у try/catch: на HyperOS/OneUI лаунчер може передати
-            // некоректні опції або Canvas кине виключення в Skia — виджет не повинен залишатись
-            // «чорним екраном» або показувати системну помилку.
             try {
                 val payload = try {
                     WidgetPayload.parse(WidgetPrefs.readPayload(context))
                         ?: WidgetPayload.placeholder()
-                } catch (_: Exception) {
+                } catch (error: Exception) {
+                    Log.w(TAG, "не вдалося прочитати payload віджета", error)
                     WidgetPayload.placeholder()
                 }
 
-                val options = try {
-                    manager.getAppWidgetOptions(widgetId)
-                } catch (_: Exception) {
-                    android.os.Bundle()
+                val views = RemoteViews(context.packageName, layoutId)
+                when (layoutId) {
+                    R.layout.svitlo_widget_capsule -> bindCapsule(context, views, payload)
+                    R.layout.svitlo_widget_timeline -> bindTimeline(context, views, payload)
+                    R.layout.svitlo_widget_places -> bindPlaces(context, views, payload)
+                    else -> bindCommand(context, views, payload)
                 }
 
-                val metrics = context.resources.displayMetrics
-
-                // Деякі OEM-лаунчери (Samsung, MIUI) повертають 0 або від'ємні значення
-                // для OPTION_APPWIDGET_MIN_WIDTH/HEIGHT — замінюємо запасними.
-                val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
-                    .takeIf { it > 0 } ?: fallback[0]
-                val heightDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
-                    .takeIf { it > 0 } ?: fallback[1]
-
-                // Затискаємо px у безпечний діапазон: надто великий Bitmap → OOM на MIUI.
-                val widthPx = (widthDp * metrics.density).roundToInt()
-                    .coerceIn(1, MAX_BITMAP_WIDTH)
-                val heightPx = (heightDp * metrics.density).roundToInt()
-                    .coerceIn(1, MAX_BITMAP_HEIGHT)
-
-                val variant = WidgetVariant.of(widthDp.toFloat(), heightDp.toFloat())
-
-                // render() може кинути OutOfMemoryError або Canvas-виключення на деяких Skia-
-                // реалізаціях OEM. Замість «чорного» виджету показуємо мінімальний fallback.
-                val bitmap = try {
-                    HeroWidgetRenderer(metrics.density).render(payload, widthPx, heightPx)
-                } catch (_: Exception) {
-                    createFallbackBitmap(widthPx, heightPx, metrics.density)
-                }
-
-                val layout = when (variant) {
-                    WidgetVariant.FULL -> R.layout.svitlo_widget_hero
-                    WidgetVariant.WIDE -> R.layout.svitlo_widget_hero_medium
-                    WidgetVariant.NARROW -> R.layout.svitlo_widget_hero_narrow
-                }
-                val views = RemoteViews(context.packageName, layout)
-                views.setImageViewBitmap(R.id.widget_canvas, bitmap)
-                views.setOnClickPendingIntent(R.id.widget_open, openApp(context))
-                // «Наступна черга» живе тільки в повній картці: там під неї намальована строка
-                // «ЧЕРГА 20/1» вгорі праворуч. В однорядних макетах такої підписи немає.
-                if (variant == WidgetVariant.FULL) {
-                    views.setOnClickPendingIntent(
-                        R.id.widget_queue,
-                        widgetAction(context, ACTION_NEXT_QUEUE),
-                    )
-                }
-                // На 2×1 зони оновлення немає: там її фізично нікуди поставити, а «сліпа» кнопка
-                // в прозорому куті — найгірший варіант. Оновлення залишається в 4×1 і 4×2.
-                if (variant != WidgetVariant.NARROW) {
-                    views.setOnClickPendingIntent(
-                        R.id.widget_refresh,
-                        widgetAction(context, ACTION_REFRESH),
-                    )
-                }
                 manager.updateAppWidget(widgetId, views)
-            } catch (_: Exception) {
-                // Останній рубіж: якщо навіть RemoteViews кинув виключення — мовчки ігноруємо,
-                // щоб не покласти systemserver через необроблений збій в AppWidgetProvider.
+            } catch (error: Exception) {
+                // Без лога в поле не отличить ошибку разметки от «немає даних».
+                Log.e(TAG, "update failed for widget $widgetId", error)
             }
         }
 
-        /**
-         * Мінімальний fallback-bitmap: темний фон + «Немає даних».
-         *
-         * Відображається тільки якщо `HeroWidgetRenderer.render()` сам кинув виключення
-         * (OOM, Skia crash тощо). Краще, ніж порожній/чорний виджет.
-         */
-        private fun createFallbackBitmap(widthPx: Int, heightPx: Int, density: Float): Bitmap {
-            val w = widthPx.coerceIn(1, MAX_BITMAP_WIDTH)
-            val h = heightPx.coerceIn(1, MAX_BITMAP_HEIGHT)
-            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-            // Фон
-            paint.color = Color.parseColor("#131318")
-            canvas.drawRoundRect(
-                RectF(0f, 0f, w.toFloat(), h.toFloat()),
-                density * 20f, density * 20f,
-                paint,
+        private fun bindCapsule(context: Context, views: RemoteViews, payload: WidgetPayload) {
+            val state = payload.state
+            views.setInt(
+                R.id.widget_root,
+                "setBackgroundResource",
+                WidgetStyle.capsuleBackground(state),
             )
+            bindDot(views, R.id.widget_dot, state)
+            views.setTextViewText(R.id.widget_place, payload.placeLabel)
+            views.setTextViewText(R.id.widget_pill, payload.pill)
+            views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
+            views.setTextViewText(
+                R.id.widget_timer_prefix,
+                payload.timerPrefix ?: "",
+            )
+            views.setTextViewText(
+                R.id.widget_detail,
+                payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
+            )
+            views.setTextColor(R.id.widget_dot, WidgetStyle.color(state))
 
-            // Текст
-            paint.color = Color.parseColor("#71717A")
-            paint.textSize = density * 12f
-            paint.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-            val msg = "Немає даних"
-            val tw = paint.measureText(msg)
-            canvas.drawText(msg, (w - tw) / 2f, h / 2f + density * 5f, paint)
-            return bitmap
+            widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
+                views.setOnClickPendingIntent(R.id.widget_cycle, it)
+            }
+            widgetAction(context, WidgetActionReceiver.ACTION_OPEN_APP)?.let {
+                views.setOnClickPendingIntent(R.id.widget_pill, it)
+            }
+        }
+
+        private fun bindTimeline(context: Context, views: RemoteViews, payload: WidgetPayload) {
+            bindDot(views, R.id.widget_dot, payload.state)
+            views.setTextViewText(R.id.widget_place, payload.placeLabel)
+            views.setTextViewText(R.id.widget_pill, payload.pill)
+            views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
+            views.setTextViewText(
+                R.id.widget_detail,
+                payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
+            )
+            views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
+
+            widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
+                views.setOnClickPendingIntent(R.id.widget_cycle, it)
+            }
+            widgetAction(context, WidgetActionReceiver.ACTION_REFRESH)?.let {
+                views.setOnClickPendingIntent(R.id.widget_refresh, it)
+            }
+        }
+
+        private fun bindCommand(context: Context, views: RemoteViews, payload: WidgetPayload) {
+            bindDot(views, R.id.widget_dot, payload.state)
+            views.setTextViewText(R.id.widget_place, "${payload.placeLabel} ▾")
+            views.setTextViewText(R.id.widget_pill, payload.pill)
+            views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
+            views.setTextViewText(R.id.widget_timer_prefix, payload.timerPrefix ?: "")
+            views.setTextViewText(
+                R.id.widget_detail,
+                payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
+            )
+            views.setTextViewText(
+                R.id.widget_today_value,
+                WidgetStyle.offLabel(payload.todayOffMinutes, context.getString(R.string.widget_no_data)),
+            )
+            views.setTextViewText(
+                R.id.widget_tomorrow_value,
+                WidgetStyle.offLabel(
+                    payload.tomorrowOffMinutes,
+                    context.getString(R.string.widget_schedule_pending),
+                ),
+            )
+            views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
+
+            widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
+                views.setOnClickPendingIntent(R.id.widget_place, it)
+            }
+            widgetAction(context, WidgetActionReceiver.ACTION_REFRESH)?.let {
+                views.setOnClickPendingIntent(R.id.widget_refresh, it)
+            }
+            widgetAction(context, WidgetActionReceiver.ACTION_OPEN_APP)?.let {
+                views.setOnClickPendingIntent(R.id.widget_today_tile, it)
+                views.setOnClickPendingIntent(R.id.widget_tomorrow_tile, it)
+            }
+        }
+
+        private fun bindPlaces(context: Context, views: RemoteViews, payload: WidgetPayload) {
+            val places = payload.places.take(3)
+            val rows = intArrayOf(
+                R.id.widget_place_row_1,
+                R.id.widget_place_row_2,
+                R.id.widget_place_row_3,
+            )
+            views.setViewVisibility(
+                R.id.widget_empty,
+                if (places.isEmpty()) View.VISIBLE else View.GONE,
+            )
+            rows.forEachIndexed { index, rowId ->
+                val place = places.getOrNull(index)
+                if (place == null) {
+                    views.setViewVisibility(rowId, View.GONE)
+                    return@forEachIndexed
+                }
+                views.setViewVisibility(rowId, View.VISIBLE)
+                // Строка собрана из отдельных TextView, поэтому подпись ставим в label-зону,
+                // а не в саму строку: иначе текст наложился бы на статус и время.
+                views.setTextViewText(
+                    labelId(index),
+                    "${place.icon} ${place.label} · ${place.queue}",
+                )
+                bindDot(views, dotId(index), place.state)
+                views.setTextViewText(statusId(index), place.statusText)
+                views.setTextViewText(timeId(index), place.timeLabel)
+                views.setTextColor(statusId(index), WidgetStyle.color(place.state))
+                widgetAction(context, WidgetActionReceiver.ACTION_OPEN_APP)?.let {
+                    views.setOnClickPendingIntent(rowId, it)
+                }
+            }
+
+            widgetAction(context, WidgetActionReceiver.ACTION_REFRESH)?.let {
+                views.setOnClickPendingIntent(R.id.widget_refresh, it)
+            }
+        }
+
+        private fun bindDot(views: RemoteViews, id: Int, state: String) {
+            views.setTextViewText(id, WidgetStyle.symbol(state))
+            views.setTextColor(id, WidgetStyle.color(state))
         }
 
         /**
-         * Клік по тілу виджету: звичайний запуск застосунку.
+         * Клік по зоні: explicit broadcast у [WidgetActionReceiver].
          *
-         * `FLAG_IMMUTABLE` обов'язковий з Android 12: без нього система кидає виключення при
-         * створенні PendingIntent.
+         * `FLAG_IMMUTABLE` обязателен с Android 12, иначе система бросает исключение при
+         * создании `PendingIntent`. Request code — хеш действия, чтобы три зоны не перетирали
+         * друг друга через `FLAG_UPDATE_CURRENT`.
          */
-        private fun openApp(context: Context): PendingIntent? {
-            val intent = try {
-                context.packageManager.getLaunchIntentForPackage(context.packageName)
-            } catch (_: Exception) {
-                null
-            } ?: return null
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        private fun widgetAction(context: Context, action: String): PendingIntent? {
+            val intent = Intent(context, WidgetActionReceiver::class.java).setAction(action)
             return try {
-                PendingIntent.getActivity(
+                PendingIntent.getBroadcast(
                     context,
-                    0,
+                    action.hashCode(),
                     intent,
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.w(TAG, "widgetAction PendingIntent failed for $action", error)
                 null
             }
         }
 
-        /**
-         * Клік по зоні дії: спочатку зберігаємо дію в prefs, потім відкриваємо застосунок.
-         *
-         * Чому не Intent extra: Activity в `singleTask` не оновлює `getIntent()` при
-         * `onNewIntent`, і повторне натискання «Оновити» губилось би. `SharedPreferences`
-         * доставляє дію в обох випадках — і при холодному старті, і при живому процесі.
-         */
-        private fun widgetAction(context: Context, action: String): PendingIntent? {
-            try { WidgetPrefs.writeAction(context, action) } catch (_: Exception) { }
-            return openApp(context)
+        private fun labelId(index: Int): Int = when (index) {
+            0 -> R.id.widget_place_label_1
+            1 -> R.id.widget_place_label_2
+            else -> R.id.widget_place_label_3
+        }
+
+        private fun dotId(index: Int): Int = when (index) {
+            0 -> R.id.widget_place_dot_1
+            1 -> R.id.widget_place_dot_2
+            else -> R.id.widget_place_dot_3
+        }
+
+        private fun statusId(index: Int): Int = when (index) {
+            0 -> R.id.widget_place_status_1
+            1 -> R.id.widget_place_status_2
+            else -> R.id.widget_place_status_3
+        }
+
+        private fun timeId(index: Int): Int = when (index) {
+            0 -> R.id.widget_place_time_1
+            1 -> R.id.widget_place_time_2
+            else -> R.id.widget_place_time_3
         }
     }
 }
 
-/** 2×1: дві колонки. Поки немає опцій — 150×70 dp, інакше макет був би від 4×2. */
+/** 2×1: «Капсула-Датчик». */
 class SvitloWidget2x1 : SvitloWidgetProvider() {
-    override val fallbackSize: IntArray get() = intArrayOf(150, 70)
+    override val layoutId: Int get() = R.layout.svitlo_widget_capsule
 }
 
-/** 4×1: чотири колонки в один рядок. */
+/** 4×1: «Таймлайн Суток». */
 class SvitloWidget4x1 : SvitloWidgetProvider() {
-    override val fallbackSize: IntArray get() = intArrayOf(250, 70)
+    override val layoutId: Int get() = R.layout.svitlo_widget_timeline
 }
 
-/** 4×2: повна картка. */
+/** 4×2: «Командний Центр». */
 class SvitloWidget4x2 : SvitloWidgetProvider() {
-    override val fallbackSize: IntArray get() = intArrayOf(250, 110)
+    override val layoutId: Int get() = R.layout.svitlo_widget_command
+}
+
+/** 4×2: «Радар Моїх Місць» — отдельный пункт в списке виджетов. */
+class SvitloWidgetPlaces4x2 : SvitloWidgetProvider() {
+    override val layoutId: Int get() = R.layout.svitlo_widget_places
 }

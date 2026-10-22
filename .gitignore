@@ -5,6 +5,7 @@
 apps/mobile/credentials/keystore.properties
 # Dependencies and build artifacts
 node_modules/
+apps/web/dist/
 apps/mobile/android-apk/*.apk
 
 # Release APKs are built into apps/mobile/android-apk/ only

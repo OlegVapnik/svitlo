@@ -36,11 +36,28 @@ function copyDir(source, target) {
   return copied;
 }
 
-/** Три размера — три receiver'а: лаунчер показывает их отдельными пунктами в списке виджетов. */
+/** Четыре размера — четыре receiver'а: лаунчер показывает их отдельными пунктами. */
 const WIDGET_RECEIVERS = [
-  { name: '.widget.SvitloWidget2x1', info: '@xml/svitlo_widget_2x1' },
-  { name: '.widget.SvitloWidget4x1', info: '@xml/svitlo_widget_4x1' },
-  { name: '.widget.SvitloWidget4x2', info: '@xml/svitlo_widget_4x2' },
+  {
+    name: '.widget.SvitloWidget2x1',
+    info: '@xml/svitlo_widget_2x1',
+    label: '@string/widget_label_capsule',
+  },
+  {
+    name: '.widget.SvitloWidget4x1',
+    info: '@xml/svitlo_widget_4x1',
+    label: '@string/widget_label_timeline',
+  },
+  {
+    name: '.widget.SvitloWidget4x2',
+    info: '@xml/svitlo_widget_4x2',
+    label: '@string/widget_label_command',
+  },
+  {
+    name: '.widget.SvitloWidgetPlaces4x2',
+    info: '@xml/svitlo_widget_places_4x2',
+    label: '@string/widget_label_places',
+  },
 ];
 
 function withWidgetReceivers(config) {
@@ -49,6 +66,18 @@ function withWidgetReceivers(config) {
     if (!application) return cfg;
     application.receiver = application.receiver ?? [];
 
+    // Внутренний receiver для кликов по «Оновити»/«Наступна черга». Он не экспортируется:
+    // PendingIntent создаётся нашим приложением и адресуется явно по компоненту.
+    const actionReceiver = '.widget.WidgetActionReceiver';
+    if (!application.receiver.some((item) => item.$?.['android:name'] === actionReceiver)) {
+      application.receiver.push({
+        $: {
+          'android:name': actionReceiver,
+          'android:exported': 'false',
+        },
+      });
+    }
+
     for (const widget of WIDGET_RECEIVERS) {
       if (application.receiver.some((item) => item.$?.['android:name'] === widget.name)) continue;
       application.receiver.push({
@@ -56,7 +85,7 @@ function withWidgetReceivers(config) {
           'android:name': widget.name,
           // `exported=true` обязателен: APPWIDGET_UPDATE приходит от системного лаунчера.
           'android:exported': 'true',
-          'android:label': '@string/widget_label',
+          'android:label': widget.label,
         },
         'intent-filter': [
           { action: [{ $: { 'android:name': 'android.appwidget.action.APPWIDGET_UPDATE' } }] },

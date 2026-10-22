@@ -1,6 +1,6 @@
 {
   "name": "@svitlo/mobile",
-  "version": "2.37.9",
+  "version": "2.38.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
+    "@noble/ed25519": "2.3.0",
+    "@noble/hashes": "1.8.0",
     "@notifee/react-native": "^9.1.8",
     "@svitlo/core": "workspace:*",
     "@svitlo/shared": "workspace:*",
@@ -27,6 +29,7 @@
     "expo-intent-launcher": "~58.0.3",
     "expo-linear-gradient": "~58.0.3",
     "expo-linking": "~58.0.13",
+    "expo-notifications": "~58.1.6",
     "expo-router": "~58.0.24",
     "expo-sharing": "~58.0.19",
     "expo-splash-screen": "~58.0.10",

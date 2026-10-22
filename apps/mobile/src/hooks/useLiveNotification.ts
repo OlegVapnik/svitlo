@@ -65,25 +65,28 @@ export function useLiveNotification({
   ].join('|');
 
   useEffect(() => {
-    if (!enabled) {
-      void hideLiveNotification();
-      return;
-    }
+    const timer = setTimeout(() => {
+      if (!enabled) {
+        void hideLiveNotification();
+        return;
+      }
 
-    const progress = intervals.length > 0 ? slotProgress(intervals, date, now) : null;
-    const endsAt = state === 'off' ? summary?.offEndsAt : summary?.nextStartsAt;
-    const title = queue ? `${TITLES[state]} · черга ${queue}` : `${TITLES[state]}`;
+      const progress = intervals.length > 0 ? slotProgress(intervals, date, now) : null;
+      const endsAt = state === 'off' ? summary?.offEndsAt : summary?.nextStartsAt;
+      const title = queue ? `${TITLES[state]} · черга ${queue}` : `${TITLES[state]}`;
 
-    void showLiveNotification({
-      title,
-      // Точное время следующего события уже внутри `detail` («Наступне: о 08:30»), поэтому
-      // второй раз в теле его не повторяем — раньше «о 08:30» шло и там, и в хвосте строки.
-      body: detail,
-      color: notificationColor(state),
-      progress: progress?.percent ?? null,
-      endsAtMs: endsAt ? Date.parse(endsAt) : null,
-      banner: buildNotificationBanner({ state, summary, intervals, date, now, queue }),
-    });
+      void showLiveNotification({
+        title,
+        // Точное время следующего события уже внутри `detail` («Наступне: о 08:30»), поэтому
+        // второй раз в теле его не повторяем — раньше «о 08:30» шло и там, и в хвосте строки.
+        body: detail,
+        color: notificationColor(state),
+        progress: progress?.percent ?? null,
+        endsAtMs: endsAt ? Date.parse(endsAt) : null,
+        banner: buildNotificationBanner({ state, summary, intervals, date, now, queue }),
+      });
+    }, 250);
+    return () => clearTimeout(timer);
     // Ключ снимка пересобирается только при реальном изменении цифр или минуты.
   }, [snapshotKey]);
 }

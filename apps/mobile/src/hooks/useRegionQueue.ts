@@ -4,6 +4,7 @@ import {
   getStoredQueueForRegion,
   setStoredQueueForRegion,
 } from '@svitlo/core/lib/region-queue';
+import { canonicalQueueCode, normalizeQueueCode, queueCodeMatches } from '@svitlo/core/lib/queue';
 
 /**
  * Выбранная группа (черга) для области.
@@ -16,18 +17,19 @@ import {
  * группы в «Моніторі» не доходил бы до уже смонтированной «Головної»: её состояние осталось бы
  * прежним до перезапуска. Поэтому все экземпляры хука слушают одно событие и перечитывают выбор.
  */
-type QueueSelectionListener = () => void;
+type QueueSelectionListener = (regionCpu: string, queue: string) => void;
 
 const listeners = new Set<QueueSelectionListener>();
 
-function notifyQueueSelection(): void {
-  for (const listener of listeners) listener();
+function notifyQueueSelection(regionCpu: string, queue: string): void {
+  for (const listener of listeners) listener(regionCpu, queue);
 }
 
 /** Записати вибір і розбудити всі змонтовані екрани — зокрема збережене місце. */
 export function applyRegionQueue(regionCpu: string, queue: string): void {
-  setStoredQueueForRegion(regionCpu, queue);
-  notifyQueueSelection();
+  const cleanQueue = canonicalQueueCode(regionCpu, normalizeQueueCode(queue));
+  setStoredQueueForRegion(regionCpu, cleanQueue);
+  notifyQueueSelection(regionCpu, cleanQueue);
 }
 
 export function useRegionQueue(regionCpu: string, availableQueues: string[] = []) {
@@ -41,7 +43,15 @@ export function useRegionQueue(regionCpu: string, availableQueues: string[] = []
   );
 
   useEffect(() => {
-    const sync = () => {
+    const sync = (changedRegion?: string, changedQueue?: string) => {
+      if (changedRegion === regionCpu && changedQueue) {
+        const matched =
+          stableQueues.length === 0
+            ? canonicalQueueCode(regionCpu, changedQueue)
+            : stableQueues.find((candidate) => queueCodeMatches(regionCpu, candidate, changedQueue));
+        setSelectedQueueState(matched ?? null);
+        return;
+      }
       setSelectedQueueState(getStoredQueueForRegion(regionCpu, stableQueues));
     };
     sync();

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { useQueueSchedule, useRegions, useReliability, useUpcomingGroupOutages } from '@svitlo/core/api/queries';
+import { useQueueSchedule, useRegions, useReliability, useStatus, useUpcomingGroupOutages } from '@svitlo/core/api/queries';
 import { kyivDateOffsetKey } from '@svitlo/core/lib/outage-dates';
 import { normalizeRegionCpu, regionOptions } from '@svitlo/core/lib/region';
 import { formatMinutesUk } from '@svitlo/core/lib/scheduleWindow';
@@ -121,6 +121,24 @@ export function UpcomingOutages({ regionCpu, selectedQueue }: UpcomingOutagesPro
 
   const queueForReport = scope === 'queue' ? selectedQueue ?? undefined : undefined;
   const { data: liveData, isLoading } = useReliability(activeRegion, queueForReport);
+  // `/status` живёт на зеркале и отдаёт сегодняшнюю сводку даже когда D1 исчерпал квоту.
+  // Это последний честный источник для «Областей», когда `/reliability` отвечает 500.
+  const { data: statusData } = useStatus(activeRegion);
+  const statusSummary = statusData?.data?.powerSummary?.today ?? null;
+  const statusRegionSummary = useMemo<ReliabilityRegionSummary | null>(() => {
+    if (!statusSummary?.hasData) return null;
+    return {
+      region: activeRegion,
+      nameUa: regionNameMap.get(activeRegion) ?? activeRegion,
+      windowMinutes: statusSummary.windowMinutes,
+      outageMinutes: statusSummary.outageMinutes,
+      poweredMinutes: statusSummary.poweredMinutes,
+      reliabilityPct: statusSummary.reliabilityPct,
+      outageCount: statusSummary.outageCount,
+      hasData: true,
+      daysKnown: 1,
+    };
+  }, [activeRegion, regionNameMap, statusSummary]);
 
   // Подтягиваем реальные интервалы групп выбранного региона на ближайшие дни
   const { data: upcomingData } = useUpcomingGroupOutages(activeRegion, 7);
@@ -140,6 +158,13 @@ export function UpcomingOutages({ regionCpu, selectedQueue }: UpcomingOutagesPro
   const report: ReliabilityReport = useMemo(() => {
     const live = liveData?.data;
     if (live && Array.isArray(live.days) && live.days.some((d) => d.hasData)) {
+      const summaries = live.byRegionSummary ?? [];
+      const hasActiveRegion = summaries.some(
+        (summary) => normalizeRegionCpu(summary.region) === activeRegion,
+      );
+      if (statusRegionSummary && !hasActiveRegion) {
+        return { ...live, byRegionSummary: [...summaries, statusRegionSummary] };
+      }
       return live;
     }
 
@@ -181,9 +206,19 @@ export function UpcomingOutages({ regionCpu, selectedQueue }: UpcomingOutagesPro
       dayMap.set(todayKey, { outageMinutes: outage, windowMinutes: 1440, count });
     }
 
-    // Если нет даже локальных интервалов на сегодня — создаём сегодняшнюю запись (без отключений)
+    // Если расписания на сегодня нет, берём сводку `/status`: она не зависит от D1-квоты.
     if (!dayMap.has(todayKey)) {
-      dayMap.set(todayKey, { outageMinutes: 0, windowMinutes: 1440, count: 0 });
+      const fallbackOutage = scope === 'region' && statusSummary?.hasData
+        ? statusSummary.outageMinutes
+        : 0;
+      const fallbackWindow = scope === 'region' && statusSummary?.hasData
+        ? statusSummary.windowMinutes
+        : 1440;
+      dayMap.set(todayKey, {
+        outageMinutes: fallbackOutage,
+        windowMinutes: fallbackWindow,
+        count: scope === 'region' && statusSummary?.hasData ? statusSummary.outageCount : 0,
+      });
     }
 
     const days: ReliabilityBucket[] = Array.from(dayMap.entries()).map(([dateStr, stats]) => {
@@ -238,10 +273,19 @@ export function UpcomingOutages({ regionCpu, selectedQueue }: UpcomingOutagesPro
       weeks: [],
       months: [],
       groups,
-      byRegionSummary: [],
+      byRegionSummary: statusRegionSummary ? [statusRegionSummary] : [],
       queue: null,
     };
-  }, [liveData, upcomingGroups, todaySchedule, scope, selectedQueue, todayKey]);
+  }, [
+    liveData,
+    upcomingGroups,
+    todaySchedule,
+    scope,
+    selectedQueue,
+    todayKey,
+    statusSummary,
+    statusRegionSummary,
+  ]);
 
   
   const daysWithData = useMemo(() => {

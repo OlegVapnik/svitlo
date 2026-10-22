@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2×1 «Капсула-Датчик»: нейтральный фон — данных ещё нет. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#27272A" />
+    <corners android:radius="22dp" />
+</shape>

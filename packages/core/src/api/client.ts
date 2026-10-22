@@ -169,6 +169,7 @@ export const api = {
         normalized?: string;
         defaultQueue?: string | null;
         queues?: string[];
+        wholeSettlementQueue?: string | null;
         streetsCount?: number;
       }>;
     }>;
