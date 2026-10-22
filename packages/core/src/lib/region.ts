@@ -251,12 +251,34 @@ export function filterRegions(regions: RegionSummary[], query: string): RegionSu
  * регионы уходят вниз, внутри каждой группы порядок алфавитный — иначе список «прыгал» бы
  * при первом же обновлении данных.
  */
+export function regionHasAnyData(region: RegionSummary): boolean {
+  return (
+    region.covered === true ||
+    region.allClear === true ||
+    (region.todaySlots ?? 0) > 0 ||
+    region.lastDate != null ||
+    (region.slots ?? 0) > 0
+  );
+}
+
+/**
+ * Области с живыми данными — в начало, «мёртвые» (ни одного графика за всю историю) — в конец.
+ *
+ * Внутри списка отдельно стоят застарілі: `lastDate` есть, но `covered: false` — оператор
+ * публиковал график раньше, однако на сегодня его нет. Это не то же самое, что «нет вообще»:
+ * у таких областей в списке видна дата последней публикации.
+ */
 export function sortRegionsByDataFreshness(regions: RegionSummary[]): RegionSummary[] {
+  const byCpu = new Map(regions.map((region) => [region.cpu, region]));
   const rank = (region: RegionSummary): number => {
     if (region.covered) return 0;
-    // Мережа (ЦЕК/ДнЕМ) наследует свежесть родителя: она в списке рядом с ним, и «живая»
-    // область с пустой сетью выглядела бы мёртвой только из-за одной подсети.
-    if (region.parentCpu) return 1;
+    if (regionHasAnyData(region)) return 1;
+    // Мережа (ЦЕК/ДнЕМ) наследует свежесть родителя, иначе живая область выглядела бы
+    // мёртвой только из-за одной подсети.
+    if (region.parentCpu) {
+      const parent = byCpu.get(region.parentCpu);
+      if (parent && regionHasAnyData(parent)) return 1;
+    }
     return 2;
   };
   return [...regions].sort(

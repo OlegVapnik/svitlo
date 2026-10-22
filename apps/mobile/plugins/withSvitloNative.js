@@ -226,13 +226,25 @@ function withReleaseGradle(config) {
   });
 }
 
-/** R8 вырезает неиспользуемые ресурсы: иконки/splash/shortcuts дают несколько мегабайт. */
+/**
+ * R8 вырезает неиспользуемые ресурсы: иконки/splash/shortcuts дают несколько мегабайт.
+ *
+ * `expo.useLegacyPackaging=true` сжимает `.so` внутри APK. Для Svitlo это важнее скорости
+ * первого старта: приложение скачивают во время блэкаута на слабом LTE, поэтому ~36 МБ
+ * arm64-сборки против ~20 МБ — лишний трафик для каждого нового пользователя. Цена —
+ * одноразовая распаковка native libs при установке. Решение зафиксировано в HANDOFF.
+ *
+ * `reactNativeArchitectures=arm64-v8a` — primary defense: даже ручной
+ * `./gradlew assembleRelease` не соберёт x86/x86_64/armeabi-v7a. Скрипт сборки всё равно
+ * передаёт `-PreactNativeArchitectures` для debug-эмулятора и проверяет ABI в готовом APK.
+ */
 function withReleaseProperties(config) {
   return withGradleProperties(config, (cfg) => {
     const properties = cfg.modResults;
     const wanted = [
       { key: 'android.enableShrinkResourcesInReleaseBuilds', value: 'true' },
-      { key: 'expo.useLegacyPackaging', value: 'false' },
+      { key: 'expo.useLegacyPackaging', value: 'true' },
+      { key: 'reactNativeArchitectures', value: 'arm64-v8a' },
     ];
     for (const { key, value } of wanted) {
       const existing = properties.find(

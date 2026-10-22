@@ -3,3 +3,5 @@
 .env.*
 !.env.example
 apps/mobile/credentials/keystore.properties
+# Release APKs are built into apps/mobile/android-apk/ only
+/*.apk

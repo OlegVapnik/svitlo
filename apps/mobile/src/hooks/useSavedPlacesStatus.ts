@@ -6,6 +6,8 @@ import { minutesOfDay, minutesToHm, scheduleWindow, OFF_STATE_CODE } from '@svit
 import { SOON_MINUTES } from '@svitlo/core/lib/day-status';
 import type { GroupOutageSummary, ScheduleIntervalUtc } from '@svitlo/shared';
 
+type ScheduleBucket = { queue: string; date: string; intervals: ScheduleIntervalUtc[] };
+
 import type { SavedPlace } from '@svitlo/core/lib/saved-places';
 import type { PowerState } from '@/theme/ThemeProvider';
 
@@ -66,7 +68,7 @@ export function useSavedPlacesStatus(
     const nowMs = now.getTime();
 
     // Индексируем данные по регионам (сперва снапшоты для фолбэка, затем свежие данные)
-    const regionDataMap = new Map<string, GroupOutageSummary[]>();
+    const regionDataMap = new Map<string, ScheduleBucket[]>();
     for (const region of uniqueRegions) {
       const snap = readRegionScheduleSnapshot(region);
       if (snap?.buckets) {

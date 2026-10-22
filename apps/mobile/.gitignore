@@ -40,3 +40,5 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+# APK — артефакт релиза: публикуется в R2, в git не коммитится.
+android-apk/*.apk

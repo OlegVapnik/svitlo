@@ -5,6 +5,7 @@ import { useRegion } from '../../hooks/useRegion.js';
 import {
   filterRegions,
   regionDataBadge,
+  regionHasAnyData,
   regionOptions,
   regionSlotsForBadge,
   sortRegionsByDataFreshness,
@@ -44,6 +45,14 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
     [regions, search],
   );
   // Клавіатурою й кліком вибираються лише реальні області: заголовок групи — не варіант.
+  const firstStaleIndex = useMemo(
+    () => options.findIndex((option) => !option.isGroup && !option.region.covered && regionHasAnyData(option.region)),
+    [options],
+  );
+  const firstDeadIndex = useMemo(
+    () => options.findIndex((option) => !option.isGroup && !regionHasAnyData(option.region)),
+    [options],
+  );
   const selectableOptions = useMemo(() => options.filter((option) => !option.isGroup), [options]);
   // Мережі в списку стоять під своїм заголовком, тому індекс активної області мусить рахуватися
   // лише за вибірними рядками — інакше стрілка «↓» зупинялася б на заголовку групи.
@@ -274,7 +283,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                 {t('regions.notFound')}
               </li>
             ) : (
-              options.map((option) => {
+              options.map((option, optionIndex) => {
                 const { region, depth, isGroup } = option;
                 // Заголовок групи не обирається: за областю стоять різні мережі (ЦЕК і ДнЕМ), у яких
                 // свої графіки з однаковою нумерацією черг. Вибір робить людина — під заголовком.
@@ -298,8 +307,18 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                 const badge = regionDataBadge(region);
 
                 return (
+                  <React.Fragment key={region.cpu}>
+                    {optionIndex === firstStaleIndex && (
+                      <li role="presentation" className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('regions.staleGroup')}
+                      </li>
+                    )}
+                    {optionIndex === firstDeadIndex && (
+                      <li role="presentation" className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('regions.noDataGroup')}
+                      </li>
+                    )}
                   <li
-                    key={region.cpu}
                     role="option"
                     data-option-index={selectableIndex}
                     aria-selected={isSelected}
@@ -344,6 +363,7 @@ export const RegionPicker: React.FC<RegionPickerProps> = ({
                       )}
                     </div>
                   </li>
+                  </React.Fragment>
                 );
               })
             )}
