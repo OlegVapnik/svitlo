@@ -23,6 +23,8 @@ import { useHomeWidget } from '@/hooks/useHomeWidget';
 import { useLiveNotification } from '@/hooks/useLiveNotification';
 import { useMinuteTicker } from '@/hooks/useMinuteTicker';
 import { useRegionQueue } from '@/hooks/useRegionQueue';
+import { useSavedPlaces } from '@/hooks/useSavedPlaces';
+import { useSavedPlacesStatus } from '@/hooks/useSavedPlacesStatus';
 import { useShareSchedule } from '@/components/share/useShareSchedule';
 import { useSyncStatus } from '@/context/SyncContext';
 import { triggerSoftHaptic } from '@/lib/haptics';
@@ -40,6 +42,8 @@ export default function HomeScreen() {
   const today = useMemo(() => kyivDateOffsetKey(0), []);
   const now = useMinuteTicker();
   const tomorrow = useMemo(() => kyivDateOffsetKey(1), []);
+  const { places } = useSavedPlaces();
+  const placesStatusMap = useSavedPlacesStatus(places, today, now);
   const [selectedDay, setSelectedDay] = useState<'today' | 'tomorrow'>('today');
   const activeDate = selectedDay === 'today' ? today : tomorrow;
 
@@ -337,7 +341,7 @@ export default function HomeScreen() {
           />
 
           {/* 2) Мої місця с индикаторами состояния */}
-          <SavedPlacesCarousel selectedQueue={selectedQueue} queueStatusMap={queueStatusMap} />
+          <SavedPlacesCarousel selectedQueue={selectedQueue} placesStatusMap={placesStatusMap} />
 
           <AccidentBanner outages={outages} loading={outagesQuery.isLoading} />
 

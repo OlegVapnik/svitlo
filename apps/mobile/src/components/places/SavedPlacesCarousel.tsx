@@ -8,16 +8,17 @@ import { useApplySavedPlace } from '@/hooks/useApplySavedPlace';
 import { useSavedPlaces } from '@/hooks/useSavedPlaces';
 import { useTheme } from '@/theme/ThemeProvider';
 import { PlaceIconBadge } from '@/components/places/PlaceIcon';
+import type { PlaceLiveStatus } from '@/hooks/useSavedPlacesStatus';
 
 interface SavedPlacesCarouselProps {
   selectedQueue: string | null;
-  /** Карта статусов для очередей: { queue: { state: 'on' | 'warning' | 'off' | 'unknown', label: string } } */
-  queueStatusMap?: Record<string, { state: 'on' | 'warning' | 'off' | 'unknown'; label: string }>;
+  /** Карта статусов для сохраненных мест по place.id */
+  placesStatusMap?: Record<string, PlaceLiveStatus>;
 }
 
 export function SavedPlacesCarousel({
   selectedQueue,
-  queueStatusMap = {},
+  placesStatusMap = {},
 }: SavedPlacesCarouselProps) {
   const { palette } = useTheme();
   const router = useRouter();
@@ -72,8 +73,12 @@ export function SavedPlacesCarousel({
       >
         {places.map((place) => {
           const active = place.regionCpu === currentRegion && place.queue === selectedQueue;
-          const statusInfo = queueStatusMap[place.queue] ?? { state: 'on', label: '' };
-          const tone = palette.status[statusInfo.state] ?? palette.status.on;
+          const live = placesStatusMap[place.id] ?? {
+            state: 'unknown',
+            timeLabel: '',
+            statusText: '',
+          };
+          const tone = palette.status[live.state] ?? palette.status.unknown;
 
           return (
             <Pressable
@@ -87,27 +92,41 @@ export function SavedPlacesCarousel({
               accessibilityState={{ selected: active }}
               style={{
                 backgroundColor: active ? palette.primaryContainer : palette.card,
-                borderColor: active ? palette.primary : palette.border,
+                borderColor: active
+                  ? palette.primary
+                  : live.state === 'off'
+                    ? 'rgba(239, 68, 68, 0.45)'
+                    : live.state === 'warning'
+                      ? 'rgba(245, 158, 11, 0.45)'
+                      : live.state === 'on'
+                        ? 'rgba(16, 185, 129, 0.35)'
+                        : palette.border,
                 borderWidth: active ? 1.5 : 1,
+                shadowColor: tone.color,
+                shadowOpacity: live.state !== 'unknown' ? 0.25 : 0,
+                shadowRadius: 6,
+                elevation: live.state !== 'unknown' ? 2 : 0,
               }}
               className="flex-row items-center gap-2.5 rounded-2xl px-3.5 py-2.5 active:opacity-75"
             >
               <View className="relative h-8 w-8 items-center justify-center rounded-full bg-surface-container-high">
                 <PlaceIconBadge icon={place.icon} size={15} color={active ? palette.primary : palette.foreground} />
-                {/* Светящаяся форма индикатора текущего состояния места */}
+                {/* Светящийся индикатор текущего состояния закладки */}
                 <View
                   style={{
                     position: 'absolute',
                     top: -1,
                     right: -1,
-                    width: 7,
-                    height: 7,
-                    borderRadius: statusInfo.state === 'off' ? 1.5 : statusInfo.state === 'warning' ? 0 : 3.5,
-                    transform: statusInfo.state === 'warning' ? [{ rotate: '45deg' }] : [],
+                    width: 8,
+                    height: 8,
+                    borderRadius: live.state === 'off' ? 2 : live.state === 'warning' ? 1 : 4,
+                    transform: live.state === 'warning' ? [{ rotate: '45deg' }] : [],
                     backgroundColor: tone.color,
                     shadowColor: tone.color,
                     shadowOpacity: 0.9,
-                    shadowRadius: 4,
+                    shadowRadius: 5,
+                    borderWidth: 1,
+                    borderColor: palette.card,
                   }}
                 />
               </View>
@@ -122,7 +141,7 @@ export function SavedPlacesCarousel({
                   </Text>
                 </View>
                 <Text className="text-[11px] font-semibold text-muted-foreground">
-                  {place.queue} {statusInfo.label ? `· ${statusInfo.label}` : ''}
+                  {place.queue} {live.timeLabel ? `· ${live.timeLabel}` : ''}
                 </Text>
               </View>
             </Pressable>

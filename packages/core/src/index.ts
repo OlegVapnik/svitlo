@@ -16,4 +16,4 @@ export * from './lib/saved-places';
 export * from './lib/saved-places-store';
 
 export { queryClient } from "./api/query-client";
-export { QueryClientProvider } from "@tanstack/react-query";
+export { QueryClientProvider, useQueries } from "@tanstack/react-query";
