@@ -2,7 +2,7 @@
   "expo": {
     "name": "Svitlo",
     "slug": "svitlo",
-    "version": "2.38.0",
+    "version": "2.39.0",
     "orientation": "portrait",
     "scheme": "svitlo",
     "icon": "./assets/icon.png",
@@ -43,7 +43,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "versionCode": 271
+      "versionCode": 272
     },
     "web": {
       "favicon": "./assets/favicon.png"

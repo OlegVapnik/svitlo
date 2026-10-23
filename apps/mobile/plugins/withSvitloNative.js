@@ -1,12 +1,21 @@
 /**
- * Config plugin: переносит нативные возможности Svitlo в сгенерированный `expo prebuild` Android.
+ * Config plugin: переносит нативные возможности Svitlo в сгенерированные `expo prebuild`
+ * Android и iOS.
  *
- * `apps/mobile/android` не коммитится, поэтому правки, сделанные руками, исчезли бы после
- * prebuild. Плагин воспроизводит их идемпотентно:
+ * `apps/mobile/android` и `apps/mobile/ios` не коммитятся, поэтому правки, сделанные руками,
+ * исчезли бы после prebuild. Плагин воспроизводит их идемпотентно.
+ *
+ * Android:
  *   - разрешение POST_NOTIFICATIONS и meta-data статических App Shortcuts;
  *   - строки ярлыков;
  *   - загрузчик тихого OTA в MainApplication и ночной режим в MainActivity;
  *   - ProGuard-правила для WorkManager/Notifee/Room.
+ *
+ * iOS:
+ *   - копіювання `native-ios/*.swift` в `ios/Svitlo/`;
+ *   - реєстрація цих файлів у Xcode-проєкті (PBXFileReference/PBXBuildFile/PBXSources);
+ *   - App Group `group.ua.com.svitlo.app` в entitlements (для майбутнього віджета);
+ *   - виклик `SvitloOtaLoader.bundleURL()` у release-гілці `AppDelegate`.
  *
  * Kotlin-загрузчик OTA и ресурсы (иконка уведомления, shortcuts.xml) лежат в
  * `native-android/` и копируются плагином `withAndroidWidget`.
@@ -14,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
+  IOSConfig,
   withAndroidManifest,
   withAppBuildGradle,
   withGradleProperties,
@@ -21,7 +31,19 @@ const {
   withMainActivity,
   withStringsXml,
   withDangerousMod,
+  withEntitlementsPlist,
+  withXcodeProject,
 } = require('expo/config-plugins');
+
+/** Спільна App Group для застосунку й майбутнього iOS-віджета. */
+const IOS_APP_GROUP = 'group.ua.com.svitlo.app';
+
+/** Swift-файли, які копіюються в `ios/Svitlo/` і реєструються в Xcode. */
+const IOS_NATIVE_SOURCES = [
+  'SvitloOtaLoader.swift',
+  'SvitloSharedDefaults.swift',
+  'SvitloSharedDefaults.m',
+];
 
 const PROGUARD_MARKER = '# svitlo-native:begin';
 const PROGUARD_RULES = `${PROGUARD_MARKER}
@@ -257,10 +279,140 @@ function withReleaseProperties(config) {
   });
 }
 
+/**
+ * Копіювання нативних джерел у згенерований `ios/Svitlo/`.
+ *
+ * `withDangerousMod` потрібен, бо prebuild створює `ios/` з нуля й не знає про
+ * `native-ios/`. Копіюємо рівно `.swift` і `.m` (міст до React Native), щоб випадкові
+ * файли (README, скриншоти) не потрапляли в target.
+ */
+function withIosNativeSources(config) {
+  return withDangerousMod(config, [
+    'ios',
+    async (cfg) => {
+      const sourceRoot = path.join(cfg.modRequest.projectRoot, 'native-ios');
+      if (!fs.existsSync(sourceRoot)) return cfg;
+
+      const targetRoot = path.join(cfg.modRequest.platformProjectRoot, 'Svitlo');
+      fs.mkdirSync(targetRoot, { recursive: true });
+
+      let copied = 0;
+      for (const entry of fs.readdirSync(sourceRoot, { withFileTypes: true })) {
+        if (!entry.isFile() || (!entry.name.endsWith('.swift') && !entry.name.endsWith('.m'))) continue;
+        fs.copyFileSync(path.join(sourceRoot, entry.name), path.join(targetRoot, entry.name));
+        copied += 1;
+      }
+      if (copied > 0) {
+        console.log(`withSvitloNative: скопійовано ${copied} нативних файлів у ios/Svitlo`);
+      }
+      return cfg;
+    },
+  ]);
+}
+
+/**
+ * Реєстрація Swift-файлів у Xcode-проєкті.
+ *
+ * `addBuildSourceFileToGroup` створює PBXFileReference, PBXBuildFile і рядок у
+ * PBXSourcesBuildPhase, а також додає дитину в PBXGroup `Svitlo`. Повторний запуск
+ * prebuild безпечний: якщо файл із таким ім'ям уже є в групі, він пропускається.
+ */
+function withIosXcodeSources(config) {
+  return withXcodeProject(config, (cfg) => {
+    const project = cfg.modResults;
+    const group = project.pbxGroupByName('Svitlo');
+    if (!group) {
+      console.warn('withSvitloNative: у Xcode-проєкті немає групи Svitlo — Swift-файли не додано');
+      return cfg;
+    }
+
+    const registered = new Set(
+      (group.children ?? []).filter((child) => child?.comment).map((child) => child.comment),
+    );
+
+    for (const file of IOS_NATIVE_SOURCES) {
+      if (registered.has(file)) continue;
+      IOSConfig.XcodeUtils.addBuildSourceFileToGroup({
+        filepath: `Svitlo/${file}`,
+        groupName: 'Svitlo',
+        project,
+      });
+      console.log(`withSvitloNative: додано ${file} до Xcode target`);
+    }
+    return cfg;
+  });
+}
+
+/**
+ * App Group для майбутнього iOS-віджета.
+ *
+ * `aps-environment` та інші entitlements не чіпаємо: prebuild/`expo-notifications`
+ * можуть додати свої ключі, плагін має лише доповнювати словник.
+ */
+function withIosAppGroup(config) {
+  return withEntitlementsPlist(config, (cfg) => {
+    const key = 'com.apple.security.application-groups';
+    const current = cfg.modResults[key];
+    const groups = Array.isArray(current) ? current : [];
+    if (!groups.includes(IOS_APP_GROUP)) {
+      groups.push(IOS_APP_GROUP);
+    }
+    cfg.modResults[key] = groups;
+    return cfg;
+  });
+}
+
+/**
+ * Підключення OTA-завантажувача в `AppDelegate.bundleURL()`.
+ *
+ * Патчимо лише release-гілку: у debug застосунок мусить ходити в Metro, інакше
+ * `expo start` перестане оновлювати JS. Ідемпотентність — за наявністю виклику.
+ */
+function withIosOtaAppDelegate(config) {
+  return withDangerousMod(config, [
+    'ios',
+    async (cfg) => {
+      const file = path.join(cfg.modRequest.platformProjectRoot, 'Svitlo', 'AppDelegate.swift');
+      if (!fs.existsSync(file)) return cfg;
+
+      const contents = fs.readFileSync(file, 'utf8');
+      if (contents.includes('SvitloOtaLoader.bundleURL()')) return cfg;
+
+      const fallbackRe = /return Bundle\.main\.url\(forResource:\s*"main",\s*withExtension:\s*"jsbundle"\)/u;
+      if (!fallbackRe.test(contents)) {
+        console.warn(
+          'withSvitloNative: не знайдено release-рядок bundleURL() в AppDelegate.swift',
+        );
+        return cfg;
+      }
+
+      const patched = contents.replace(
+        fallbackRe,
+        'return SvitloOtaLoader.bundleURL() ?? Bundle.main.url(forResource: "main", withExtension: "jsbundle")',
+      );
+      fs.writeFileSync(file, patched);
+      console.log('withSvitloNative: AppDelegate.swift підключено до SvitloOtaLoader');
+      return cfg;
+    },
+  ]);
+}
+
 const withSvitloNative = (config) =>
-  withReleaseProperties(
-    withReleaseGradle(
-      withProguard(withNightMode(withOtaLoader(withShortcutStrings(withShortcutManifest(config))))),
+  withIosOtaAppDelegate(
+    withIosXcodeSources(
+      withIosAppGroup(
+        withIosNativeSources(
+          withReleaseProperties(
+            withReleaseGradle(
+              withProguard(
+                withNightMode(
+                  withOtaLoader(withShortcutStrings(withShortcutManifest(config))),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     ),
   );
 

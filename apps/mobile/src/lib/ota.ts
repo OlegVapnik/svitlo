@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { gunzipSync } from 'fflate';
 import { sha256 } from 'js-sha256';
+import { Platform } from 'react-native';
 
 import { verifyOtaManifestSignature } from '@svitlo/core/lib/ota-signature';
 import type { AppVersionInfo } from '@svitlo/shared';
@@ -15,17 +16,34 @@ import { OTA_PUBLIC_KEYS } from './ota-key';
  * из `/api/v1/version`, качает `.gz` в фоне, распаковывает и кладёт `index.android.bundle`
  * в files/ota. Нативный загрузчик (OtaBundle.kt) подхватит его при следующем запуске.
  *
+ * На iOS шлях інший: `Library/Application Support/ota/`. `Documents/` синхронізується в
+ * iCloud і бекапиться, а бандл — це кеш, який можна відновити з мережі. Тому він живе в
+ * Application Support, поруч із `SvitloOtaLoader.swift`, який читає ті самі файли.
+ *
  * Защита от «кирпича»: нативный загрузчик на старте пишет маркер `.booted`, а JS удаляет его,
  * только когда приложение успешно смонтировалось. Если маркер остался — прошлый бандл не
  * запустился, и нативный слой откатывается к вшитому бандлу из APK.
  */
-const OTA_DIR = `${FileSystem.documentDirectory ?? ''}ota/`;
+const DOCUMENT_DIR = FileSystem.documentDirectory ?? '';
+const OTA_DIR =
+  Platform.OS === 'ios'
+    ? // `documentDirectory` закінчується на `Documents/`; пробіл у «Application Support»
+      // лишаємо literal: expo-modules-core сам percent-encode-ить file URL.
+      `${DOCUMENT_DIR.replace(/Documents\/?$/u, '')}Library/Application Support/ota/`
+    : `${DOCUMENT_DIR}ota/`;
 const BUNDLE_PATH = `${OTA_DIR}index.android.bundle`;
 const TMP_BUNDLE_PATH = `${OTA_DIR}index.android.bundle.tmp`;
 const TMP_GZ_PATH = `${OTA_DIR}bundle.gz.tmp`;
 const META_PATH = `${OTA_DIR}meta.json`;
 const APPLIED_PATH = `${OTA_DIR}applied.json`;
 const BOOT_MARKER = `${OTA_DIR}.booted`;
+/**
+ * iOS: повний підписаний манифест для нативної перевірки підпису та хешу.
+ * `jsBundle.sha256`/`sizeBytes` у ньому описують скачаний `.gz` (`tools/build-ota-bundle.sh`),
+ * а не розпакований `index.android.bundle`, тому нативний завантажувач додатково звіряє
+ * хеш розпакованого файлу з `meta.bundleSha256`.
+ */
+const MANIFEST_PATH = `${OTA_DIR}version.json`;
 
 /**
  * Время старта процесса. Если `meta.json` записан раньше этого момента, значит бандл уже
@@ -48,6 +66,14 @@ export interface OtaMeta {
   version: string;
   sha256: string;
   sizeBytes: number;
+  /**
+   * SHA-256 розпакованого `index.android.bundle`. Потрібен iOS-завантажувачу: підписаний
+   * маніфест описує `.gz`, а цей хеш прив'язує до нього конкретний файл на диску.
+   * На Android не використовується.
+   */
+  bundleSha256?: string;
+  /** Розмір розпакованого бандла. Теж лише для нативної перевірки на iOS. */
+  bundleSizeBytes?: number;
   /** Когда бандл скачали. Нет у записей, созданных до появления поля. */
   downloadedAt?: number;
 }
@@ -253,8 +279,14 @@ async function syncOtaAssets(assets: OtaBundleInfo['assets']): Promise<void> {
  */
 type OtaBundleInfo = NonNullable<AppVersionInfo['jsBundle']>;
 
+/**
+ * Повний JS-маніфест: потрібен iOS-завантажувачу, який переперевіряє підпис Ed25519 і
+ * хеш уже на старті, до запуску JS. Android це поле ігнорує.
+ */
+type OtaBundleWithManifest = OtaBundleInfo & { manifest?: Record<string, unknown> };
+
 export async function downloadOtaBundle(
-  info: OtaBundleInfo | null | undefined,
+  info: OtaBundleWithManifest | null | undefined,
   onProgress?: (fraction: number) => void,
 ): Promise<string | null> {
   const bundle = info;
@@ -341,10 +373,22 @@ export async function downloadOtaBundle(
     // должны быть уже на месте, иначе первый запуск покажет интерфейс без глифов.
     await syncOtaAssets(bundle.assets);
 
+    if (Platform.OS === 'ios') {
+      if (bundle.manifest) {
+        // Підпис перевіряємо ще раз нативно, до запуску JS: файл маніфесту лежить поруч
+        // із бандлом і не залежить від мережі. Пишемо до meta — вона фіксує «оновлення готове».
+        await FileSystem.writeAsStringAsync(MANIFEST_PATH, JSON.stringify(bundle.manifest));
+      } else {
+        log('маніфест не передано — нативна перевірка OTA на iOS буде недоступна');
+      }
+    }
+
     const nextMeta: OtaMeta = {
       version: bundle.version,
       sha256: bundle.sha256,
       sizeBytes: bundle.sizeBytes,
+      bundleSha256: sha256(rawBundle),
+      bundleSizeBytes: rawBundle.length,
       downloadedAt: Date.now(),
     };
     await FileSystem.writeAsStringAsync(META_PATH, JSON.stringify(nextMeta));
@@ -368,7 +412,7 @@ export const OTA_PATHS = { dir: OTA_DIR, bundle: BUNDLE_PATH, meta: META_PATH } 
  * Отдельный файл, а не поле в `/api/v1/version`: JS-бандл можно публиковать десятки раз в день,
  * не трогая воркер и D1. Если манифеста нет — тихо живём на вшитом бандле.
  */
-export async function fetchOtaBundleInfo(): Promise<OtaBundleInfo | null> {
+export async function fetchOtaBundleInfo(): Promise<OtaBundleWithManifest | null> {
   const sources = [OTA_BASE, ...OTA_SOURCES.filter((s) => s !== OTA_BASE)];
   const cacheBuster = `?t=${Date.now()}`;
   for (const base of sources) {
@@ -387,7 +431,9 @@ export async function fetchOtaBundleInfo(): Promise<OtaBundleInfo | null> {
         log('маніфест відкинуто', base, verification.reason);
         continue;
       }
-      return info;
+      // Маніфест цілком потрібен iOS-завантажувачу: він зберігає його поруч із бандлом і
+      // перевіряє підпис нативно. Android зайве поле не читає.
+      return { ...info, manifest: data };
     } catch {
       // Пробуем следующий источник (GitHub -> Pages fallback)
     }

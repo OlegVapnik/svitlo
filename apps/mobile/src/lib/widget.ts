@@ -51,7 +51,12 @@ export interface WidgetSnapshotExtras {
   places: WidgetPlaceSnapshot[];
 }
 
+interface SvitloSharedDefaultsBridge {
+  setPayload(payload: string): void;
+}
+
 const bridge: SvitloWidgetBridge | undefined = NativeModules.SvitloWidget;
+const sharedDefaults: SvitloSharedDefaultsBridge | undefined = NativeModules.SvitloSharedDefaults;
 
 /**
  * Имя иконки для `smallIcon` постоянной плашки.
@@ -80,7 +85,6 @@ export function pushWidgetSnapshot(
   extras?: WidgetSnapshotExtras,
   updatedAt = Date.now(),
 ): void {
-  if (!bridge) return;
   const payload = {
     state: banner.state,
     headline: banner.headline,
@@ -98,10 +102,22 @@ export function pushWidgetSnapshot(
     tomorrowOffMinutes: extras?.tomorrowOffMinutes ?? null,
     places: extras?.places ?? [],
   };
-  try {
-    bridge.update(JSON.stringify(payload));
-  } catch {
-    /* виджет не установлен/модуль недоступен — экран из-за этого падать не должен */
+  const serialized = JSON.stringify(payload);
+  if (bridge) {
+    try {
+      bridge.update(serialized);
+    } catch {
+      /* виджет не установлен/модуль недоступен — экран из-за этого падать не должен */
+    }
+  }
+  // На iOS виджетного расширения пока нет, но контейнер App Group уже общий: кладём тот же
+  // снимок в `UserDefaults(suiteName:)`, чтобы расширение могло читать его без переделки JS.
+  if (Platform.OS === 'ios' && sharedDefaults) {
+    try {
+      sharedDefaults.setPayload(serialized);
+    } catch {
+      /* модуль не подключён в этой сборке — молча пропускаем */
+    }
   }
 }
 

@@ -9,6 +9,7 @@ import { Select } from '../components/ui/Select.js';
 import { useFetchScheduleNow, useImportTelegramSchedule, useParseNow, useQueues } from '../api/queries.js';
 import { useRegion } from '../hooks/useRegion.js';
 import { cn } from '../lib/cn.js';
+import { kyivDateKey } from '../lib/outage-dates.js';
 
 type ImportResult = { queue: string; date: string; imported: number; mergedIntervals: number };
 /** Локальная форма ошибки для рендера: код, сообщение и (если есть) детали валидации. */
@@ -31,7 +32,7 @@ export const ScheduleImportPage: React.FC = () => {
   const knownQueues = queuesData?.data ?? [];
   // Без выдуманного дефолта: очередь выбирается только из реального списка (GET /api/v1/queues).
   const [queue, setQueue] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => kyivDateKey(new Date()));
   const [json, setJson] = useState('');
   const [token, setToken] = useState('');
   const [result, setResult] = useState<ImportResult | null>(null);

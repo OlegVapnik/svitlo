@@ -1,10 +1,11 @@
 {
   "name": "svitlo",
   "private": true,
-  "version": "2.38.0",
+  "version": "2.39.0",
   "type": "module",
   "scripts": {
-    "build": "npm run build --workspace @svitlo/web && npm run build --workspace @svitlo/api"
+    "build": "npm run build --workspace @svitlo/web && npm run build --workspace @svitlo/api",
+    "gen:regions": "node packages/shared/scripts/gen-regions.mjs"
   },
   "workspaces": [
     "apps/web",
