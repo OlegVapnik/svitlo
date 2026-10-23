@@ -31,6 +31,8 @@ data class WidgetPayload(
     val todayOffMinutes: Int?,
     /** Минуты без света за завтра; null — график ещё не опубликован. */
     val tomorrowOffMinutes: Int?,
+    /** Прогресс текущего слота в процентах 0..100 для змейки Squiggly Seekbar; null — нет данных. */
+    val progress: Int?,
     /** До трёх сохранённых мест для виджета «Радар». */
     val places: List<WidgetPlace>,
 ) {
@@ -75,6 +77,7 @@ data class WidgetPayload(
                     placeLabel = cleanLabel(json.optNonEmptyString("placeLabel", "")).ifBlank { "Мій графік" }.takeUnless { it == "null" } ?: "Мій графік",
                     todayOffMinutes = json.optNullableInt("todayOffMinutes"),
                     tomorrowOffMinutes = json.optNullableInt("tomorrowOffMinutes"),
+                    progress = json.optNullableInt("progress"),
                     places = places,
                 )
             }.getOrNull()
@@ -121,6 +124,7 @@ data class WidgetPayload(
             placeLabel = "Мій графік",
             todayOffMinutes = null,
             tomorrowOffMinutes = null,
+            progress = null,
             places = emptyList(),
         )
     }

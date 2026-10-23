@@ -47,6 +47,8 @@ export interface WidgetSnapshotExtras {
   todayOffMinutes: number | null;
   /** Скільки хвилин без світла завтра; `null` — графік ще не опубліковано. */
   tomorrowOffMinutes: number | null;
+  /** Відсоток пройденого інтервалу (0..100) для змейки Squiggly Seekbar. */
+  progress?: number | null;
   /** До трьох місць для віджета «Радар». */
   places: WidgetPlaceSnapshot[];
 }
@@ -100,6 +102,7 @@ export function pushWidgetSnapshot(
     placeLabel: extras?.placeLabel || 'Мій графік',
     todayOffMinutes: extras?.todayOffMinutes ?? null,
     tomorrowOffMinutes: extras?.tomorrowOffMinutes ?? null,
+    progress: extras?.progress ?? null,
     places: extras?.places ?? [],
   };
   const serialized = JSON.stringify(payload);

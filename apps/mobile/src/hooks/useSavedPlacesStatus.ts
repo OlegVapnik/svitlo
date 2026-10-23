@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { readRegionScheduleSnapshot, useQueries } from '@svitlo/core';
+import { api } from '@svitlo/core/api/client';
 import { upcomingGroupOutagesQueryOptions } from '@svitlo/core/api/queries';
 import { canonicalQueueCode, queueCodeMatches } from '@svitlo/core/lib/queue';
 import { minutesOfDay, minutesToHm, scheduleWindow, OFF_STATE_CODE } from '@svitlo/core/lib/scheduleWindow';
 import { SOON_MINUTES } from '@svitlo/core/lib/day-status';
-import type { ScheduleIntervalUtc } from '@svitlo/shared';
+import type { QueueScheduleData, ScheduleIntervalUtc } from '@svitlo/shared';
 
 type ScheduleBucket = { queue: string; date: string; intervals: ScheduleIntervalUtc[] };
 
@@ -20,15 +22,17 @@ export interface PlaceLiveStatus {
 }
 
 /**
- * Загружает срезы расписаний для всех уникальных регионов в закладках пользователя
+ * Загружает срезы расписаний для всех уникальных регионов и мест в закладках пользователя
  * и рассчитывает точное состояние питания для каждого места (до скольки свет / отключение).
- * При монтировании мгновенно использует офлайн-снапшоты, чтобы статус не мигал серым.
+ * При монтировании мгновенно использует офлайн-снапшоты и кэш React Query, чтобы статус не мигал серым.
  */
 export function useSavedPlacesStatus(
   places: SavedPlace[],
   today: string,
   now: Date,
 ): Record<string, PlaceLiveStatus> {
+  const queryClient = useQueryClient();
+
   // Уникальные регионы среди сохраненных мест
   const uniqueRegions = useMemo(() => {
     return Array.from(new Set(places.map((p) => p.regionCpu).filter(Boolean)));
@@ -50,11 +54,25 @@ export function useSavedPlacesStatus(
     })),
   });
 
+  // Запрашиваем расписание конкретной очереди для каждого места
+  const placeQueries = useQueries({
+    queries: places.map((place) => {
+      const canonicalQueue = canonicalQueueCode(place.regionCpu, place.queue);
+      return {
+        queryKey: ['queueSchedule', canonicalQueue, today, place.regionCpu],
+        queryFn: () => api.fetchQueueSchedule(canonicalQueue, today, place.regionCpu),
+        staleTime: 60_000,
+        refetchInterval: 60_000,
+        enabled: Boolean(place.regionCpu && place.queue),
+      };
+    }),
+  });
+
   return useMemo(() => {
     const statusByPlaceId: Record<string, PlaceLiveStatus> = {};
     const nowMs = now.getTime();
 
-    // Индексируем данные по регионам (сперва снапшоты для фолбэка, затем свежие данные)
+    // 1) Индексируем групповые данные по регионам (снапшоты + useUpcomingGroupOutages)
     const regionDataMap = new Map<string, ScheduleBucket[]>();
     for (const region of uniqueRegions) {
       const snap = readRegionScheduleSnapshot(region);
@@ -74,22 +92,66 @@ export function useSavedPlacesStatus(
       }
     });
 
-    for (const place of places) {
-      const regionUpcoming = regionDataMap.get(place.regionCpu) ?? [];
-      const matched = regionUpcoming.find(
-        (item) => item.date === today && queueCodeMatches(place.regionCpu, item.queue, place.queue),
-      );
+    // 2) Для каждого места находим интервалы: сперва индивидуальный запрос placeQueries, затем fallback на regionDataMap
+    places.forEach((place, index) => {
+      let placeIntervals: ScheduleIntervalUtc[] | null = null;
+      let placeCovered = false;
 
-      if (!matched || !matched.intervals || matched.intervals.length === 0) {
+      // Проверяем данные точечного запроса очереди
+      const placeQueryData = placeQueries[index]?.data as { data?: QueueScheduleData } | undefined;
+      const directSchedule = placeQueryData?.data;
+      if (directSchedule) {
+        if (Array.isArray(directSchedule.intervals) && directSchedule.intervals.length > 0) {
+          placeIntervals = directSchedule.intervals;
+          placeCovered = true;
+        } else if (directSchedule.covered || directSchedule.allClear) {
+          // Расписание получено и подтверждено, но отключений нет
+          placeIntervals = [];
+          placeCovered = true;
+        }
+      }
+
+      // Если в точечном запросе нет данных, ищем в React Query cache (например если запрошено под другим форматом очереди)
+      if (!placeCovered && (!placeIntervals || placeIntervals.length === 0)) {
+        const canonicalQueue = canonicalQueueCode(place.regionCpu, place.queue);
+        const cached = queryClient.getQueryData<{ data?: QueueScheduleData }>([
+          'queueSchedule',
+          canonicalQueue,
+          today,
+          place.regionCpu,
+        ]);
+        if (cached?.data?.intervals && cached.data.intervals.length > 0) {
+          placeIntervals = cached.data.intervals;
+          placeCovered = true;
+        } else if (cached?.data?.covered || cached?.data?.allClear) {
+          placeIntervals = [];
+          placeCovered = true;
+        }
+      }
+
+      // Если всё ещё нет данных, смотрим в групповой срез региона
+      if (!placeCovered && (!placeIntervals || placeIntervals.length === 0)) {
+        const regionUpcoming = regionDataMap.get(place.regionCpu) ?? [];
+        const matched = regionUpcoming.find(
+          (item) => item.date === today && queueCodeMatches(place.regionCpu, item.queue, place.queue),
+        );
+        if (matched && matched.intervals) {
+          placeIntervals = matched.intervals;
+          placeCovered = true;
+        }
+      }
+
+      // Если расписание так и не найдено
+      if (!placeCovered && (!placeIntervals || placeIntervals.length === 0)) {
         statusByPlaceId[place.id] = {
           state: 'unknown',
           timeLabel: '',
           statusText: 'Немає даних',
         };
-        continue;
+        return;
       }
 
-      const summary = scheduleWindow(matched.intervals, today, now);
+      const summary = scheduleWindow(placeIntervals || [], today, now);
 
       if (summary.isOff) {
         const endHm = summary.offEndsAt ? minutesToHm(minutesOfDay(summary.offEndsAt, today)) : '';
@@ -119,9 +181,9 @@ export function useSavedPlacesStatus(
           statusText: 'Світло є',
         };
       }
-    }
+    });
 
     return statusByPlaceId;
-  }, [places, regionQueries, uniqueRegions, today, now]);
+  }, [places, regionQueries, placeQueries, uniqueRegions, today, now, queryClient]);
 }
 

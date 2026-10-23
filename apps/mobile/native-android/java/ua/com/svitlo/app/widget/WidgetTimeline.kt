@@ -98,6 +98,84 @@ object WidgetTimeline {
         return bitmap
     }
 
+    /**
+     * Рендерит змейку прогресса («Squiggly Seekbar» / M3 Wavy Progress) для виджета 2×1 Капсула.
+     *
+     * Повторяет логику WavyProgressBar из приложения:
+     * - Спокойный трек фонового цвета на всю ширину.
+     * - Пройденная часть: плавная волна (Bézier синусоида) цвета текущего статуса.
+     *   При отключении (off) — прямая линия.
+     * - Оставшаяся часть: прямая линия.
+     * - Белый бегунок-пилюля на стыке (позиция прогресса).
+     */
+    fun renderSquiggly(payload: WidgetPayload): Bitmap {
+        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint().apply {
+            isAntiAlias = true
+            strokeCap = Paint.Cap.ROUND
+        }
+
+        val midY = HEIGHT / 2f
+        val rawPercent = (payload.progress ?: payload.nowFraction?.let { (it * 100f).roundToInt() } ?: 0).coerceIn(0, 100)
+        val progressX = (rawPercent / 100f) * WIDTH
+
+        // 1. Спокойный фоновый трек (track)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 6f
+        paint.color = Color.parseColor("#27272A") // muted track
+        canvas.drawLine(0f, midY, WIDTH.toFloat(), midY, paint)
+
+        // 2. Волна пройденной части
+        val toneColor = WidgetPayload.colorFor(payload.state)
+        val isOff = payload.state == "off"
+        val amplitude = if (isOff) 0f else 11f // амплитуда волны
+        val wavelength = 64f // длина одной полной волны
+
+        if (progressX > 0f) {
+            paint.color = toneColor
+            paint.strokeWidth = 8f
+
+            if (amplitude > 0f) {
+                val wavePath = Path()
+                wavePath.moveTo(0f, midY)
+                val quarter = wavelength / 4f
+                val half = wavelength / 2f
+                val control = amplitude * 2f
+
+                var x = 0f
+                while (x < progressX) {
+                    wavePath.quadTo(x + quarter, midY - control, x + half, midY)
+                    wavePath.quadTo(x + half + quarter, midY + control, x + wavelength, midY)
+                    x += wavelength
+                }
+
+                // Обрезаем волну ровно по progressX
+                canvas.save()
+                canvas.clipRect(0f, 0f, progressX, HEIGHT.toFloat())
+                canvas.drawPath(wavePath, paint)
+                canvas.restore()
+            } else {
+                // Если отключение — прямая строгая линия
+                canvas.drawLine(0f, midY, progressX, midY, paint)
+            }
+        }
+
+        // 3. Белый ползунок-индикатор на позиции прогресса
+        val thumbX = progressX.coerceIn(8f, WIDTH - 8f)
+        val thumbHalfWidth = 5f
+        val thumbHeight = 32f
+        val thumbTop = midY - thumbHeight / 2f
+        val thumbBottom = midY + thumbHeight / 2f
+
+        paint.style = Paint.Style.FILL
+        paint.color = Color.WHITE
+        val thumbRect = RectF(thumbX - thumbHalfWidth, thumbTop, thumbX + thumbHalfWidth, thumbBottom)
+        canvas.drawRoundRect(thumbRect, 4f, 4f, paint)
+
+        return bitmap
+    }
+
     /** Диагональная штриховка внутри ruby-сегмента, как на главной шкале. */
     private fun drawHatch(canvas: Canvas, rect: RectF, dim: Float) {
         val paint = Paint().apply {

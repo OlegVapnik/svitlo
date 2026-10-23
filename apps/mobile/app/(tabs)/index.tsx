@@ -10,7 +10,7 @@ import { api } from '@svitlo/core/api/client';
 import { useOutages, useQueueSchedule, useUpcomingGroupOutages } from '@svitlo/core/api/queries';
 import { kyivDateOffsetKey } from '@svitlo/core/lib/outage-dates';
 import { canonicalQueueCode, queueCodeMatches } from '@svitlo/core/lib/queue';
-import { formatMinutesUk, minutesOfDay, minutesToHm } from '@svitlo/core/lib/scheduleWindow';
+import { formatMinutesUk, minutesOfDay, minutesToHm, slotProgress } from '@svitlo/core/lib/scheduleWindow';
 
 import { AccidentBanner } from '@/components/home/AccidentBanner';
 import { HeroStatus } from '@/components/home/HeroStatus';
@@ -316,6 +316,11 @@ export default function HomeScreen() {
     applyPlace(places[(index + 1) % places.length]);
   }, [places, activePlace, applyPlace, nextQueue]);
 
+  const currentSlotProgress = useMemo(
+    () => (intervals.length > 0 ? slotProgress(intervals, activeDate, now) : null),
+    [intervals, activeDate, now],
+  );
+
   const widgetExtras = useMemo<WidgetSnapshotExtras>(
     () => ({
       placeLabel: activePlace
@@ -325,6 +330,7 @@ export default function HomeScreen() {
           : 'Мій графік',
       todayOffMinutes: todaySummary ? todaySummary.offMinutes : null,
       tomorrowOffMinutes: tomorrowSummary ? tomorrowSummary.offMinutes : null,
+      progress: currentSlotProgress?.percent ?? null,
       places: places.slice(0, 3).map((place) => {
         const live = placesStatusMap[place.id];
         return {
@@ -337,7 +343,7 @@ export default function HomeScreen() {
         };
       }),
     }),
-    [activePlace, places, placesStatusMap, selectedQueue, todaySummary, tomorrowSummary],
+    [activePlace, currentSlotProgress, places, placesStatusMap, selectedQueue, todaySummary, tomorrowSummary],
   );
 
   useHomeWidget({

@@ -124,7 +124,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
                 payload.detail.takeUnless { it == "null" }?.ifBlank { context.getString(R.string.widget_open_hint) }
                     ?: context.getString(R.string.widget_open_hint),
             )
-            views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
+            views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.renderSquiggly(payload))
 
             widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
                 views.setOnClickPendingIntent(R.id.widget_cycle, it)
