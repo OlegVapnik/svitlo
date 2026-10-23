@@ -512,21 +512,21 @@ export const HomeHeroSection: React.FC = () => {
 
       {/* 2. Панель керування: перемикач дати та вибір черги в одній зручній картці */}
       <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-hairline bg-surface-container-low/60 p-3 sm:p-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           {/* Перемикач дати: Сьогодні / Завтра */}
           <DaySegment
             value={selectedDayOffset === 0 ? 'today' : 'tomorrow'}
             today={t('outages.today')}
             tomorrow={t('outages.tomorrow')}
             onChange={(next) => setSelectedDayOffset(next === 'tomorrow' ? 1 : 0)}
-            className="w-full sm:w-auto"
+            className="min-w-0 flex-1 sm:w-auto sm:flex-none"
           />
 
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-hairline bg-surface-container text-on-surface hover:bg-surface-container-high"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-hairline bg-surface-container text-on-surface hover:bg-surface-container-high"
             disabled={!selectedQueue}
             onClick={saveCurrentAsBookmark}
             aria-label={t('home.addToBookmarks')}

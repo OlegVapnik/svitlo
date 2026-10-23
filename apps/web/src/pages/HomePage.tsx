@@ -9,8 +9,20 @@ import { formatDuration, formatMinutes, mergeIntervals, toIsoIntervals, type Min
 
 /** Минуты от полуночи по Киеву для указанной даты — чтобы понять, какое окно «сейчас». */
 const kyivNowMinutesFor = (date: string): number | null => getKyivNowMinutes(date, new Date());
-import { ArrowRight, CalendarDays, ChevronDown, MapPin, RefreshCw, TriangleAlert, Zap, ZapOff, type LucideIcon } from 'lucide-react';
-import { StatusIndicator } from '../components/status/StatusIndicator.js';
+import {
+  ArrowRight,
+  CalendarDays,
+  ChevronDown,
+  Download,
+  ExternalLink,
+  MapPin,
+  RefreshCw,
+  Smartphone,
+  TriangleAlert,
+  Zap,
+  ZapOff,
+  type LucideIcon,
+} from 'lucide-react';
 import { SourceHealthBanner } from '../components/status/SourceHealthBanner.js';
 import { LastUpdated } from '../components/status/LastUpdated.js';
 import { PowerSummaryCard } from '../components/status/PowerSummaryCard.js';
@@ -597,11 +609,40 @@ export const HomePage: React.FC = () => {
               </div>
             </div>
 
-            {/* ОПЦИОНАЛЬНАЯ ЦЕПОЧКА ДО КОНЦА: `status?.grid.level` защищает только `status`,
-                и если в ответе нет объекта grid, обращение к `.level` роняет React в белый
-                экран. Ровно это и случилось при подключении к облаку, где маршрут отдавал
-                другой набор полей. */}
-            <StatusIndicator level={status?.grid?.level ?? 'stable'} message={status?.grid?.message} />
+            {/* Замість технічного рядка про «стабільну енергосистему» — практичний вихід
+                для тих, кому потрібен застосунок: останній APK на GitHub Releases. */}
+            <div className="flex flex-col gap-3 rounded-xl border border-hairline bg-surface-container-low/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <Smartphone className="h-4 w-4" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-on-surface">{t('home.androidApp')}</p>
+                  <p className="truncate text-xs text-on-surface-variant">{t('home.githubHint')}</p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <a
+                  href="https://github.com/OlegVapnik/svitlo/releases/latest"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-xs transition-[background-color,transform] hover:bg-primary/90 active:scale-98 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                  {t('home.downloadApk')}
+                </a>
+                <a
+                  href="https://github.com/OlegVapnik/svitlo"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={t('home.githubReleases')}
+                  title={t('home.githubReleases')}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-hairline text-on-surface-variant transition-colors hover:bg-surface-container-high hover:text-on-surface focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden />
+                </a>
+              </div>
+            </div>
 
             {/* Три числа — группами за графіком ГПВ, а не точковими ремонтними записами:
                 саме групове відключення люди називають «відключенням». */}
