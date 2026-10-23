@@ -1,0 +1,67 @@
+name: Direct OSR schedules
+
+# Прямі джерела ГПВ (поки що Чернігів) запускаються на раннері GitHub, а не на
+# домашньому комп'ютері. Це переживає відключення світла й не залежить від того,
+# чи ввімкнено ноутбук. Дані летять у воркер через захищений ingest-токен.
+on:
+  schedule:
+    # GitHub може затримувати cron на кілька хвилин — для ГПВ це нормально.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: direct-osr
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # curl_cffi потрібен для сайтів, які відкидають звичайний TLS-відпечаток
+          # (chernigiv.energy-ua.info віддає 403 без impersonate="chrome").
+          python -m pip install "curl_cffi>=0.10,<0.13"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tools/direct_sources -p 'test_*.py' -v
+
+      - name: Sync direct sources
+        env:
+          SVITLO_INGEST_TOKEN: ${{ secrets.SVITLO_INGEST_TOKEN }}
+        run: |
+          if [ -z "${SVITLO_INGEST_TOKEN}" ]; then
+            echo "::error::Додайте repository secret SVITLO_INGEST_TOKEN (той самий, що в wrangler secret для воркера)."
+            exit 1
+          fi
+          mkdir -p .cache/direct
+          python -m tools.direct_sources \
+            --adapter all \
+            --json .cache/direct/latest.json \
+            --sql .cache/direct/latest.sql \
+            --ingest "https://svitlo-api.olegvapnik45.workers.dev/api/v1/internal/schedules-ingest"
+
+      - name: Upload snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-sources-${{ github.run_id }}
+          path: |
+            .cache/direct/latest.json
+            .cache/direct/latest.sql
+          if-no-files-found: ignore
+          retention-days: 7
