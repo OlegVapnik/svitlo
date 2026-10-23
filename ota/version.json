@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-10-23T12:16:59.047Z",
+  "generatedAt": "2026-10-23T12:27:37.991Z",
   "version": "2.39.1",
   "jsBundle": {
-    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-9247da4cb757d911.gz",
-    "sha256": "9247da4cb757d911b2af947b8a1cf7638067a6fbd043ca2775728423ada10762",
-    "sizeBytes": 2837586,
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-af578c4670e69720.gz",
+    "sha256": "af578c4670e697204e2f7b42ee3143ed452056431211c0c1c2c6b2f9497f257d",
+    "sizeBytes": 2837679,
     "version": "2.39.1",
     "assets": [
       {
@@ -150,5 +150,5 @@
     ]
   },
   "keyId": "svitlo-ota-2026-1",
-  "signature": "X/admemGXXYFcjlNe3z7ET4hmGiSC+A9PB7x7GndOXcjhXsBedCZFy4Y39PLArIB0ghGPNeMdwjfxRM+GcfkCQ=="
+  "signature": "L8MdshlYr4aOwjWTCHgVQ6ZO/aI42ShaU69jWcH49tpYMODO9riL8YNLdV8MkuROqJkNCIHu9BpKvvxGR1iiDA=="
 }

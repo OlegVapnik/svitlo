@@ -57,13 +57,13 @@ data class WidgetPayload(
                     }
                 }
                 WidgetPayload(
-                    state = json.optString("state", "unknown"),
-                    headline = json.optString("headline", "Немає даних"),
-                    detail = cleanLabel(json.optString("detail", "")),
-                    pill = cleanLabel(json.optString("pill", "Немає даних")),
-                    timer = json.optString("timer", "").ifBlank { null },
-                    timerPrefix = cleanLabel(json.optString("timerPrefix", "")).ifBlank { null },
-                    queue = json.optString("queue", "").ifBlank { null },
+                    state = json.optNonEmptyString("state", "unknown"),
+                    headline = json.optNonEmptyString("headline", "Немає даних"),
+                    detail = cleanLabel(json.optNonEmptyString("detail", "")),
+                    pill = cleanLabel(json.optNonEmptyString("pill", "Немає даних")),
+                    timer = json.optNonEmptyString("timer", "").ifBlank { null }?.takeUnless { it == "null" },
+                    timerPrefix = cleanLabel(json.optNonEmptyString("timerPrefix", "")).ifBlank { null }?.takeUnless { it == "null" },
+                    queue = json.optNonEmptyString("queue", "").ifBlank { null }?.takeUnless { it == "null" },
                     slots = slots,
                     nowFraction = if (json.isNull("nowFraction")) {
                         null
@@ -72,7 +72,7 @@ data class WidgetPayload(
                     },
                     offMinutes = json.optInt("offMinutes", 0),
                     updatedAt = json.optLong("updatedAt", 0L),
-                    placeLabel = cleanLabel(json.optString("placeLabel", "")).ifBlank { "Мій графік" },
+                    placeLabel = cleanLabel(json.optNonEmptyString("placeLabel", "")).ifBlank { "Мій графік" }.takeUnless { it == "null" } ?: "Мій графік",
                     todayOffMinutes = json.optNullableInt("todayOffMinutes"),
                     tomorrowOffMinutes = json.optNullableInt("tomorrowOffMinutes"),
                     places = places,
@@ -140,3 +140,9 @@ data class WidgetPlace(
 /** `null` отличается от нуля: ноль — «света не выключали», null — «графика нет». */
 private fun JSONObject.optNullableInt(key: String): Int? =
     if (!has(key) || isNull(key)) null else optInt(key)
+
+private fun JSONObject.optNonEmptyString(key: String, fallback: String): String {
+    if (!has(key) || isNull(key)) return fallback
+    val value = optString(key, fallback)
+    return if (value == "null") fallback else value
+}

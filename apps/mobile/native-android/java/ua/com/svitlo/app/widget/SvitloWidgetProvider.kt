@@ -110,14 +110,19 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             bindDot(views, R.id.widget_dot, state)
             views.setTextViewText(R.id.widget_place, payload.placeLabel)
             views.setTextViewText(R.id.widget_pill, payload.pill)
-            views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
+            views.setTextViewText(
+                R.id.widget_timer,
+                payload.timer?.takeUnless { it == "null" }
+                    ?: if (state == "on" || state == "allClear") "Світло є" else "—"
+            )
             views.setTextViewText(
                 R.id.widget_timer_prefix,
-                payload.timerPrefix ?: "",
+                payload.timerPrefix?.takeUnless { it == "null" } ?: "",
             )
             views.setTextViewText(
                 R.id.widget_detail,
-                payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
+                payload.detail.takeUnless { it == "null" }?.ifBlank { context.getString(R.string.widget_open_hint) }
+                    ?: context.getString(R.string.widget_open_hint),
             )
             views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
 
@@ -133,10 +138,15 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             bindDot(views, R.id.widget_dot, payload.state)
             views.setTextViewText(R.id.widget_place, payload.placeLabel)
             views.setTextViewText(R.id.widget_pill, payload.pill)
-            views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
+            views.setTextViewText(
+                R.id.widget_timer,
+                payload.timer?.takeUnless { it == "null" }
+                    ?: if (payload.state == "on" || payload.state == "allClear") "Світло є" else "—"
+            )
             views.setTextViewText(
                 R.id.widget_detail,
-                payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
+                payload.detail.takeUnless { it == "null" }?.ifBlank { context.getString(R.string.widget_open_hint) }
+                    ?: context.getString(R.string.widget_open_hint),
             )
             views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
 
@@ -152,11 +162,19 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             bindDot(views, R.id.widget_dot, payload.state)
             views.setTextViewText(R.id.widget_place, payload.placeLabel)
             views.setTextViewText(R.id.widget_pill, payload.pill)
-            views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
-            views.setTextViewText(R.id.widget_timer_prefix, payload.timerPrefix ?: "")
+            views.setTextViewText(
+                R.id.widget_timer,
+                payload.timer?.takeUnless { it == "null" }
+                    ?: if (payload.state == "on" || payload.state == "allClear") "Світло є" else "—"
+            )
+            views.setTextViewText(
+                R.id.widget_timer_prefix,
+                payload.timerPrefix?.takeUnless { it == "null" } ?: ""
+            )
             views.setTextViewText(
                 R.id.widget_detail,
-                payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
+                payload.detail.takeUnless { it == "null" }?.ifBlank { context.getString(R.string.widget_open_hint) }
+                    ?: context.getString(R.string.widget_open_hint),
             )
             views.setTextViewText(
                 R.id.widget_today_value,
