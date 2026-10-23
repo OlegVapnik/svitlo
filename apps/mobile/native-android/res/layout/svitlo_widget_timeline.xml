@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   4×1 «Таймлайн Суток». Верхняя строка — статус, название места и крупный таймер;
-  снизу — шкала 24 часов. Растр только у шкалы (480×24, RGB_565 ≈ 23 КБ), подписи
+  снизу — шкала 24 часов. Растр только у шкалы (960×48, RGB_565 ≈ 92 КБ), подписи
   00…24 и весь остальной текст — нативные TextView.
+
+  Важно: height у подписей задан явно. RemoteViews создаёт LayoutParams по XML-атрибутам
+  и не смотрит в style — иначе лаунчер падает с «You must supply a layout_height attribute».
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -31,20 +34,18 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_dot"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:includeFontPadding="false"
-                android:text="●"
-                android:textColor="#FFFFFF"
-                android:textSize="10sp" />
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="5dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_dot_unknown" />
 
             <TextView
                 android:id="@+id/widget_place"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
@@ -65,20 +66,18 @@
                 android:textSize="16sp"
                 android:textStyle="bold" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_refresh"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="5dp"
                 android:background="@drawable/widget_pill"
                 android:clickable="true"
                 android:contentDescription="@string/widget_refresh"
                 android:focusable="true"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="↻"
-                android:textColor="#D4D4D8"
-                android:textSize="13sp" />
+                android:padding="5dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_widget_refresh" />
         </LinearLayout>
 
         <LinearLayout
@@ -128,39 +127,59 @@
             android:orientation="horizontal">
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="start"
-                android:text="00" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="00"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="06" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="06"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="12" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="12"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="18" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="18"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="end"
-                android:text="24" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="24"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

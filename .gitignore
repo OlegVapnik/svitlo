@@ -10,3 +10,5 @@ apps/mobile/android-apk/*.apk
 
 # Release APKs are built into apps/mobile/android-apk/ only
 /*.apk
+.cache/
+1/

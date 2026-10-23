@@ -25,7 +25,7 @@ data class WidgetPayload(
     val nowFraction: Float?,
     val offMinutes: Int,
     val updatedAt: Long,
-    /** «🏠 Дім · 6/1» — название сохранённого места и очередь. */
+    /** «Дім · 6/1» — название сохранённого места и очередь (без эмодзи). */
     val placeLabel: String,
     /** Минуты без света за сегодня; null — графика нет. */
     val todayOffMinutes: Int?,
@@ -47,22 +47,22 @@ data class WidgetPayload(
                 val places = (0 until placesArray.length()).mapNotNull { index ->
                     placesArray.optJSONObject(index)?.let { place ->
                         WidgetPlace(
-                            icon = place.optString("icon", "⭐"),
-                            label = place.optString("label", ""),
+                            icon = place.optString("icon", "star"),
+                            label = cleanLabel(place.optString("label", "")),
                             queue = place.optString("queue", ""),
                             state = place.optString("state", "unknown"),
                             timeLabel = place.optString("timeLabel", ""),
-                            statusText = place.optString("statusText", "Немає даних"),
+                            statusText = cleanLabel(place.optString("statusText", "Немає даних")),
                         )
                     }
                 }
                 WidgetPayload(
                     state = json.optString("state", "unknown"),
                     headline = json.optString("headline", "Немає даних"),
-                    detail = json.optString("detail", ""),
-                    pill = json.optString("pill", "Немає даних"),
+                    detail = cleanLabel(json.optString("detail", "")),
+                    pill = cleanLabel(json.optString("pill", "Немає даних")),
                     timer = json.optString("timer", "").ifBlank { null },
-                    timerPrefix = json.optString("timerPrefix", "").ifBlank { null },
+                    timerPrefix = cleanLabel(json.optString("timerPrefix", "")).ifBlank { null },
                     queue = json.optString("queue", "").ifBlank { null },
                     slots = slots,
                     nowFraction = if (json.isNull("nowFraction")) {
@@ -72,13 +72,26 @@ data class WidgetPayload(
                     },
                     offMinutes = json.optInt("offMinutes", 0),
                     updatedAt = json.optLong("updatedAt", 0L),
-                    placeLabel = json.optString("placeLabel", "").ifBlank { "Мій графік" },
+                    placeLabel = cleanLabel(json.optString("placeLabel", "")).ifBlank { "Мій графік" },
                     todayOffMinutes = json.optNullableInt("todayOffMinutes"),
                     tomorrowOffMinutes = json.optNullableInt("tomorrowOffMinutes"),
                     places = places,
                 )
             }.getOrNull()
         }
+
+        /**
+         * Убирает эмодзи и variation selectors из старых OTA-снимков.
+         *
+         * Новый JS присылает чистые подписи, но APK и бандл обновляются раздельно: пока
+         * сервер отдаёт прежний снимок, «🏠 Дім · 6/1» не должно вернуть эмодзи в виджет.
+         * `\p{So}` — прочие символы (эмодзи), `\p{Sk}` — модификаторы, плюс ZWJ/VS16.
+         */
+        fun cleanLabel(value: String): String =
+            value
+                .replace(Regex("[\\p{So}\\p{Sk}\\uFE0F\\u200D]"), "")
+                .replace(Regex("\\s{2,}"), " ")
+                .trim()
 
         /**
          * Тон состояния — те же значения, что `notificationColor` в приложении.
@@ -115,6 +128,7 @@ data class WidgetPayload(
 
 /** Одно сохранённое место в виджете «Радар моїх місць». */
 data class WidgetPlace(
+    /** Ключ Lucide-иконки: home, work, family, dacha, garage, office, school, star. */
     val icon: String,
     val label: String,
     val queue: String,

@@ -319,7 +319,7 @@ export default function HomeScreen() {
   const widgetExtras = useMemo<WidgetSnapshotExtras>(
     () => ({
       placeLabel: activePlace
-        ? `${placeIconEmoji(activePlace.icon)} ${activePlace.label} · ${activePlace.queue}`
+        ? `${activePlace.label} · ${activePlace.queue}`
         : selectedQueue
           ? `Черга ${selectedQueue}`
           : 'Мій графік',
@@ -328,7 +328,7 @@ export default function HomeScreen() {
       places: places.slice(0, 3).map((place) => {
         const live = placesStatusMap[place.id];
         return {
-          icon: placeIconEmoji(place.icon),
+          icon: place.icon,
           label: place.label,
           queue: place.queue,
           state: live?.state ?? 'unknown',

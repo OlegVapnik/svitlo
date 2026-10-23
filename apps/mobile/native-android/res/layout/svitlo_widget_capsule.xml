@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  2×1 «Капсула-Датчик». Только нативные TextView: ни Canvas, ни Bitmap здесь нет,
-  поэтому Binder-транзакция весит считанные килобайты и не упирается в лимит 1 МБ.
+  2×1 «Капсула-Датчик». Редизайн у стилі застосунку: підпис «До відключення» стоїть
+  окремим рядком під таймером (раніше він ділив рядок із цифрами й обрізався), а внизу —
+  та сама «змійка» 24-годинної шкали, що й на головному екрані: 48 заокруглених
+  півгодинних сегментів, штрихування відключень і білий маркер «зараз».
 
-  Тап по всей капсуле листает сохранённые места (ACTION_CYCLE_BOOKMARK), тап по пилюле
-  статуса открывает приложение. Обе зоны — обычные TextView, а не голые View: RemoteViews
-  на HyperOS/One UI надёжно поддерживает только документированные классы.
+  Тап по всій капсулі листає збережені місця, тап по пігулці відкриває застосунок.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_capsule_unknown"
-    android:padding="12dp">
+    android:padding="10dp">
 
     <TextView
         android:id="@+id/widget_cycle"
@@ -33,32 +33,32 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_dot"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:includeFontPadding="false"
-                android:text="●"
-                android:textColor="#FFFFFF"
-                android:textSize="11sp" />
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="5dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_dot_unknown" />
 
             <TextView
                 android:id="@+id/widget_place"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="@string/widget_no_data"
                 android:textColor="#FFFFFF"
-                android:textSize="11sp" />
+                android:textSize="11sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/widget_pill"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
                 android:background="@drawable/widget_pill"
                 android:clickable="true"
                 android:contentDescription="@string/widget_open_app"
@@ -77,41 +77,47 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="vertical">
 
             <TextView
                 android:id="@+id/widget_timer"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="—"
                 android:textColor="#FFFFFF"
-                android:textSize="21sp"
+                android:textSize="20sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/widget_timer_prefix"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:ellipsize="end"
                 android:includeFontPadding="false"
                 android:maxLines="1"
-                android:textColor="#D4D4D8"
-                android:textSize="9sp" />
+                android:textColor="#E4E4E7"
+                android:textSize="8sp" />
         </LinearLayout>
+
+        <ImageView
+            android:id="@+id/widget_scale"
+            android:layout_width="match_parent"
+            android:layout_height="9dp"
+            android:layout_marginTop="2dp"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY" />
 
         <TextView
             android:id="@+id/widget_detail"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:includeFontPadding="false"
             android:maxLines="1"
             android:text="@string/widget_open_hint"
-            android:textColor="#D4D4D8"
-            android:textSize="9sp" />
+            android:textColor="#E4E4E7"
+            android:textSize="8sp" />
     </LinearLayout>
 </FrameLayout>

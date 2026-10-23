@@ -4,11 +4,11 @@ import android.graphics.Color
 import ua.com.svitlo.app.R
 
 /**
- * Визуальный язык виджетов: один статус — один символ, цвет и фон.
+ * Визуальный язык виджетов: один статус — одна точка, один тип места — одна Lucide-иконка.
  *
- * Символы намеренно разные по форме (`●`, `◆`, `■`), а не только по цвету: дальтоник
- * отличает «светло» от «выключено» без оттенка. Это те же три состояния, что в Hero-карточке
- * и шторке, поэтому виджет не спорит с приложением.
+ * Эмодзи из виджетов убраны: в системном шрифте они выглядят разноцветно и по-разному на
+ * каждом OEM, а на HyperOS часть глифов вообще превращается в «тофу». Векторные иконки
+ * рисуются одинаково и не дублируют друг друга.
  */
 object WidgetStyle {
     const val GREEN = "#10B981"
@@ -19,11 +19,30 @@ object WidgetStyle {
     const val INK = "#FFFFFF"
     const val INK_SOFT = "#D4D4D8"
 
-    fun symbol(state: String): String = when (state) {
-        "on", "allClear" -> "●"
-        "warning" -> "◆"
-        "off" -> "■"
-        else -> "•"
+    /** Точка состояния — цветной кружок без текста и без эмодзи. */
+    fun dot(state: String): Int = when (state) {
+        "on", "allClear" -> R.drawable.widget_dot_on
+        "warning" -> R.drawable.widget_dot_warning
+        "off" -> R.drawable.widget_dot_off
+        else -> R.drawable.widget_dot_unknown
+    }
+
+    /**
+     * Lucide-иконка типа места.
+     *
+     * Принимает и ключ (`home`, `work`, …), и старое эмодзи из OTA-бандла: приложение и APK
+     * обновляются отдельно, поэтому виджет не должен ломаться на переходный период.
+     */
+    fun placeIcon(icon: String): Int = when (icon) {
+        "home", "🏠", "🏡" -> R.drawable.ic_widget_home
+        "work", "💼", "🧳" -> R.drawable.ic_widget_work
+        "family", "👨‍👩‍👧", "👪", "👨‍👩‍👧‍👦" -> R.drawable.ic_widget_family
+        "dacha", "🌳", "🌲", "🍃" -> R.drawable.ic_widget_dacha
+        "garage", "🚗", "🚙", "🏠‍🚗" -> R.drawable.ic_widget_garage
+        "office", "🏢", "🏬" -> R.drawable.ic_widget_office
+        "school", "🎓", "🏫", "📚" -> R.drawable.ic_widget_school
+        "star", "⭐", "🌟" -> R.drawable.ic_widget_star
+        else -> R.drawable.ic_widget_pin
     }
 
     fun color(state: String): Int = Color.parseColor(

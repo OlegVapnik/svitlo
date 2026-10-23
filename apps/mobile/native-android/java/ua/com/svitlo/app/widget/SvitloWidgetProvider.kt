@@ -119,7 +119,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
                 R.id.widget_detail,
                 payload.detail.ifBlank { context.getString(R.string.widget_open_hint) },
             )
-            views.setTextColor(R.id.widget_dot, WidgetStyle.color(state))
+            views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
 
             widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
                 views.setOnClickPendingIntent(R.id.widget_cycle, it)
@@ -150,7 +150,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
 
         private fun bindCommand(context: Context, views: RemoteViews, payload: WidgetPayload) {
             bindDot(views, R.id.widget_dot, payload.state)
-            views.setTextViewText(R.id.widget_place, "${payload.placeLabel} ▾")
+            views.setTextViewText(R.id.widget_place, payload.placeLabel)
             views.setTextViewText(R.id.widget_pill, payload.pill)
             views.setTextViewText(R.id.widget_timer, payload.timer ?: "—")
             views.setTextViewText(R.id.widget_timer_prefix, payload.timerPrefix ?: "")
@@ -172,7 +172,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.render(payload))
 
             widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
-                views.setOnClickPendingIntent(R.id.widget_place, it)
+                views.setOnClickPendingIntent(R.id.widget_place_group, it)
             }
             widgetAction(context, WidgetActionReceiver.ACTION_REFRESH)?.let {
                 views.setOnClickPendingIntent(R.id.widget_refresh, it)
@@ -201,12 +201,13 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
                     return@forEachIndexed
                 }
                 views.setViewVisibility(rowId, View.VISIBLE)
-                // Строка собрана из отдельных TextView, поэтому подпись ставим в label-зону,
-                // а не в саму строку: иначе текст наложился бы на статус и время.
+                // Иконка типа места — отдельный ImageView, а не эмодзи в тексте: иначе
+                // на HyperOS один и тот же значок дублировался и превращался в «тофу».
                 views.setTextViewText(
                     labelId(index),
-                    "${place.icon} ${place.label} · ${place.queue}",
+                    "${place.label} · ${place.queue}",
                 )
+                views.setImageViewResource(iconId(index), WidgetStyle.placeIcon(place.icon))
                 bindDot(views, dotId(index), place.state)
                 views.setTextViewText(statusId(index), place.statusText)
                 views.setTextViewText(timeId(index), place.timeLabel)
@@ -222,8 +223,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
         }
 
         private fun bindDot(views: RemoteViews, id: Int, state: String) {
-            views.setTextViewText(id, WidgetStyle.symbol(state))
-            views.setTextColor(id, WidgetStyle.color(state))
+            views.setImageViewResource(id, WidgetStyle.dot(state))
         }
 
         /**
@@ -258,6 +258,12 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             0 -> R.id.widget_place_dot_1
             1 -> R.id.widget_place_dot_2
             else -> R.id.widget_place_dot_3
+        }
+
+        private fun iconId(index: Int): Int = when (index) {
+            0 -> R.id.widget_place_icon_1
+            1 -> R.id.widget_place_icon_2
+            else -> R.id.widget_place_icon_3
         }
 
         private fun statusId(index: Int): Int = when (index) {

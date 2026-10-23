@@ -75,19 +75,33 @@ Turnstile. Без браузера токен не отримати. Тому п
 - Після SQL-інжесту воркер підхопить дані з D1 під час наступного крону або
   після завершення TTL кешу.
 
-## GitHub Actions
+## Основний хостинг: Cloudflare Browser Run
 
-Збірка живе у `.github/workflows/direct-sources.yml` і запускається кожні
-30 хвилин та вручну через `workflow_dispatch`. Це основний хостинг: він не
-залежить від того, чи є у вас вдома світло.
+Чернігів обслуговує сам воркер `cf-worker`, без GitHub і без домашнього
+комп'ютера. Окремий крон `15,45 * * * *` відкриває 12 сторінок
+`chernigiv.energy-ua.info/cherga/1-1`…`6-2` у справжньому Chromium через
+Cloudflare Browser Run і пише результат у D1 як `energy-ua`.
 
-Потрібен один repository secret:
+Чому браузер: звичайний `fetch` із Worker отримує 403 від Cloudflare Managed
+Challenge, а Browser Run на безкоштовному тарифі дає 10 хвилин Chromium на добу.
+Один запуск — близько 9.5 секунди, 48 запусків на добу — приблизно 7.6 хвилини.
+Запас є; якщо ліміт почне тиснути, достатньо змінити крон на `15 * * * *`
+(раз на годину).
+
+## GitHub Actions — ручний резерв
+
+`.github/workflows/direct-sources.yml` залишається як ручний запуск
+`workflow_dispatch`, коли треба перевірити Python-адаптер або отримати SQL/JSON
+артефакт. Автоматичний cron вимкнено: GitHub Actions не стартує, поки в
+акаунті не вирішено питання з billing, а Cloudflare уже працює безкоштовно.
+
+Потрібен repository secret:
 
 - `SVITLO_INGEST_TOKEN` — токен внутрішнього маршруту
   `/api/v1/internal/schedules-ingest`. Без нього крок синхронізації завершиться
   з помилкою, щоб не мовчки втрачати дані.
 
-Workflow ставить `curl_cffi`, проганяє unittest-и адаптерів, потім виконує:
+Ручний запуск ставить `curl_cffi`, проганяє unittest-и адаптерів, потім виконує:
 
 ```bash
 python -m tools.direct_sources --adapter all \
@@ -96,6 +110,4 @@ python -m tools.direct_sources --adapter all \
   --ingest https://svitlo-api.olegvapnik45.workers.dev/api/v1/internal/schedules-ingest
 ```
 
-JSON і SQL зберігаються як artifact на 7 днів. Розклад GitHub Actions може
-запізнюватися на кілька хвилин у пікові години — це нормально для безкоштовного
-хостингу.
+JSON і SQL зберігаються як artifact на 7 днів.

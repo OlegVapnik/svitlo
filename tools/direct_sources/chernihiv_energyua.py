@@ -32,8 +32,10 @@ from .base import (
 
 HOST = "chernigiv.energy-ua.info"
 REGION = "chernihivska-oblast"
-SOURCE = "chernihiv-energyua"
-QUEUES = tuple(QueueSpec(f"{group}.{part}") for group in range(1, 7) for part in (1, 2))
+# Той самий source, що й у Browser Run: інакше ручний SQL-резерв і крон пишуть
+# паралельні рядки з різними ключами й можуть залишити застарілий інтервал.
+SOURCE = "energy-ua"
+QUEUES = tuple(QueueSpec(f"{group}/{part}") for group in range(1, 7) for part in (1, 2))
 _OFF_STATUSES = frozenset({"red", "off", "disabled", "1", "true"})
 
 
@@ -94,7 +96,8 @@ class ChernihivEnergyUaAdapter:
         self.base_url = f"https://{HOST}/cherga"
 
     def queue_url(self, queue: str) -> str:
-        return f"{self.base_url}/{queue.replace('.', '-')}"
+        slug = queue.replace('.', '-').replace('/', '-')
+        return f"{self.base_url}/{slug}"
 
     def fetch(self, today: str | None = None, tomorrow: str | None = None) -> HostResult:
         today = today or kyiv_today()

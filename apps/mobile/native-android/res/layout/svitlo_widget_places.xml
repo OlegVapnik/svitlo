@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   4×2 «Радар Моїх Місць»: до трёх сохранённых мест одновременно — дом, работа, родители.
-  Каждая строка — нативный TextView-набор с цветной точкой состояния. Строки растягиваются
-  по высоте карточки (`layout_weight`), поэтому макет не ломается при ресайзе.
+  Каждая строка — нативные TextView/ImageView: слева точка состояния, затем Lucide-иконка
+  типа места, название и очередь. Иконка больше не дублируется эмоции в тексте.
+  Строки растягиваются по высоте карточки (`layout_weight`), поэтому макет не ломается
+  при ресайзе.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -32,7 +34,7 @@
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_refresh"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
@@ -40,11 +42,9 @@
                 android:clickable="true"
                 android:contentDescription="@string/widget_refresh"
                 android:focusable="true"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="↻"
-                android:textColor="#D4D4D8"
-                android:textSize="13sp" />
+                android:padding="5dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_widget_refresh" />
         </LinearLayout>
 
         <TextView
@@ -73,29 +73,26 @@
             android:orientation="horizontal"
             android:paddingHorizontal="8dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_place_dot_1"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:includeFontPadding="false"
-                android:text="●"
-                android:textColor="#FFFFFF"
-                android:textSize="9sp" />
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_dot_unknown" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_place_icon_1"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:includeFontPadding="false"
-                android:text="🏠"
-                android:textSize="11sp" />
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="6dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_widget_pin" />
 
             <TextView
                 android:id="@+id/widget_place_label_1"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
@@ -139,29 +136,26 @@
             android:orientation="horizontal"
             android:paddingHorizontal="8dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_place_dot_2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:includeFontPadding="false"
-                android:text="●"
-                android:textColor="#FFFFFF"
-                android:textSize="9sp" />
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_dot_unknown" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_place_icon_2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:includeFontPadding="false"
-                android:text="🏠"
-                android:textSize="11sp" />
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="6dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_widget_pin" />
 
             <TextView
                 android:id="@+id/widget_place_label_2"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
@@ -205,29 +199,26 @@
             android:orientation="horizontal"
             android:paddingHorizontal="8dp">
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_place_dot_3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:includeFontPadding="false"
-                android:text="●"
-                android:textColor="#FFFFFF"
-                android:textSize="9sp" />
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_dot_unknown" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_place_icon_3"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
-                android:includeFontPadding="false"
-                android:text="🏠"
-                android:textSize="11sp" />
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="6dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_widget_pin" />
 
             <TextView
                 android:id="@+id/widget_place_label_3"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"

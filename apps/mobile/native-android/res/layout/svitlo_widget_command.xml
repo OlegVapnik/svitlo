@@ -2,7 +2,9 @@
 <!--
   4×2 «Командний Центр»: сверху переключатель места и обновление, в центре — таймер
   и шкала суток, снизу — две Bento-плитки «Сьогодні» и «Завтра». Все элементы нативные;
-  растровая только шкала (480×24).
+  растровая только шкала (960×48).
+
+  Высоты подписей 00…24 заданы явно: RemoteViews не переносит layout-атрибуты из style.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -22,34 +24,48 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_dot"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
                 android:layout_marginEnd="5dp"
-                android:includeFontPadding="false"
-                android:text="●"
-                android:textColor="#FFFFFF"
-                android:textSize="10sp" />
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_dot_unknown" />
 
-            <TextView
-                android:id="@+id/widget_place"
+            <LinearLayout
+                android:id="@+id/widget_place_group"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:background="@drawable/widget_pill"
                 android:clickable="true"
                 android:contentDescription="@string/widget_cycle_place"
-                android:ellipsize="end"
                 android:focusable="true"
-                android:includeFontPadding="false"
-                android:maxLines="1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
                 android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:text="@string/widget_no_data"
-                android:textColor="#FFFFFF"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:paddingVertical="3dp">
+
+                <TextView
+                    android:id="@+id/widget_place"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_no_data"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_marginStart="3dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_widget_chevron_down" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/widget_pill"
@@ -65,7 +81,7 @@
                 android:textColor="#FFFFFF"
                 android:textSize="9sp" />
 
-            <TextView
+            <ImageView
                 android:id="@+id/widget_refresh"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
@@ -74,11 +90,9 @@
                 android:clickable="true"
                 android:contentDescription="@string/widget_refresh"
                 android:focusable="true"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:text="↻"
-                android:textColor="#D4D4D8"
-                android:textSize="13sp" />
+                android:padding="5dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_widget_refresh" />
         </LinearLayout>
 
         <LinearLayout
@@ -135,39 +149,59 @@
             android:orientation="horizontal">
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="start"
-                android:text="00" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="00"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="06" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="06"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="12" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="12"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="center"
-                android:text="18" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="18"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
 
             <TextView
-                style="@style/WidgetScaleLabel"
                 android:layout_width="0dp"
+                android:layout_height="10dp"
                 android:layout_weight="1"
                 android:gravity="end"
-                android:text="24" />
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="24"
+                android:textColor="#71717A"
+                android:textSize="9sp" />
         </LinearLayout>
 
         <LinearLayout

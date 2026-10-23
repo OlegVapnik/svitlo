@@ -1,9 +1,9 @@
 {
-  "version": "2.39.0",
+  "version": "2.39.1",
   "apkUrl": "https://svitlo-api.olegvapnik45.workers.dev/download/svitlo-latest.apk",
-  "sha256": "f46cde6cd3a1791e329cadd2f72a83bbaddda918130cbd32ccf4f9afa43cf887",
-  "sizeBytes": 21450368,
-  "releasedAt": "2026-10-23T00:59:32Z",
+  "sha256": "4c8f20a562ce41145498c86e2778ea8fb653ef406f13edf90d02bcd4f5265620",
+  "sizeBytes": 21461409,
+  "releasedAt": "2026-10-23T11:46:48Z",
   "notes": [
     "iOS-застосунок отримав нативний OTA-завантажувач із перевіркою Ed25519, спільним App Group і майбутньою підтримкою віджетів.",
     "Додано прямі джерела графіків для Миколаєва, Івано-Франківська та Чернівців — воркер забирає їх сам, навіть коли дзеркало відстає.",

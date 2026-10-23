@@ -29,12 +29,12 @@ class WidgetStyleTest {
     }
 
     @Test
-    fun `форма статуса отличается без цвета`() {
-        assertEquals("●", WidgetStyle.symbol("on"))
-        assertEquals("●", WidgetStyle.symbol("allClear"))
-        assertEquals("◆", WidgetStyle.symbol("warning"))
-        assertEquals("■", WidgetStyle.symbol("off"))
-        assertEquals("•", WidgetStyle.symbol("unknown"))
+    fun `точка состояния возвращает валидный ресурс`() {
+        assert(WidgetStyle.dot("on") != 0)
+        assert(WidgetStyle.dot("allClear") != 0)
+        assert(WidgetStyle.dot("warning") != 0)
+        assert(WidgetStyle.dot("off") != 0)
+        assert(WidgetStyle.dot("unknown") != 0)
     }
 
     @Test
