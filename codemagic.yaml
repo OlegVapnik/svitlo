@@ -1,13 +1,4 @@
 # Codemagic: ручная unsigned-сборка iOS без подписи и Apple-учёток.
-#
-# Замена .github/workflows/build-ios.yml: биллинг GitHub залочен, macOS-раннеры
-# Actions недоступны, а у Codemagic есть бесплатный месячный лимит на Mac M2.
-# Воркфлоу намеренно БЕЗ секции `triggering` — автозапусков нет, старт только
-# вручную из UI/CLI, чтобы не жечь бесплатные минуты на каждый пуш.
-#
-# Задача та же, что у Actions-версии: проверить, что `expo prebuild` и config-плагины
-# дают компилируемый iOS-проект, и отдать Svitlo-unsigned.ipa артефактом.
-# Установить на устройство такой IPA нельзя (нет подписи) — это смоук-сборка.
 workflows:
   ios-unsigned:
     name: iOS unsigned build
@@ -16,8 +7,8 @@ workflows:
     environment:
       node: 22
     scripts:
-      - name: npm install -g pnpm --force
-        script: npm install -g pnpm@11
+      - name: Verify or enable pnpm
+        script: pnpm --version || corepack enable pnpm
 
       - name: Install dependencies
         script: pnpm install --frozen-lockfile
@@ -26,8 +17,6 @@ workflows:
         working_directory: apps/mobile
         script: CI=1 npx expo prebuild --platform ios --no-install --clean
 
-      # `--no-install` в prebuild отключает и CocoaPods. Без Pods.xcodeproj
-      # workspace не собирается, поэтому ставим поды отдельным шагом.
       - name: Install CocoaPods dependencies
         working_directory: apps/mobile/ios
         script: pod install
