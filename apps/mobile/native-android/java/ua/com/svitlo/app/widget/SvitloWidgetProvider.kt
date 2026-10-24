@@ -60,6 +60,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             SvitloWidget4x1(),
             SvitloWidget4x2(),
             SvitloWidgetPlaces4x2(),
+            SvitloWidgetEvent2x2(),
         )
 
         fun updateAll(context: Context) {
@@ -90,6 +91,7 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
                     R.layout.svitlo_widget_capsule -> bindCapsule(context, views, payload)
                     R.layout.svitlo_widget_timeline -> bindTimeline(context, views, payload)
                     R.layout.svitlo_widget_places -> bindPlaces(context, views, payload)
+                    R.layout.svitlo_widget_event -> bindEvent(context, views, payload)
                     else -> bindCommand(context, views, payload)
                 }
 
@@ -109,6 +111,38 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
             )
             bindDot(views, R.id.widget_dot, state)
             views.setTextViewText(R.id.widget_place, payload.placeLabel)
+            views.setTextViewText(R.id.widget_pill, payload.pill)
+            views.setTextViewText(
+                R.id.widget_timer,
+                payload.timer?.takeUnless { it == "null" }
+                    ?: if (state == "on" || state == "allClear") "Світло є" else "—"
+            )
+            views.setTextViewText(
+                R.id.widget_timer_prefix,
+                payload.timerPrefix?.takeUnless { it == "null" } ?: "",
+            )
+            views.setTextViewText(
+                R.id.widget_detail,
+                payload.detail.takeUnless { it == "null" }?.ifBlank { context.getString(R.string.widget_open_hint) }
+                    ?: context.getString(R.string.widget_open_hint),
+            )
+            views.setImageViewBitmap(R.id.widget_scale, WidgetTimeline.renderSquiggly(payload))
+
+            widgetAction(context, WidgetActionReceiver.ACTION_CYCLE_BOOKMARK)?.let {
+                views.setOnClickPendingIntent(R.id.widget_cycle, it)
+            }
+            widgetAction(context, WidgetActionReceiver.ACTION_OPEN_APP)?.let {
+                views.setOnClickPendingIntent(R.id.widget_pill, it)
+            }
+        }
+
+        /**
+         * 2×2 «Наступна Зміна»: вертикальный формат без строки места — сверху точка
+         * состояния и пилюля, в центре огромный таймер, внизу «змійка» доби.
+         */
+        private fun bindEvent(context: Context, views: RemoteViews, payload: WidgetPayload) {
+            val state = payload.state
+            bindDot(views, R.id.widget_dot, state)
             views.setTextViewText(R.id.widget_pill, payload.pill)
             views.setTextViewText(
                 R.id.widget_timer,
@@ -316,4 +350,9 @@ class SvitloWidget4x2 : SvitloWidgetProvider() {
 /** 4×2: «Радар Моїх Місць» — отдельный пункт в списке виджетов. */
 class SvitloWidgetPlaces4x2 : SvitloWidgetProvider() {
     override val layoutId: Int get() = R.layout.svitlo_widget_places
+}
+
+/** 2×2: «Наступна Зміна» — огромный таймер и шкала доби. */
+class SvitloWidgetEvent2x2 : SvitloWidgetProvider() {
+    override val layoutId: Int get() = R.layout.svitlo_widget_event
 }

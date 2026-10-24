@@ -1,6 +1,6 @@
 {
   "name": "@svitlo/mobile",
-  "version": "2.39.3",
+  "version": "2.39.9",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
