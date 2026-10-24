@@ -24,6 +24,15 @@ import { OTA_PUBLIC_KEYS } from './ota-key';
  * только когда приложение успешно смонтировалось. Если маркер остался — прошлый бандл не
  * запустился, и нативный слой откатывается к вшитому бандлу из APK.
  */
+/**
+ * OTA-бандл на CDN — виключно Android Hermes-файл (`tools/build-ota-bundle.sh` збирає його з
+ * `--platform android`), на iOS він не запуститься. Тому весь JS-шлях завантаження жорстко
+ * обмежений Android: iOS оновлюється з App Store. Нативний `SvitloOtaLoader.swift` лишається
+ * як інфраструктура на майбутнє — без файлу в каталозі OTA він тихо падає назад на вшитий
+ * `main.jsbundle`.
+ */
+const OTA_SUPPORTED = Platform.OS === 'android';
+
 const DOCUMENT_DIR = FileSystem.documentDirectory ?? '';
 const OTA_DIR =
   Platform.OS === 'ios'
@@ -137,6 +146,7 @@ async function readApplied(): Promise<AppliedMeta | null> {
  * сессии, ещё не применён и должен дождаться следующего запуска.
  */
 export async function confirmOtaBoot(): Promise<void> {
+  if (!OTA_SUPPORTED) return;
   try {
     await FileSystem.deleteAsync(BOOT_MARKER, { idempotent: true });
   } catch {
@@ -192,6 +202,7 @@ export async function confirmOtaBoot(): Promise<void> {
 
 /** Есть ли уже скачанный бандл, ждущий применения. */
 export async function pendingOtaVersion(): Promise<string | null> {
+  if (!OTA_SUPPORTED) return null;
   const meta = await readMeta();
   if (!meta) return null;
   const info = await FileSystem.getInfoAsync(BUNDLE_PATH);
@@ -289,6 +300,10 @@ export async function downloadOtaBundle(
   info: OtaBundleWithManifest | null | undefined,
   onProgress?: (fraction: number) => void,
 ): Promise<string | null> {
+  if (!OTA_SUPPORTED) {
+    log('OTA недоступний на цій платформі');
+    return null;
+  }
   const bundle = info;
   if (!bundle?.url) {
     log('манифест без адреси бандла');
@@ -413,6 +428,7 @@ export const OTA_PATHS = { dir: OTA_DIR, bundle: BUNDLE_PATH, meta: META_PATH } 
  * не трогая воркер и D1. Если манифеста нет — тихо живём на вшитом бандле.
  */
 export async function fetchOtaBundleInfo(): Promise<OtaBundleWithManifest | null> {
+  if (!OTA_SUPPORTED) return null;
   const sources = [OTA_BASE, ...OTA_SOURCES.filter((s) => s !== OTA_BASE)];
   const cacheBuster = `?t=${Date.now()}`;
   for (const base of sources) {

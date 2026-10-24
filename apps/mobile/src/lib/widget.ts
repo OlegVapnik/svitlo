@@ -106,7 +106,9 @@ export function pushWidgetSnapshot(
     places: extras?.places ?? [],
   };
   const serialized = JSON.stringify(payload);
-  if (bridge) {
+  // `SvitloWidget` — виключно Android-модуль: на iOS його немає в NativeModules, а явна
+  // перевірка платформи захищає від випадкового дзвінка в міст і без перевірки bridge.
+  if (Platform.OS === 'android' && bridge) {
     try {
       bridge.update(serialized);
     } catch {
@@ -126,7 +128,7 @@ export function pushWidgetSnapshot(
 
 /** Забирает отложенное действие клика по зоне виджета. */
 export async function consumeWidgetAction(): Promise<WidgetAction | null> {
-  if (!bridge) return null;
+  if (Platform.OS !== 'android' || !bridge) return null;
   try {
     const action = await bridge.consumeAction();
     return action === 'refresh' || action === 'next_queue' || action === 'cycle_bookmark'
@@ -139,7 +141,7 @@ export async function consumeWidgetAction(): Promise<WidgetAction | null> {
 
 /** Сброс данных виджета: он вернётся к честной заглушке «немає даних». */
 export function clearWidget(): void {
-  if (!bridge) return;
+  if (Platform.OS !== 'android' || !bridge) return;
   try {
     bridge.clear();
   } catch {
