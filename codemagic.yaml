@@ -44,3 +44,43 @@ workflows:
 
     artifacts:
       - apps/mobile/Svitlo-unsigned.ipa
+
+  ios-simulator:
+    name: iOS Simulator build
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 22
+    scripts:
+      - name: Verify or enable pnpm
+        script: |
+          corepack disable || true
+          pnpm --version || npm install -g pnpm --force
+
+      - name: Install dependencies
+        script: COREPACK_ENABLE_STRICT=0 pnpm install --frozen-lockfile
+
+      - name: Generate iOS project
+        working_directory: apps/mobile
+        script: CI=1 npx expo prebuild --platform ios --no-install --clean
+
+      - name: Install CocoaPods dependencies
+        working_directory: apps/mobile/ios
+        script: pod install
+
+      - name: Build simulator app
+        working_directory: apps/mobile
+        script: |
+          xcodebuild \
+            -workspace ios/Svitlo.xcworkspace \
+            -scheme Svitlo \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            build
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -r Svitlo-simulator.app.zip Svitlo.app
+
+    artifacts:
+      - apps/mobile/build/Build/Products/Debug-iphonesimulator/Svitlo-simulator.app.zip
+
