@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Полоса-акцент состояния «відключення менш ніж за 30 хв»: янтарный светофор. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#F59E0B" />
+    <corners android:radius="2dp" />
+</shape>

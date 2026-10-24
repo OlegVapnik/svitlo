@@ -143,6 +143,8 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
         private fun bindEvent(context: Context, views: RemoteViews, payload: WidgetPayload) {
             val state = payload.state
             bindDot(views, R.id.widget_dot, state)
+            // Горизонтальный «светофор» сверху: цвет мгновенно читается как состояние.
+            views.setInt(R.id.widget_accent, "setBackgroundResource", WidgetStyle.accent(state))
             views.setTextViewText(R.id.widget_pill, payload.pill)
             views.setTextViewText(
                 R.id.widget_timer,
@@ -170,6 +172,12 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
 
         private fun bindTimeline(context: Context, views: RemoteViews, payload: WidgetPayload) {
             bindDot(views, R.id.widget_dot, payload.state)
+            // Вертикальный «светофор» слева: состояние сети видно краем глаза.
+            views.setInt(
+                R.id.widget_accent,
+                "setBackgroundResource",
+                WidgetStyle.accent(payload.state),
+            )
             views.setTextViewText(R.id.widget_place, payload.placeLabel)
             views.setTextViewText(R.id.widget_pill, payload.pill)
             views.setTextViewText(
@@ -194,6 +202,12 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
 
         private fun bindCommand(context: Context, views: RemoteViews, payload: WidgetPayload) {
             bindDot(views, R.id.widget_dot, payload.state)
+            // Вертикальный «светофор» слева: состояние сети видно краем глаза.
+            views.setInt(
+                R.id.widget_accent,
+                "setBackgroundResource",
+                WidgetStyle.accent(payload.state),
+            )
             views.setTextViewText(R.id.widget_place, payload.placeLabel)
             views.setTextViewText(R.id.widget_pill, payload.pill)
             views.setTextViewText(
@@ -255,6 +269,11 @@ open class SvitloWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(rowId, View.VISIBLE)
                 // Иконка типа места — отдельный ImageView, а не эмодзи в тексте: иначе
                 // на HyperOS один и тот же значок дублировался и превращался в «тофу».
+                views.setInt(
+                    rowId,
+                    "setBackgroundResource",
+                    WidgetStyle.rowBackground(place.state),
+                )
                 views.setTextViewText(
                     labelId(index),
                     "${place.label} · ${place.queue}",

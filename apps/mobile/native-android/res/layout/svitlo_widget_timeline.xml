@@ -26,7 +26,23 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:orientation="horizontal">
+
+        <!-- Полоса-«светофор»: цвет ставится в bindTimeline по состоянию сети. -->
+        <View
+            android:id="@+id/widget_accent"
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/widget_accent_unknown"
+            android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -64,7 +80,7 @@
                 android:maxLines="1"
                 android:text="—"
                 android:textColor="#FFFFFF"
-                android:textSize="18sp"
+                android:textSize="20sp"
                 android:textStyle="bold" />
 
             <ImageView
@@ -151,6 +167,7 @@
                 android:text="24:00"
                 android:textColor="#71717A"
                 android:textSize="7sp" />
+        </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

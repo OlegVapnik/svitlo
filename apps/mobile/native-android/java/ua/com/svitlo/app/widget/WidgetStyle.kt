@@ -63,6 +63,25 @@ object WidgetStyle {
     }
 
     /**
+     * Полоса-«светофор» (вертикальная у 4×1 / 4×2, горизонтальная у 2×2): один взгляд —
+     * и состояние сети понятно без чтения текста. Цвет тот же, что у точки состояния.
+     */
+    fun accent(state: String): Int = when (state) {
+        "on", "allClear" -> R.drawable.widget_accent_on
+        "warning" -> R.drawable.widget_accent_warning
+        "off" -> R.drawable.widget_accent_off
+        else -> R.drawable.widget_accent_unknown
+    }
+
+    /** Фон строки места в радаре: тёмная карточка, подкрашенная состоянием места. */
+    fun rowBackground(state: String): Int = when (state) {
+        "on", "allClear" -> R.drawable.widget_row_on
+        "warning" -> R.drawable.widget_row_warning
+        "off" -> R.drawable.widget_row_off
+        else -> R.drawable.widget_row_unknown
+    }
+
+    /**
      * «4 год 30 хв без світла» / «Без відключень» / «Графік очікується».
      *
      * `null` — графика нет, а не ноль: пустой ответ оператора нельзя выдавать за «света не

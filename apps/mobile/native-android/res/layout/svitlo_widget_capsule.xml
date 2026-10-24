@@ -51,7 +51,7 @@
                 android:maxLines="1"
                 android:text="@string/widget_no_data"
                 android:textColor="#FFFFFF"
-                android:textSize="11sp"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -59,17 +59,18 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="5dp"
-                android:background="@drawable/widget_pill"
+                android:background="@drawable/widget_pill_bright"
                 android:clickable="true"
                 android:contentDescription="@string/widget_open_app"
                 android:focusable="true"
                 android:includeFontPadding="false"
                 android:maxLines="1"
-                android:paddingHorizontal="7dp"
-                android:paddingVertical="2dp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="3dp"
                 android:text="@string/widget_no_data"
-                android:textColor="#FFFFFF"
-                android:textSize="9sp" />
+                android:textColor="#18181B"
+                android:textSize="9sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -87,17 +88,18 @@
                 android:maxLines="1"
                 android:text="—"
                 android:textColor="#FFFFFF"
-                android:textSize="22sp"
+                android:textSize="26sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/widget_timer_prefix"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="#A1A1AA"
-                android:textSize="8sp" />
+                android:textSize="9sp" />
         </LinearLayout>
 
         <ImageView

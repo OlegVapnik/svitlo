@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Полоса-акцент состояния «світла немає»: розовый светофор. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#F43F5E" />
+    <corners android:radius="2dp" />
+</shape>
