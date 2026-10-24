@@ -12,7 +12,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_capsule_unknown"
-    android:padding="10dp">
+    android:padding="12dp">
 
     <TextView
         android:id="@+id/widget_cycle"
@@ -87,7 +87,7 @@
                 android:maxLines="1"
                 android:text="—"
                 android:textColor="#FFFFFF"
-                android:textSize="20sp"
+                android:textSize="22sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -96,15 +96,15 @@
                 android:layout_height="wrap_content"
                 android:includeFontPadding="false"
                 android:maxLines="1"
-                android:textColor="#E4E4E7"
+                android:textColor="#A1A1AA"
                 android:textSize="8sp" />
         </LinearLayout>
 
         <ImageView
             android:id="@+id/widget_scale"
             android:layout_width="match_parent"
-            android:layout_height="9dp"
-            android:layout_marginTop="2dp"
+            android:layout_height="10dp"
+            android:layout_marginTop="4dp"
             android:importantForAccessibility="no"
             android:scaleType="fitXY" />
 
@@ -112,12 +112,12 @@
             android:id="@+id/widget_detail"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:ellipsize="end"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:text="@string/widget_open_hint"
-            android:textColor="#E4E4E7"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_open_hint"
+                android:textColor="#D4D4D8"
             android:textSize="8sp" />
     </LinearLayout>
 </FrameLayout>

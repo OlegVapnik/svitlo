@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2×2 «Наступна Зміна». updatePeriodMillis=30 хв — системный минимум; чаще виджет
+  обновляет приложение снимком из JS. Размеры — как у капсулы по ширине и как у
+  4×2 по высоте (одна клетка = ~70dp высоты, две клетки ≈ 110dp минимум).
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_desc_event"
+    android:initialLayout="@layout/svitlo_widget_event"
+    android:minHeight="110dp"
+    android:minResizeHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minWidth="110dp"
+    android:previewLayout="@layout/svitlo_widget_event"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="2"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

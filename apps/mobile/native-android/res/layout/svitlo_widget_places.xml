@@ -1,17 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   4×2 «Радар Моїх Місць»: до трёх сохранённых мест одновременно — дом, работа, родители.
-  Каждая строка — нативные TextView/ImageView: слева точка состояния, затем Lucide-иконка
-  типа места, название и очередь. Иконка больше не дублируется эмоции в тексте.
-  Строки растягиваются по высоте карточки (`layout_weight`), поэтому макет не ломается
-  при ресайзе.
+  Каждая строка — нативные TextView/ImageView: точка состояния 10dp, иконка типа места
+  в скруглённом контейнере 28dp, название и очередь. Строки растягиваются по высоте
+  карточки (`layout_weight`), поэтому макет не ломается при ресайзе.
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_panel"
-    android:padding="10dp">
+    android:padding="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -29,9 +28,11 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:includeFontPadding="false"
+                android:letterSpacing="0.08"
                 android:text="@string/widget_places_title"
-                android:textColor="#FFFFFF"
-                android:textSize="11sp"
+                android:textAllCaps="true"
+                android:textColor="#A1A1AA"
+                android:textSize="9sp"
                 android:textStyle="bold" />
 
             <ImageView
@@ -63,7 +64,7 @@
             android:id="@+id/widget_place_row_1"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:layout_weight="1"
             android:background="@drawable/widget_tile"
             android:clickable="true"
@@ -75,24 +76,31 @@
 
             <ImageView
                 android:id="@+id/widget_place_dot_1"
-                android:layout_width="7dp"
-                android:layout_height="7dp"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/widget_dot_unknown" />
 
-            <ImageView
-                android:id="@+id/widget_place_icon_1"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="6dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_widget_pin" />
+            <FrameLayout
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="7dp"
+                android:background="@drawable/widget_icon_container">
+
+                <ImageView
+                    android:id="@+id/widget_place_icon_1"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_widget_pin" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/widget_place_label_1"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
@@ -106,6 +114,7 @@
                 android:id="@+id/widget_place_status_1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="#D4D4D8"
@@ -126,7 +135,7 @@
             android:id="@+id/widget_place_row_2"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:layout_weight="1"
             android:background="@drawable/widget_tile"
             android:clickable="true"
@@ -138,24 +147,31 @@
 
             <ImageView
                 android:id="@+id/widget_place_dot_2"
-                android:layout_width="7dp"
-                android:layout_height="7dp"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/widget_dot_unknown" />
 
-            <ImageView
-                android:id="@+id/widget_place_icon_2"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="6dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_widget_pin" />
+            <FrameLayout
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="7dp"
+                android:background="@drawable/widget_icon_container">
+
+                <ImageView
+                    android:id="@+id/widget_place_icon_2"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_widget_pin" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/widget_place_label_2"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
@@ -169,6 +185,7 @@
                 android:id="@+id/widget_place_status_2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="#D4D4D8"
@@ -189,7 +206,7 @@
             android:id="@+id/widget_place_row_3"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:layout_weight="1"
             android:background="@drawable/widget_tile"
             android:clickable="true"
@@ -201,24 +218,31 @@
 
             <ImageView
                 android:id="@+id/widget_place_dot_3"
-                android:layout_width="7dp"
-                android:layout_height="7dp"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/widget_dot_unknown" />
 
-            <ImageView
-                android:id="@+id/widget_place_icon_3"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="6dp"
-                android:importantForAccessibility="no"
-                android:src="@drawable/ic_widget_pin" />
+            <FrameLayout
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginStart="7dp"
+                android:background="@drawable/widget_icon_container">
+
+                <ImageView
+                    android:id="@+id/widget_place_icon_3"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_gravity="center"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_widget_pin" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/widget_place_label_3"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
@@ -232,6 +256,7 @@
                 android:id="@+id/widget_place_status_3"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:textColor="#D4D4D8"

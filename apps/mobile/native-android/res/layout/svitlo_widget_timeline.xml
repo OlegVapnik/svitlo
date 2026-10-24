@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   4×1 «Таймлайн Суток». Верхняя строка — статус, название места и крупный таймер;
-  снизу — шкала 24 часов. Растр только у шкалы (960×48, RGB_565 ≈ 92 КБ), подписи
-  00…24 и весь остальной текст — нативные TextView.
+  снизу — обсидиановая шкала 24 часов с подписями «00» и «24:00» по краям. Растр
+  только у шкалы (960×48, RGB_565 ≈ 92 КБ), весь остальной текст — нативные TextView.
 
   Важно: height у подписей задан явно. RemoteViews создаёт LayoutParams по XML-атрибутам
   и не смотрит в style — иначе лаунчер падает с «You must supply a layout_height attribute».
@@ -12,8 +12,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_panel"
-    android:paddingHorizontal="10dp"
-    android:paddingVertical="7dp">
+    android:paddingHorizontal="12dp"
+    android:paddingVertical="8dp">
 
     <TextView
         android:id="@+id/widget_cycle"
@@ -38,7 +38,7 @@
                 android:id="@+id/widget_dot"
                 android:layout_width="8dp"
                 android:layout_height="8dp"
-                android:layout_marginEnd="5dp"
+                android:layout_marginEnd="6dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/widget_dot_unknown" />
 
@@ -59,18 +59,19 @@
                 android:id="@+id/widget_timer"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="—"
                 android:textColor="#FFFFFF"
-                android:textSize="16sp"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
             <ImageView
                 android:id="@+id/widget_refresh"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:background="@drawable/widget_pill"
                 android:clickable="true"
                 android:contentDescription="@string/widget_refresh"
@@ -83,6 +84,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="14dp"
+            android:layout_marginTop="2dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -103,13 +105,13 @@
                 android:id="@+id/widget_detail"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="@string/widget_open_hint"
-                android:textColor="#D4D4D8"
+                android:textColor="#A1A1AA"
                 android:textSize="9sp" />
         </LinearLayout>
 
@@ -117,69 +119,38 @@
             android:id="@+id/widget_scale"
             android:layout_width="match_parent"
             android:layout_height="18dp"
-            android:layout_marginTop="3dp"
+            android:layout_marginTop="4dp"
             android:importantForAccessibility="no"
             android:scaleType="fitXY" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="10dp"
+            android:layout_height="9dp"
             android:orientation="horizontal">
 
             <TextView
+                android:id="@+id/widget_scale_start"
                 android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="start"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="00"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
 
             <TextView
+                android:id="@+id/widget_scale_end"
                 android:layout_width="0dp"
-                android:layout_height="10dp"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="06"
-                android:textColor="#71717A"
-                android:textSize="9sp" />
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="10dp"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="12"
-                android:textColor="#71717A"
-                android:textSize="9sp" />
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="10dp"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="18"
-                android:textColor="#71717A"
-                android:textSize="9sp" />
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="end"
                 android:includeFontPadding="false"
                 android:maxLines="1"
-                android:text="24"
+                android:text="24:00"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

@@ -36,7 +36,7 @@ function copyDir(source, target) {
   return copied;
 }
 
-/** Четыре размера — четыре receiver'а: лаунчер показывает их отдельными пунктами. */
+/** Пять пунктов в лаунчере: четыре размера + вертикальный «Наступна зміна» 2×2. */
 const WIDGET_RECEIVERS = [
   {
     name: '.widget.SvitloWidget2x1',
@@ -57,6 +57,11 @@ const WIDGET_RECEIVERS = [
     name: '.widget.SvitloWidgetPlaces4x2',
     info: '@xml/svitlo_widget_places_4x2',
     label: '@string/widget_label_places',
+  },
+  {
+    name: '.widget.SvitloWidgetEvent2x2',
+    info: '@xml/svitlo_widget_event_info',
+    label: '@string/widget_label_event',
   },
 ];
 

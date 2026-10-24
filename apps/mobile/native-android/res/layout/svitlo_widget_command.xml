@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   4×2 «Командний Центр»: сверху переключатель места и обновление, в центре — таймер
-  и шкала суток, снизу — две Bento-плитки «Сьогодні» и «Завтра». Все элементы нативные;
-  растровая только шкала (960×48).
+  и шкала суток, снизу — две Bento-плитки «Сьогодні» и «Завтра» с 1dp-разделителем.
+  Все элементы нативные; растровая только шкала (960×48).
 
   Высоты подписей 00…24 заданы явно: RemoteViews не переносит layout-атрибуты из style.
 -->
@@ -11,7 +11,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_panel"
-    android:padding="10dp">
+    android:padding="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -28,7 +28,7 @@
                 android:id="@+id/widget_dot"
                 android:layout_width="8dp"
                 android:layout_height="8dp"
-                android:layout_marginEnd="5dp"
+                android:layout_marginEnd="6dp"
                 android:importantForAccessibility="no"
                 android:src="@drawable/widget_dot_unknown" />
 
@@ -85,7 +85,7 @@
                 android:id="@+id/widget_refresh"
                 android:layout_width="24dp"
                 android:layout_height="24dp"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:background="@drawable/widget_pill"
                 android:clickable="true"
                 android:contentDescription="@string/widget_refresh"
@@ -98,6 +98,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="30dp"
+            android:layout_marginTop="2dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -109,7 +110,7 @@
                 android:maxLines="1"
                 android:text="—"
                 android:textColor="#FFFFFF"
-                android:textSize="24sp"
+                android:textSize="26sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -119,7 +120,7 @@
                 android:layout_marginStart="6dp"
                 android:includeFontPadding="false"
                 android:maxLines="1"
-                android:textColor="#D4D4D8"
+                android:textColor="#A1A1AA"
                 android:textSize="9sp" />
 
             <TextView
@@ -131,7 +132,7 @@
                 android:gravity="end"
                 android:includeFontPadding="false"
                 android:maxLines="1"
-                android:textColor="#D4D4D8"
+                android:textColor="#A1A1AA"
                 android:textSize="10sp" />
         </LinearLayout>
 
@@ -139,75 +140,75 @@
             android:id="@+id/widget_scale"
             android:layout_width="match_parent"
             android:layout_height="18dp"
-            android:layout_marginTop="2dp"
+            android:layout_marginTop="3dp"
             android:importantForAccessibility="no"
             android:scaleType="fitXY" />
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="10dp"
+            android:layout_height="9dp"
             android:orientation="horizontal">
 
             <TextView
                 android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="start"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="00"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
 
             <TextView
                 android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="center"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="06"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
 
             <TextView
                 android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="center"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="12"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
 
             <TextView
                 android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="center"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="18"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
 
             <TextView
                 android:layout_width="0dp"
-                android:layout_height="10dp"
+                android:layout_height="9dp"
                 android:layout_weight="1"
                 android:gravity="end"
                 android:includeFontPadding="false"
                 android:maxLines="1"
                 android:text="24"
                 android:textColor="#71717A"
-                android:textSize="9sp" />
+                android:textSize="7sp" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:layout_weight="1"
             android:orientation="horizontal">
 
@@ -215,72 +216,85 @@
                 android:id="@+id/widget_today_tile"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginEnd="4dp"
                 android:layout_weight="1"
                 android:background="@drawable/widget_tile"
                 android:clickable="true"
                 android:contentDescription="@string/widget_open_app"
                 android:focusable="true"
                 android:orientation="vertical"
-                android:paddingHorizontal="9dp"
+                android:paddingHorizontal="10dp"
                 android:paddingVertical="6dp">
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:includeFontPadding="false"
+                    android:letterSpacing="0.08"
                     android:maxLines="1"
                     android:text="@string/widget_today"
+                    android:textAllCaps="true"
                     android:textColor="#A1A1AA"
-                    android:textSize="9sp"
+                    android:textSize="8sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/widget_today_value"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:ellipsize="end"
                     android:includeFontPadding="false"
                     android:maxLines="1"
                     android:text="@string/widget_no_data"
                     android:textColor="#FFFFFF"
-                    android:textSize="11sp" />
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
             </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="match_parent"
+                android:layout_marginHorizontal="5dp"
+                android:layout_marginVertical="4dp"
+                android:background="#2A2A2E" />
 
             <LinearLayout
                 android:id="@+id/widget_tomorrow_tile"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="4dp"
                 android:layout_weight="1"
                 android:background="@drawable/widget_tile"
                 android:clickable="true"
                 android:contentDescription="@string/widget_open_app"
                 android:focusable="true"
                 android:orientation="vertical"
-                android:paddingHorizontal="9dp"
+                android:paddingHorizontal="10dp"
                 android:paddingVertical="6dp">
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:includeFontPadding="false"
+                    android:letterSpacing="0.08"
                     android:maxLines="1"
                     android:text="@string/widget_tomorrow"
+                    android:textAllCaps="true"
                     android:textColor="#A1A1AA"
-                    android:textSize="9sp"
+                    android:textSize="8sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/widget_tomorrow_value"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:ellipsize="end"
                     android:includeFontPadding="false"
                     android:maxLines="1"
                     android:text="@string/widget_no_data"
                     android:textColor="#FFFFFF"
-                    android:textSize="11sp" />
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
