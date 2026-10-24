@@ -61,8 +61,11 @@ export function useSavedPlacesStatus(
       return {
         queryKey: ['queueSchedule', canonicalQueue, today, place.regionCpu],
         queryFn: () => api.fetchQueueSchedule(canonicalQueue, today, place.regionCpu),
-        staleTime: 60_000,
-        refetchInterval: 60_000,
+        // 5 минут, а не минута: каждый опрос — чтение слотов в D1 на сервере, и при открытом
+        // приложении минутный ритм сжигал квоту впустую. Живой статус «зараз» этот запрос не
+        // даёт — он приходит из плашки состояния и группового среза.
+        staleTime: 120_000,
+        refetchInterval: 300_000,
         enabled: Boolean(place.regionCpu && place.queue),
       };
     }),
