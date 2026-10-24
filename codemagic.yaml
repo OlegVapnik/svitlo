@@ -1,0 +1,56 @@
+# Codemagic: ручная unsigned-сборка iOS без подписи и Apple-учёток.
+#
+# Замена .github/workflows/build-ios.yml: биллинг GitHub залочен, macOS-раннеры
+# Actions недоступны, а у Codemagic есть бесплатный месячный лимит на Mac M2.
+# Воркфлоу намеренно БЕЗ секции `triggering` — автозапусков нет, старт только
+# вручную из UI/CLI, чтобы не жечь бесплатные минуты на каждый пуш.
+#
+# Задача та же, что у Actions-версии: проверить, что `expo prebuild` и config-плагины
+# дают компилируемый iOS-проект, и отдать Svitlo-unsigned.ipa артефактом.
+# Установить на устройство такой IPA нельзя (нет подписи) — это смоук-сборка.
+workflows:
+  ios-unsigned:
+    name: iOS unsigned build
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 22
+    scripts:
+      - name: Install pnpm
+        script: npm install -g pnpm@11
+
+      - name: Install dependencies
+        script: pnpm install --frozen-lockfile
+
+      - name: Generate iOS project
+        working_directory: apps/mobile
+        script: CI=1 npx expo prebuild --platform ios --no-install --clean
+
+      # `--no-install` в prebuild отключает и CocoaPods. Без Pods.xcodeproj
+      # workspace не собирается, поэтому ставим поды отдельным шагом.
+      - name: Install CocoaPods dependencies
+        working_directory: apps/mobile/ios
+        script: pod install
+
+      - name: Build unsigned app
+        working_directory: apps/mobile
+        script: |
+          xcodebuild \
+            -workspace ios/Svitlo.xcworkspace \
+            -scheme Svitlo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA
+        working_directory: apps/mobile
+        script: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Svitlo.app Payload/
+          zip -qry Svitlo-unsigned.ipa Payload
+
+    artifacts:
+      - apps/mobile/Svitlo-unsigned.ipa
