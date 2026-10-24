@@ -16,7 +16,7 @@ workflows:
     environment:
       node: 22
     scripts:
-      - name: Install pnpm
+      - name: npm install -g pnpm --force
         script: npm install -g pnpm@11
 
       - name: Install dependencies
