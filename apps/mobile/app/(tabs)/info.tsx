@@ -1,16 +1,146 @@
-import { useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { useNews, useNewsSources } from '@svitlo/core/api/queries';
+import type { NewsItem } from '@svitlo/shared';
+
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { SwipeableScreen } from '@/components/navigation/SwipeableScreen';
+import { useRegion } from '@/context/RegionContext';
 import { APP_VERSION, useUpdates } from '@/context/UpdateContext';
-import { useTheme } from '@/theme/ThemeProvider';
+import { useTheme, type Palette } from '@/theme/ThemeProvider';
+
+/**
+ * «Інфо»: стрічка новин операторів + версія й оновлення.
+ *
+ * Дані — той самий `useNews`, що у веба: збір робить крон воркера, а `/news` віддається з
+ * R2-снапшота, тому стрічка не витрачає квоту D1. Регіональна видача без записів підхоплює
+ * загальноукраїнську — так область без своїх джерел не виглядає «зламаною».
+ */
+
+type KindFilter = 'all' | 'outage' | 'emergency' | 'schedule-change' | 'repair' | 'ukraine' | 'other';
+
+const KIND_LABEL: Record<KindFilter, string> = {
+  all: 'Усі',
+  outage: 'Відключення',
+  emergency: 'Аварія',
+  'schedule-change': 'Графік',
+  repair: 'Ремонт',
+  ukraine: 'Україна',
+  other: 'Інше',
+};
+
+/** Колір чипа категорії — той самий сенс, що в бейджів веба. */
+function kindColor(palette: Palette, kind: string): string {
+  switch (kind) {
+    case 'outage':
+      return palette.warning;
+    case 'emergency':
+      return palette.destructive;
+    case 'schedule-change':
+      return palette.info;
+    case 'repair':
+      return palette.levelHigh;
+    default:
+      return palette.unknown;
+  }
+}
+
+const sourceLabel = (sourceKey: string): string => {
+  const [, name] = sourceKey.split(':');
+  return name ?? sourceKey;
+};
+
+/** Короткий час українською: «щойно», «12 хв тому», «вчора, 21:04», «24.10, 09:30». */
+function formatTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  const diffMinutes = Math.floor((Date.now() - date.getTime()) / 60_000);
+  if (diffMinutes < 1) return 'щойно';
+  if (diffMinutes < 60) return `${diffMinutes} хв тому`;
+  if (diffMinutes < 24 * 60) return `${Math.floor(diffMinutes / 60)} год тому`;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const day = `${pad(date.getDate())}.${pad(date.getMonth() + 1)}`;
+  const yesterday = new Date(Date.now() - 24 * 3600_000);
+  if (date.toDateString() === yesterday.toDateString()) return `вчора, ${time}`;
+  return `${day}, ${time}`;
+}
+
+/** Час останнього непорожнього поля — «Перевірено»/«Останній пост» у рядку джерел. */
+const latestIso = (values: Array<string | null | undefined>): string | null => {
+  const times = values.filter(Boolean).map((value) => Date.parse(value as string));
+  if (times.length === 0) return null;
+  return new Date(Math.max(...times)).toISOString();
+};
 
 export default function InfoScreen() {
   const { palette } = useTheme();
   const { pending, openSheet } = useUpdates();
+  const { currentRegion } = useRegion();
+
+  const [kind, setKind] = useState<KindFilter>('all');
+  const [ukraineWide, setUkraineWide] = useState(false);
+  const [onlyPower, setOnlyPower] = useState(false);
+  const [query, setQuery] = useState('');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const { data, isLoading, isError, isRefetching, refetch } = useNews({
+    region: currentRegion,
+    kind: kind === 'all' ? undefined : kind,
+    // Загальні новини місцевих ЗМІ (kind='other') витісняють усе про світло з перших 50 рядків.
+    excludeKind: onlyPower ? 'other' : undefined,
+    ukraineWide: ukraineWide || undefined,
+    limit: 50,
+  });
+  const { data: sourcesData } = useNewsSources();
+
+  const items = data?.data ?? [];
+
+  // Регіон без власних джерел не повинен виглядати порожнім: підхоплюємо загальну стрічку.
+  const useUkraineFallback = !ukraineWide && items.length === 0 && !isLoading && !isError;
+  const { data: fallbackData, isLoading: fallbackLoading } = useNews({
+    region: currentRegion,
+    kind: kind === 'all' ? undefined : kind,
+    excludeKind: onlyPower ? 'other' : undefined,
+    ukraineWide: true,
+    limit: 50,
+    enabled: useUkraineFallback,
+  });
+
+  const sources = sourcesData?.data ?? [];
+  const failedSources = sources.filter((source) => Boolean(source.lastError));
+  const checkedAt = latestIso(sources.map((source) => source.lastPolledAt));
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase('uk-UA');
+    const source = items.length > 0 ? items : (fallbackData?.data ?? []);
+    const relevant = onlyPower ? source.filter((item) => item.kind !== 'other') : source;
+    if (!needle) return relevant;
+    return relevant.filter((item) =>
+      [item.title, item.summary, item.body]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('uk-UA')
+        .includes(needle),
+    );
+  }, [items, fallbackData, onlyPower, query]);
+
+  const refreshing = isRefetching || isLoading || fallbackLoading;
+  const stale = data?.meta?.stale === true;
 
   return (
     <SwipeableScreen>
@@ -19,68 +149,207 @@ export default function InfoScreen() {
           className="flex-1"
           contentContainerStyle={{ gap: 16, paddingHorizontal: 16, paddingBottom: 48, paddingTop: 10 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void refetch()}
+              tintColor={palette.primary}
+              colors={[palette.primary]}
+            />
+          }
         >
           <ScreenHeader title="Інфо" />
 
-          {/* Картка оновлень та версії */}
-          <View
-            style={{
-              backgroundColor: palette.card,
-              borderColor: palette.hairline,
-              borderWidth: 1,
-            }}
-            className="items-center gap-4 rounded-3xl p-6 text-center shadow-sm"
-          >
-            <View className="h-16 w-16 items-center justify-center rounded-2xl bg-primary-container">
-              <Ionicons name="sparkles" size={32} color={palette.primary} />
-            </View>
-
-            <View className="items-center gap-1.5">
-              <Text className="text-center text-lg font-bold text-foreground">
-                Розділ у процесі переробки
-              </Text>
-              <Text className="text-center text-xs leading-relaxed text-muted-foreground">
-                Готуємо оновлений центр корисної інформації, аналітики відключень та зручних налаштувань сповіщень.
+          {/* ── Новини ─────────────────────────────────────────────── */}
+          <View className="gap-3">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-base font-bold text-foreground">Новини</Text>
+              <Text className="text-[11px] text-muted-foreground">
+                {filtered.length > 0 ? `${filtered.length} ${pluralPosts(filtered.length)}` : ''}
               </Text>
             </View>
 
-            <View className="w-full border-t border-hairline pt-4">
-              <View className="flex-row items-center justify-between">
-                <Text className="text-xs font-semibold text-muted-foreground">Версія застосунку</Text>
-                <View className="rounded-full bg-surface-container-high px-2.5 py-1">
-                  <Text className="text-xs font-bold text-foreground">v{APP_VERSION}</Text>
-                </View>
+            {/* Пошук */}
+            <View
+              className="flex-row items-center gap-2 rounded-2xl px-3 py-2.5"
+              style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
+            >
+              <Ionicons name="search" size={16} color={palette.mutedForeground} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Пошук у новинах…"
+                placeholderTextColor={palette.mutedForeground}
+                className="flex-1 text-sm text-foreground"
+                returnKeyType="search"
+              />
+              {query.length > 0 && (
+                <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={palette.mutedForeground} />
+                </Pressable>
+              )}
+            </View>
+
+            {/* Фільтри за категорією */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {(Object.keys(KIND_LABEL) as KindFilter[]).map((value) => {
+                const active = kind === value;
+                return (
+                  <Pressable
+                    key={value}
+                    onPress={() => setKind(value)}
+                    className="rounded-full px-3.5 py-1.5"
+                    style={{
+                      backgroundColor: active ? palette.primary : palette.card,
+                      borderColor: active ? palette.primary : palette.hairline,
+                      borderWidth: 1,
+                    }}
+                  >
+                    <Text
+                      className="text-xs font-semibold"
+                      style={{ color: active ? palette.onPrimary : palette.mutedForeground }}
+                    >
+                      {KIND_LABEL[value]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Перемикачі: вся Україна та «лише про світло» */}
+            <View className="flex-row gap-2">
+              <TogglePill
+                label="Вся Україна"
+                active={ukraineWide}
+                onPress={() => setUkraineWide((value) => !value)}
+                palette={palette}
+              />
+              <TogglePill
+                label="Лише про світло"
+                active={onlyPower}
+                onPress={() => setOnlyPower((value) => !value)}
+                palette={palette}
+              />
+            </View>
+
+            {/* Стан збору: коли перевіряли джерела й хто з них зламався */}
+            {sources.length > 0 && (
+              <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+                <Text className="text-[11px] text-muted-foreground">
+                  Джерел: {sources.length} · Перевірено {formatTime(checkedAt)}
+                </Text>
+                {failedSources.length > 0 && (
+                  <Text className="text-[11px] font-semibold" style={{ color: palette.destructive }}>
+                    Не відповідає: {failedSources.map((source) => sourceLabel(source.sourceKey)).join(', ')}
+                  </Text>
+                )}
               </View>
+            )}
 
-              <Pressable
-                onPress={openSheet}
-                style={{
-                  backgroundColor: palette.primary,
-                }}
-                className="mt-4 flex-row items-center justify-center gap-2 rounded-2xl py-3 active:opacity-80"
-              >
-                <Ionicons name="cloud-download-outline" size={18} color={palette.onPrimary} />
-                <Text className="text-xs font-bold" style={{ color: palette.onPrimary }}>
-                  {pending ? 'Переглянути оновлення' : 'Оновлення та зміни'}
-                </Text>
-              </Pressable>
-
-              {pending ? (
-                <Text className="mt-2 text-center text-xs font-semibold text-warning">
-                  Доступне оновлення {pending.version} ({pending.kind === 'ota' ? 'OTA' : 'APK'})!
-                </Text>
-              ) : null}
-            </View>
+            {isError ? (
+              <StateCard
+                icon="cloud-offline-outline"
+                title="Новини не завантажилися"
+                subtitle="Немає зв'язку з сервером. Стрічка з'явиться одразу після відновлення — можна підтягнути вручну."
+                palette={palette}
+                action={
+                  <Pressable
+                    onPress={() => void refetch()}
+                    className="self-start rounded-xl px-4 py-2"
+                    style={{ backgroundColor: palette.primary }}
+                  >
+                    <Text className="text-xs font-bold" style={{ color: palette.onPrimary }}>
+                      Спробувати ще раз
+                    </Text>
+                  </Pressable>
+                }
+              />
+            ) : filtered.length === 0 ? (
+              isLoading ? (
+                <View className="items-center gap-2 py-8">
+                  <ActivityIndicator color={palette.primary} />
+                  <Text className="text-xs text-muted-foreground">Шукаємо новини…</Text>
+                </View>
+              ) : (
+                <StateCard
+                  icon="newspaper-outline"
+                  title="Новин поки немає"
+                  subtitle="Збір новин читає публічні канали й стрічки. Порожній список означає, що збір ще не запускався або джерела недоступні — це не підтвердження, що все спокійно."
+                  palette={palette}
+                />
+              )
+            ) : (
+              <View className="gap-2.5">
+                {stale && (
+                  <View
+                    className="flex-row items-center gap-2 rounded-2xl px-3 py-2"
+                    style={{ backgroundColor: `${palette.warning}1A`, borderColor: `${palette.warning}55`, borderWidth: 1 }}
+                  >
+                    <Ionicons name="time-outline" size={14} color={palette.warning} />
+                    <Text className="flex-1 text-[11px]" style={{ color: palette.warning }}>
+                      Свіжих публікацій немає понад добу — можливо, збір не працює.
+                    </Text>
+                  </View>
+                )}
+                {filtered.map((item) => (
+                  <NewsCard
+                    key={item.contentHash}
+                    item={item}
+                    palette={palette}
+                    expanded={expandedId === item.contentHash}
+                    onToggle={() =>
+                      setExpandedId((current) => (current === item.contentHash ? null : item.contentHash))
+                    }
+                  />
+                ))}
+              </View>
+            )}
           </View>
 
-          {/* Блок підтримки та інформації */}
+          {/* ── Версія та оновлення ────────────────────────────────── */}
           <View
-            style={{
-              backgroundColor: palette.card,
-              borderColor: palette.hairline,
-              borderWidth: 1,
-            }}
+            className="gap-3 rounded-3xl p-4"
+            style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2.5">
+                <View className="h-9 w-9 items-center justify-center rounded-xl" style={{ backgroundColor: palette.primaryContainer }}>
+                  <Ionicons name="sparkles" size={18} color={palette.primary} />
+                </View>
+                <Text className="text-sm font-bold text-foreground">Застосунок</Text>
+              </View>
+              <View className="rounded-full bg-surface-container-high px-2.5 py-1">
+                <Text className="text-xs font-bold text-foreground">v{APP_VERSION}</Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={openSheet}
+              style={{ backgroundColor: palette.primary }}
+              className="flex-row items-center justify-center gap-2 rounded-2xl py-3 active:opacity-80"
+            >
+              <Ionicons name="cloud-download-outline" size={16} color={palette.onPrimary} />
+              <Text className="text-xs font-bold" style={{ color: palette.onPrimary }}>
+                {pending ? 'Переглянути оновлення' : 'Оновлення та зміни'}
+              </Text>
+            </Pressable>
+
+            {pending ? (
+              <Text className="text-center text-xs font-semibold" style={{ color: palette.warning }}>
+                Доступне оновлення {pending.version} ({pending.kind === 'ota' ? 'OTA' : 'APK'})
+              </Text>
+            ) : null}
+          </View>
+
+          {/* ── Джерела та підтримка ───────────────────────────────── */}
+          <View
             className="gap-2 rounded-3xl p-4"
+            style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
           >
             <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Джерела та підтримка
@@ -88,7 +357,7 @@ export default function InfoScreen() {
 
             <View className="flex-row items-center justify-between rounded-2xl bg-surface-container-low p-3">
               <View className="flex-row items-center gap-2.5">
-                <Ionicons name="paper-plane-outline" size={18} color={palette.primary} />
+                <Ionicons name="paper-plane-outline" size={16} color={palette.primary} />
                 <Text className="text-xs font-semibold text-foreground">Канал Svitlo в Telegram</Text>
               </View>
             </View>
@@ -98,14 +367,179 @@ export default function InfoScreen() {
               className="flex-row items-center justify-between rounded-2xl bg-surface-container-low p-3 active:opacity-75"
             >
               <View className="flex-row items-center gap-2.5">
-                <Ionicons name="logo-github" size={18} color={palette.foreground} />
+                <Ionicons name="logo-github" size={16} color={palette.foreground} />
                 <Text className="text-xs font-semibold text-foreground">Вихідний код на GitHub</Text>
               </View>
-              <Ionicons name="open-outline" size={14} color={palette.mutedForeground} />
+              <Ionicons name="open-outline" size={13} color={palette.mutedForeground} />
             </Pressable>
           </View>
         </ScrollView>
       </SafeAreaView>
     </SwipeableScreen>
+  );
+}
+
+/** «1 новина / 2-4 новини / 5+ новин» — коротка форма для лічильника. */
+function pluralPosts(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'новина';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'новини';
+  return 'новин';
+}
+
+function TogglePill({
+  label,
+  active,
+  onPress,
+  palette,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  palette: Palette;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5"
+      style={{
+        backgroundColor: active ? palette.primaryContainer : palette.card,
+        borderColor: active ? palette.primary : palette.hairline,
+        borderWidth: 1,
+      }}
+    >
+      <Ionicons
+        name={active ? 'checkbox' : 'square-outline'}
+        size={13}
+        color={active ? palette.primary : palette.mutedForeground}
+      />
+      <Text
+        className="text-xs font-semibold"
+        style={{ color: active ? palette.primary : palette.mutedForeground }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function StateCard({
+  icon,
+  title,
+  subtitle,
+  palette,
+  action,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  palette: Palette;
+  action?: React.ReactNode;
+}) {
+  return (
+    <View
+      className="items-center gap-2 rounded-3xl p-6"
+      style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
+    >
+      <View
+        className="h-12 w-12 items-center justify-center rounded-2xl"
+        style={{ backgroundColor: palette.surfaceContainerHigh }}
+      >
+        <Ionicons name={icon} size={24} color={palette.mutedForeground} />
+      </View>
+      <Text className="text-sm font-bold text-foreground">{title}</Text>
+      <Text className="text-center text-xs leading-relaxed text-muted-foreground">{subtitle}</Text>
+      {action}
+    </View>
+  );
+}
+
+/** Один пост: чип категорії, джерело, час, текст і картинка з першоджерела. */
+function NewsCard({
+  item,
+  palette,
+  expanded,
+  onToggle,
+}: {
+  item: NewsItem;
+  palette: Palette;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const accent = kindColor(palette, item.kind);
+  const text = item.body || item.summary || '';
+  const image = item.imageUrls[0];
+
+  return (
+    <Pressable
+      onPress={onToggle}
+      className="gap-2 rounded-3xl p-4 active:opacity-90"
+      style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
+    >
+      <View className="flex-row items-center gap-2">
+        <View
+          className="rounded-full px-2 py-0.5"
+          style={{ backgroundColor: `${accent}22` }}
+        >
+          <Text className="text-[10px] font-bold" style={{ color: accent }}>
+            {KIND_LABEL[(item.kind as KindFilter) in KIND_LABEL ? (item.kind as KindFilter) : 'other']}
+          </Text>
+        </View>
+        {item.isUkraineWide && (
+          <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: palette.surfaceContainerHigh }}>
+            <Text className="text-[10px] font-bold text-muted-foreground">Україна</Text>
+          </View>
+        )}
+        <View className="flex-1" />
+        <Text className="text-[10px] text-muted-foreground">{formatTime(item.publishedAt)}</Text>
+      </View>
+
+      <Text className="text-sm font-semibold leading-snug text-foreground">{item.title}</Text>
+
+      {text.length > 0 && (
+        <Text
+          className="text-xs leading-relaxed text-muted-foreground"
+          numberOfLines={expanded ? undefined : 3}
+        >
+          {text}
+        </Text>
+      )}
+
+      {expanded && image ? (
+        <Image
+          source={{ uri: image }}
+          className="h-44 w-full rounded-2xl"
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      ) : null}
+
+      <View className="flex-row items-center justify-between">
+        <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {sourceLabel(item.sourceKey)}
+        </Text>
+        <View className="flex-row items-center gap-1">
+          {expanded ? (
+            <Pressable
+              onPress={() => void Linking.openURL(item.url)}
+              className="flex-row items-center gap-1 rounded-full px-2 py-0.5"
+              style={{ backgroundColor: palette.primaryContainer }}
+            >
+              <Ionicons name="open-outline" size={11} color={palette.primary} />
+              <Text className="text-[10px] font-bold" style={{ color: palette.primary }}>
+                Першоджерело
+              </Text>
+            </Pressable>
+          ) : (
+            <Ionicons
+              name={item.imageUrls.length > 0 ? 'image-outline' : 'chevron-down'}
+              size={12}
+              color={palette.mutedForeground}
+            />
+          )}
+        </View>
+      </View>
+    </Pressable>
   );
 }
