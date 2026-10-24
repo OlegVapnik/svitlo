@@ -81,17 +81,14 @@ export function SavedPlacesCarousel({
           const tone = palette.status[live.state] ?? palette.status.unknown;
 
           return (
-            <Pressable
+            // Тень (glow статуса) рисуем на НЕПРОЗРАЧНОЙ подложке: primaryContainer имеет альфу
+            // 0.14, и на Android elevation-тень просвечивала сквозь неё ровным прямоугольником
+            // с прямыми углами — тот самый «прямоугольник на фоне» карточки «Дім». Подложка
+            // закрывает тень, полупрозрачный оттенок активной карточки ложится уже поверх неё.
+            <View
               key={place.id}
-              onPress={() => {
-                triggerSoftHaptic();
-                applyPlace(place);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`${place.label}, черга ${place.queue}`}
-              accessibilityState={{ selected: active }}
               style={{
-                backgroundColor: active ? palette.primaryContainer : palette.card,
+                backgroundColor: palette.card,
                 borderColor: active
                   ? palette.primary
                   : live.state === 'off'
@@ -107,8 +104,19 @@ export function SavedPlacesCarousel({
                 shadowRadius: 6,
                 elevation: live.state !== 'unknown' ? 2 : 0,
               }}
-              className="flex-row items-center gap-2.5 rounded-2xl px-3.5 py-2.5 active:opacity-75"
+              className="rounded-2xl"
             >
+              <Pressable
+                onPress={() => {
+                  triggerSoftHaptic();
+                  applyPlace(place);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`${place.label}, черга ${place.queue}`}
+                accessibilityState={{ selected: active }}
+                style={{ backgroundColor: active ? palette.primaryContainer : 'transparent' }}
+                className="flex-row items-center gap-2.5 rounded-2xl px-3.5 py-2.5 active:opacity-75"
+              >
               <View className="relative h-8 w-8 items-center justify-center rounded-full bg-surface-container-high">
                 <PlaceIconBadge icon={place.icon} size={15} color={active ? palette.primary : palette.foreground} />
                 {/* Светящийся индикатор текущего состояния закладки */}
@@ -139,7 +147,8 @@ export function SavedPlacesCarousel({
                   {place.queue} {live.timeLabel ? `· ${live.timeLabel}` : ''}
                 </Text>
               </View>
-            </Pressable>
+              </Pressable>
+            </View>
           );
         })}
 
