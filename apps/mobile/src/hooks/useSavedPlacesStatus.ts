@@ -104,8 +104,10 @@ export function useSavedPlacesStatus(
         if (Array.isArray(directSchedule.intervals) && directSchedule.intervals.length > 0) {
           placeIntervals = directSchedule.intervals;
           placeCovered = true;
-        } else if (directSchedule.covered || directSchedule.allClear) {
-          // Расписание получено и подтверждено, но отключений нет
+        } else if (directSchedule.allClear === true) {
+          // Только allClear — честное «график опубликован, отключений нет». Пустой intervals
+          // с mere covered — это отставший импорт или недогруженные слоты: обещать
+          // «світло цілий день» нельзя (см. dayPowerState в ядре — то же правило).
           placeIntervals = [];
           placeCovered = true;
         }
@@ -123,7 +125,7 @@ export function useSavedPlacesStatus(
         if (cached?.data?.intervals && cached.data.intervals.length > 0) {
           placeIntervals = cached.data.intervals;
           placeCovered = true;
-        } else if (cached?.data?.covered || cached?.data?.allClear) {
+        } else if (cached?.data?.allClear === true) {
           placeIntervals = [];
           placeCovered = true;
         }
@@ -135,7 +137,9 @@ export function useSavedPlacesStatus(
         const matched = regionUpcoming.find(
           (item) => item.date === today && queueCodeMatches(place.regionCpu, item.queue, place.queue),
         );
-        if (matched && matched.intervals) {
+        // Верим только непустому бакету: групповой срез не различает «очередь без отключений»
+        // и «недогруженный слот», поэтому пустой buckets-интервал — не «світло цілий день».
+        if (matched && Array.isArray(matched.intervals) && matched.intervals.length > 0) {
           placeIntervals = matched.intervals;
           placeCovered = true;
         }
