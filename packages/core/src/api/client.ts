@@ -127,6 +127,9 @@ export const api = {
    */
   fetchSync: (region?: string, etag?: string | null, signal?: AbortSignal) => {
     const params = new URLSearchParams();
+    // `v` меняет ключ CDN-кеша: 24.10 Cloudflare держал 24-часовой кеш `/sync?region=…`,
+    // записанный без CORS-заголовков, и браузер отвечал «Failed to fetch» на живой бэкенд.
+    params.set('v', '2');
     if (region) params.set('region', region);
     const query = params.toString();
     const headers: Record<string, string> = {};
@@ -206,15 +209,18 @@ export const api = {
   },
   /** Ближні відключення по ГРУПАХ усієї області (GET /api/v1/schedules/upcoming) — блок «Найближчі відключення». */
   fetchUpcomingGroupOutages: (region?: string, days = 2, signal?: AbortSignal) => {
-    const params = new URLSearchParams({ days: String(days) });
+    // `v` — сброс ключа CDN-кеша, см. комментарий в fetchSync.
+    const params = new URLSearchParams({ days: String(days), v: '2' });
     if (region) params.set('region', region);
     return fetcher(`/schedules/upcoming?${params.toString()}`, { signal });
   },
   fetchStreetQueues: (signal?: AbortSignal) => fetcher('/street-queues', { signal }),
   /** Реальный список очередей (GET /api/v1/queues?region=...). */
   fetchQueues: (region?: string, signal?: AbortSignal) => {
-    const q = region ? `?${new URLSearchParams({ region }).toString()}` : '';
-    return fetcher(`/queues${q}`, { signal });
+    // `v` — сброс ключа CDN-кеша, см. комментарий в fetchSync.
+    const params = new URLSearchParams({ v: '2' });
+    if (region) params.set('region', region);
+    return fetcher(`/queues?${params.toString()}`, { signal });
   },
   /** Каталог областей (GET /api/v1/regions, контракт /tmp/API-CONTRACT-regions.md). */
   fetchRegions: (signal?: AbortSignal) => fetcher('/regions', { signal }),
