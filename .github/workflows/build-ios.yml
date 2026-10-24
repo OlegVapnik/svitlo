@@ -1,0 +1,70 @@
+name: iOS unsigned build
+
+# Ручная сборка без подписи: проверяет, что `expo prebuild` + config plugins дают
+# компилируемый iOS-проект, и отдаёт `Svitlo-unsigned.ipa` как артефакт.
+# Подпись/App Store здесь не нужны — для релиза используется EAS (`ios-eas.yml`).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-unsigned-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate iOS project
+        working-directory: apps/mobile
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform ios --no-install --clean
+
+      # `--no-install` в prebuild отключает и CocoaPods. Без Pods.xcodeproj
+      # workspace не собирается, поэтому ставим поды отдельным шагом.
+      - name: Install CocoaPods dependencies
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Build unsigned app
+        working-directory: apps/mobile
+        run: |
+          xcodebuild \
+            -workspace ios/Svitlo.xcworkspace \
+            -scheme Svitlo \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA
+        working-directory: apps/mobile
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Svitlo.app Payload/
+          zip -qry Svitlo-unsigned.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: svitlo-ios-unsigned
+          path: apps/mobile/Svitlo-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

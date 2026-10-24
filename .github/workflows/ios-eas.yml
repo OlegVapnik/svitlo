@@ -1,0 +1,63 @@
+name: iOS EAS Build
+
+# Ручной запуск: iOS-сборка требует macOS-раннера и учётных данных Apple.
+# Секреты репозитория: EXPO_TOKEN (обязательно). EAS Project ID задаётся один раз
+# через `npx eas-cli init` в apps/mobile и попадает в app.json → extra.eas.projectId.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        type: choice
+        options:
+          - preview
+          - production
+        default: preview
+
+concurrency:
+  group: ios-eas-${{ github.ref }}-${{ inputs.profile }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: EAS iOS (${{ inputs.profile }})
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Expo token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Додайте EXPO_TOKEN у Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Typecheck mobile
+        working-directory: apps/mobile
+        run: pnpm typecheck
+
+      - name: Build on EAS
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest build \
+            --platform ios \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait
