@@ -74,11 +74,13 @@ workflows:
           xcodebuild \
             -workspace ios/Svitlo.xcworkspace \
             -scheme Svitlo \
-            -configuration Debug \
+            -configuration Release \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
             build
-          zip -qry Svitlo-simulator.app.zip build/Build/Products/Debug-iphonesimulator/Svitlo.app
+          zip -qry Svitlo-simulator.app.zip build/Build/Products/Release-iphonesimulator/Svitlo.app
 
     artifacts:
       - apps/mobile/Svitlo-simulator.app.zip
