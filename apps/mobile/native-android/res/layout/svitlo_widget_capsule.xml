@@ -68,7 +68,7 @@
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="3dp"
                 android:text="@string/widget_no_data"
-                android:textColor="#18181B"
+                android:textColor="#F4F4F5"
                 android:textSize="9sp"
                 android:textStyle="bold" />
         </LinearLayout>
