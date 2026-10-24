@@ -78,9 +78,7 @@ workflows:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             build
-          cd build/Build/Products/Debug-iphonesimulator
-          zip -r Svitlo-simulator.app.zip Svitlo.app
+          zip -qry Svitlo-simulator.app.zip build/Build/Products/Debug-iphonesimulator/Svitlo.app
 
     artifacts:
-      - apps/mobile/build/Build/Products/Debug-iphonesimulator/Svitlo-simulator.app.zip
-
+      - apps/mobile/Svitlo-simulator.app.zip
