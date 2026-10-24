@@ -1,4 +1,3 @@
-# Codemagic: ручная unsigned-сборка iOS без подписи и Apple-учёток.
 workflows:
   ios-unsigned:
     name: iOS unsigned build
@@ -8,10 +7,12 @@ workflows:
       node: 22
     scripts:
       - name: Verify or enable pnpm
-        script: pnpm --version || corepack enable pnpm
+        script: |
+          corepack disable || true
+          pnpm --version || npm install -g pnpm --force
 
       - name: Install dependencies
-        script: pnpm install --frozen-lockfile
+        script: COREPACK_ENABLE_STRICT=0 pnpm install --frozen-lockfile
 
       - name: Generate iOS project
         working_directory: apps/mobile
