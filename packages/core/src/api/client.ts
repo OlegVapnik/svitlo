@@ -203,7 +203,8 @@ export const api = {
     return fetcher(`/addresses/houses?${query}`, { signal }) as Promise<AddressHousesResponse>;
   },
   fetchQueueSchedule: (queue: string, date: string, region?: string) => {
-    const params = new URLSearchParams({ queue, date });
+    // `v` — сброс ключа CDN-кеша, см. комментарий в fetchSync.
+    const params = new URLSearchParams({ queue, date, v: '2' });
     if (region) params.set('region', region);
     return fetcher(`/schedules?${params.toString()}`);
   },
