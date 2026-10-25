@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-10-24T15:02:53.563Z",
-  "version": "2.39.9",
+  "generatedAt": "2026-10-25T23:15:40.002Z",
+  "version": "2.40.0",
   "jsBundle": {
-    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-ce3b1ce9219b0813.gz",
-    "sha256": "ce3b1ce9219b081397c6f5344316fde2e1aeeaa07b2c55d37c5964da60f78010",
-    "sizeBytes": 2844776,
-    "version": "2.39.9",
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-c2d135407ee5f804.gz",
+    "sha256": "c2d135407ee5f80455ff1344272b68370804d37bfe35aca79dec1705abab3792",
+    "sizeBytes": 2863291,
+    "version": "2.40.0",
     "assets": [
       {
         "path": "drawable-mdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_arrow_down.png",
@@ -78,6 +78,16 @@
         "sizeBytes": 4752
       },
       {
+        "path": "drawable-mdpi/assets_mascot_mascotsleep.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/assets_mascot_mascotsleep.png",
+        "sizeBytes": 56092
+      },
+      {
+        "path": "drawable-mdpi/assets_mascot_mascotthink.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/assets_mascot_mascotthink.png",
+        "sizeBytes": 90551
+      },
+      {
         "path": "drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
         "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/__node_modules_pnpm_exporouter58024_54b80bc1187ec5176902e74a8fae6294_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
         "sizeBytes": 134
@@ -145,10 +155,10 @@
       {
         "path": "raw/keep.xml",
         "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/keep.xml",
-        "sizeBytes": 2073
+        "sizeBytes": 2145
       }
     ]
   },
   "keyId": "svitlo-ota-2026-1",
-  "signature": "UKyWtJnKLO4oiHml5pBYmbT7YAQHLrgZ9XFUg0PQXa0TdcWtju+/A9ucN+8mePROntfBpXabZ79ywGvzo48FBw=="
+  "signature": "J7p4d0fp5az6YORHpThCe/K3ntj/kIiT6PM6LGZZmQdu2D8e2NkKSIMzeN9RpqGADfv/7tD1OVswBD9EeY+hAw=="
 }
