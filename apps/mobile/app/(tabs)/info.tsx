@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { useNews, useNewsSources } from '@svitlo/core/api/queries';
 import type { NewsItem } from '@svitlo/shared';
@@ -19,11 +21,11 @@ import type { NewsItem } from '@svitlo/shared';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { SwipeableScreen } from '@/components/navigation/SwipeableScreen';
 import { useRegion } from '@/context/RegionContext';
-import { APP_VERSION, useUpdates } from '@/context/UpdateContext';
+import { useCustomNewsSources } from '@/hooks/useCustomNewsSources';
 import { useTheme, type Palette } from '@/theme/ThemeProvider';
 
 /**
- * «Інфо»: стрічка новин операторів + версія й оновлення.
+ * «Інфо»: лише стрічка новин операторів; налаштування й оновлення — у /settings.
  *
  * Дані — той самий `useNews`, що у веба: збір робить крон воркера, а `/news` віддається з
  * R2-снапшота, тому стрічка не витрачає квоту D1. Регіональна видача без записів підхоплює
@@ -89,7 +91,7 @@ const latestIso = (values: Array<string | null | undefined>): string | null => {
 
 export default function InfoScreen() {
   const { palette } = useTheme();
-  const { pending, openSheet } = useUpdates();
+  const router = useRouter();
   const { currentRegion } = useRegion();
 
   const [kind, setKind] = useState<KindFilter>('all');
@@ -97,6 +99,18 @@ export default function InfoScreen() {
   const [onlyPower, setOnlyPower] = useState(false);
   const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showAddSource, setShowAddSource] = useState(false);
+  const [sourceInput, setSourceInput] = useState('');
+  const [sourceError, setSourceError] = useState<string | null>(null);
+
+  const {
+    sources: customSources,
+    items: customItems,
+    errors: customErrors,
+    addSource,
+    removeSource,
+    refetchCustom,
+  } = useCustomNewsSources();
 
   const { data, isLoading, isError, isRefetching, refetch } = useNews({
     region: currentRegion,
@@ -127,7 +141,11 @@ export default function InfoScreen() {
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('uk-UA');
-    const source = items.length > 0 ? items : (fallbackData?.data ?? []);
+    // Власні джерела користувача підмішуються в ту саму стрічку (kind 'other').
+    const source = [
+      ...(items.length > 0 ? items : (fallbackData?.data ?? [])),
+      ...customItems,
+    ];
     const relevant = onlyPower ? source.filter((item) => item.kind !== 'other') : source;
     if (!needle) return relevant;
     return relevant.filter((item) =>
@@ -137,10 +155,39 @@ export default function InfoScreen() {
         .toLocaleLowerCase('uk-UA')
         .includes(needle),
     );
-  }, [items, fallbackData, onlyPower, query]);
+  }, [items, fallbackData, onlyPower, query, customItems]);
 
   const refreshing = isRefetching || isLoading || fallbackLoading;
   const stale = data?.meta?.stale === true;
+
+  // Джерела, чий останній фетч впав — показуємо одним рядком-попередженням.
+  const customFailedTitles = customSources
+    .filter((source) => Boolean(customErrors[source.id]))
+    .map((source) => source.title);
+
+  /** Додати джерело з інлайн-форми; порожній ввід просто ховає форму. */
+  const submitSource = () => {
+    const trimmed = sourceInput.trim();
+    if (!trimmed) {
+      setShowAddSource(false);
+      setSourceError(null);
+      return;
+    }
+    const result = addSource(trimmed);
+    if (!result.ok) {
+      setSourceError(result.error ?? 'Не вдалося додати джерело');
+      return;
+    }
+    setSourceInput('');
+    setSourceError(null);
+    setShowAddSource(false);
+  };
+
+  const cancelSource = () => {
+    setSourceInput('');
+    setSourceError(null);
+    setShowAddSource(false);
+  };
 
   return (
     <SwipeableScreen>
@@ -152,13 +199,145 @@ export default function InfoScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => void refetch()}
+              onRefresh={() => {
+                void refetch();
+                refetchCustom();
+              }}
               tintColor={palette.primary}
               colors={[palette.primary]}
             />
           }
         >
-          <ScreenHeader title="Інфо" />
+          <ScreenHeader
+            title="Інфо"
+            actions={
+              <Pressable
+                onPress={() => router.push('/settings')}
+                accessibilityRole="button"
+                accessibilityLabel="Налаштування"
+                style={{ backgroundColor: palette.card, borderColor: palette.hairline }}
+                className="h-9 w-9 items-center justify-center rounded-full border active:opacity-70"
+              >
+                <Ionicons name="settings-outline" size={16} color={palette.mutedForeground} />
+              </Pressable>
+            }
+          />
+
+          {/* ── Мої джерела ────────────────────────────────────────── */}
+          {(customSources.length > 0 || showAddSource) && (
+            <View
+              className="gap-3 rounded-3xl p-4"
+              style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
+            >
+              <View className="flex-row items-center gap-2">
+                <Text className="text-sm font-bold text-foreground">Мої джерела</Text>
+                {customSources.length > 0 && (
+                  <Text className="text-[11px] text-muted-foreground">
+                    {customSources.length} {pluralSources(customSources.length)}
+                  </Text>
+                )}
+                <View className="flex-1" />
+                <Pressable
+                  onPress={() => {
+                    setSourceError(null);
+                    setShowAddSource((value) => !value);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Додати джерело"
+                  className="h-7 w-7 items-center justify-center rounded-full active:opacity-70"
+                  style={{ backgroundColor: palette.surfaceContainerHigh }}
+                >
+                  <Ionicons name="add" size={16} color={palette.foreground} />
+                </Pressable>
+              </View>
+
+              {/* Інлайн-форма додавання */}
+              {showAddSource && (
+                <Animated.View entering={FadeIn.duration(200)} className="gap-2">
+                  <TextInput
+                    value={sourceInput}
+                    onChangeText={setSourceInput}
+                    placeholder="RSS-посилання або @telegram-канал"
+                    placeholderTextColor={palette.mutedForeground}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    className="rounded-2xl px-3 py-2.5 text-sm text-foreground"
+                    style={{ backgroundColor: palette.surfaceContainerLow }}
+                    returnKeyType="done"
+                    onSubmitEditing={submitSource}
+                  />
+                  <View className="flex-row gap-2">
+                    <Pressable
+                      onPress={submitSource}
+                      className="rounded-xl px-4 py-2 active:opacity-70"
+                      style={{ backgroundColor: palette.primary }}
+                    >
+                      <Text className="text-xs font-bold" style={{ color: palette.onPrimary }}>
+                        Додати
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={cancelSource}
+                      className="rounded-xl px-4 py-2 active:opacity-70"
+                      style={{ backgroundColor: palette.surfaceContainerHigh }}
+                    >
+                      <Text className="text-xs font-bold text-foreground">Скасувати</Text>
+                    </Pressable>
+                  </View>
+                  {sourceError && (
+                    <Text className="text-[11px]" style={{ color: palette.destructive }}>
+                      {sourceError}
+                    </Text>
+                  )}
+                </Animated.View>
+              )}
+
+              {/* Список доданих джерел */}
+              {customSources.map((source) => (
+                <View
+                  key={source.id}
+                  className="flex-row items-center gap-2.5 rounded-2xl p-3"
+                  style={{ backgroundColor: palette.surfaceContainerLow }}
+                >
+                  <Ionicons
+                    name={source.type === 'rss' ? 'logo-rss' : 'paper-plane-outline'}
+                    size={16}
+                    color={palette.primary}
+                  />
+                  <View className="flex-1">
+                    <Text className="text-xs font-semibold text-foreground">{source.title}</Text>
+                    <Text className="text-[10px] text-muted-foreground" numberOfLines={1}>
+                      {source.url}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => removeSource(source.id)}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Видалити ${source.title}`}
+                  >
+                    <Ionicons name="trash-outline" size={14} color={palette.destructive} />
+                  </Pressable>
+                </View>
+              ))}
+
+              {/* Джерела, що не читаються */}
+              {customFailedTitles.length > 0 && (
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="warning-outline" size={13} color={palette.warning} />
+                  <Text className="flex-1 text-[11px]" style={{ color: palette.warning }}>
+                    Не вдалося прочитати: {customFailedTitles.join(', ')}
+                  </Text>
+                </View>
+              )}
+
+              <Text className="text-[11px] leading-relaxed text-muted-foreground">
+                Підтримуються RSS/Atom-стрічки та публічні Telegram-канали. Джерела читаються прямо з
+                телефону.
+              </Text>
+            </View>
+          )}
 
           {/* ── Новини ─────────────────────────────────────────────── */}
           <View className="gap-3">
@@ -310,69 +489,6 @@ export default function InfoScreen() {
               </View>
             )}
           </View>
-
-          {/* ── Версія та оновлення ────────────────────────────────── */}
-          <View
-            className="gap-3 rounded-3xl p-4"
-            style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
-          >
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2.5">
-                <View className="h-9 w-9 items-center justify-center rounded-xl" style={{ backgroundColor: palette.primaryContainer }}>
-                  <Ionicons name="sparkles" size={18} color={palette.primary} />
-                </View>
-                <Text className="text-sm font-bold text-foreground">Застосунок</Text>
-              </View>
-              <View className="rounded-full bg-surface-container-high px-2.5 py-1">
-                <Text className="text-xs font-bold text-foreground">v{APP_VERSION}</Text>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={openSheet}
-              style={{ backgroundColor: palette.primary }}
-              className="flex-row items-center justify-center gap-2 rounded-2xl py-3 active:opacity-80"
-            >
-              <Ionicons name="cloud-download-outline" size={16} color={palette.onPrimary} />
-              <Text className="text-xs font-bold" style={{ color: palette.onPrimary }}>
-                {pending ? 'Переглянути оновлення' : 'Оновлення та зміни'}
-              </Text>
-            </Pressable>
-
-            {pending ? (
-              <Text className="text-center text-xs font-semibold" style={{ color: palette.warning }}>
-                Доступне оновлення {pending.version} ({pending.kind === 'ota' ? 'OTA' : 'APK'})
-              </Text>
-            ) : null}
-          </View>
-
-          {/* ── Джерела та підтримка ───────────────────────────────── */}
-          <View
-            className="gap-2 rounded-3xl p-4"
-            style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
-          >
-            <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Джерела та підтримка
-            </Text>
-
-            <View className="flex-row items-center justify-between rounded-2xl bg-surface-container-low p-3">
-              <View className="flex-row items-center gap-2.5">
-                <Ionicons name="paper-plane-outline" size={16} color={palette.primary} />
-                <Text className="text-xs font-semibold text-foreground">Канал Svitlo в Telegram</Text>
-              </View>
-            </View>
-
-            <Pressable
-              onPress={() => void Linking.openURL('https://github.com/OlegVapnik/svitlo')}
-              className="flex-row items-center justify-between rounded-2xl bg-surface-container-low p-3 active:opacity-75"
-            >
-              <View className="flex-row items-center gap-2.5">
-                <Ionicons name="logo-github" size={16} color={palette.foreground} />
-                <Text className="text-xs font-semibold text-foreground">Вихідний код на GitHub</Text>
-              </View>
-              <Ionicons name="open-outline" size={13} color={palette.mutedForeground} />
-            </Pressable>
-          </View>
         </ScrollView>
       </SafeAreaView>
     </SwipeableScreen>
@@ -386,6 +502,15 @@ function pluralPosts(count: number): string {
   if (mod10 === 1 && mod100 !== 11) return 'новина';
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'новини';
   return 'новин';
+}
+
+/** «1 джерело / 2-4 джерела / 5+ джерел» — лічильник розділу «Мої джерела». */
+function pluralSources(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'джерело';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'джерела';
+  return 'джерел';
 }
 
 function TogglePill({
