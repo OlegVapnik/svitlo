@@ -12,9 +12,11 @@ import {
 } from '@svitlo/core/lib/scheduleWindow';
 import type { ScheduleIntervalUtc } from '@svitlo/shared';
 
+import { Mascot } from '@/components/mascot/Mascot';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { WavyProgressBar, type WaveTone } from '@/components/ui/WavyProgressBar';
 import { useTheme, type PowerState } from '@/theme/ThemeProvider';
+import { useSettings } from '@/context/SettingsContext';
 
 const LABELS: Record<PowerState, string> = {
   on: 'Світло є',
@@ -58,6 +60,7 @@ export function HeroStatus({
   isError,
 }: HeroStatusProps) {
   const { palette } = useTheme();
+  const { mascotEnabled } = useSettings();
   const tone = palette.status[state];
   const waveTone: WaveTone = state === 'allClear' ? 'on' : state === 'unknown' ? 'unknown' : state;
 
@@ -191,6 +194,13 @@ export function HeroStatus({
             elapsedLabel={`Пройшло ${formatMinutesUk(progress.elapsedMinutes)}`}
             remainingLabel={`Залишилось ${formatMinutesUk(progress.remainingMinutes)}`}
           />
+        </View>
+      ) : null}
+
+      {/* Маскотка «думає», коли даних немає: праворуч унизу, щоб не перекривати текст зліва */}
+      {mascotEnabled && state === 'unknown' ? (
+        <View pointerEvents="box-none" style={{ position: 'absolute', right: 10, bottom: 4 }}>
+          <Mascot mood="think" powerState={state} />
         </View>
       ) : null}
     </View>

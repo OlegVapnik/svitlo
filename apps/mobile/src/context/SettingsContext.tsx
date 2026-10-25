@@ -4,14 +4,18 @@ import { storage } from '@svitlo/core';
 
 const LIVE_KEY = 'mobile.liveNotification';
 const EARLY_KEY = 'mobile.earlyLightDetector';
+const MASCOT_KEY = 'mobile.mascot';
 
 interface SettingsContextValue {
   /** Постоянный индикатор сети в шторке уведомлений. */
   liveNotification: boolean;
   /** Детектор «світло з'явилося раніше графіка» по зарядке. */
   earlyLightDetector: boolean;
+  /** Маскот на главной: показывать анимированного персонажа. */
+  mascotEnabled: boolean;
   setLiveNotification: (value: boolean) => void;
   setEarlyLightDetector: (value: boolean) => void;
+  setMascotEnabled: (value: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -33,6 +37,8 @@ function readBool(key: string, fallback: boolean): boolean {
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [liveNotification, setLiveState] = useState(() => readBool(LIVE_KEY, false));
   const [earlyLightDetector, setEarlyState] = useState(() => readBool(EARLY_KEY, true));
+  // Маскот: код готов, но ассеты ещё с фоном и артефактами — до чистки выключен по умолчанию.
+  const [mascotEnabled, setMascotState] = useState(() => readBool(MASCOT_KEY, false));
 
   const setLiveNotification = useCallback((value: boolean) => {
     setLiveState(value);
@@ -52,9 +58,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setMascotEnabled = useCallback((value: boolean) => {
+    setMascotState(value);
+    try {
+      storage.setItem(MASCOT_KEY, value ? 'true' : 'false');
+    } catch {
+      /* см. выше */
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ liveNotification, earlyLightDetector, setLiveNotification, setEarlyLightDetector }),
-    [liveNotification, earlyLightDetector, setLiveNotification, setEarlyLightDetector],
+    () => ({
+      liveNotification,
+      earlyLightDetector,
+      mascotEnabled,
+      setLiveNotification,
+      setEarlyLightDetector,
+      setMascotEnabled,
+    }),
+    [liveNotification, earlyLightDetector, mascotEnabled, setLiveNotification, setEarlyLightDetector, setMascotEnabled],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
