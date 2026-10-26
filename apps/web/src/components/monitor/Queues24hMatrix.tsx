@@ -69,6 +69,10 @@ export const Queues24hMatrix: React.FC<Queues24hMatrixProps> = ({
   const nowPercent = (nowMinutes / (24 * 60)) * 100;
   // Бейдж не должен вылезать за край трека: сама линия стоит точно, а подпись чуть сдвигаем.
   const badgePercent = Math.min(96, Math.max(4, nowPercent));
+  // У краёв центр бейджа с -translate-x-1/2 уходит за overflow-hidden карточки и подпись
+  // обрезается («раз 01:52» вместо «Зараз 01:52»). У самого левого/правого процента бейдж
+  // прижимается к краю целиком, в середине — центрируется по линии.
+  const badgeShift = badgePercent <= 10 ? '0%' : badgePercent >= 90 ? '-100%' : '-50%';
 
   const rows = useMemo<MatrixRow[]>(() => {
     return queues.map(({ queue }) => {
@@ -120,9 +124,12 @@ export const Queues24hMatrix: React.FC<Queues24hMatrixProps> = ({
             className="grid gap-x-2 text-[10px] font-semibold text-on-surface-variant"
             style={{ gridTemplateColumns: GRID_COLUMNS }}
           >
-            {/* Шапка: подпись колонки, шкала часов и сумма часов без света. */}
-            <span className="sr-only">{t('queues.queueLabel')}</span>
-            <div className="relative h-4">
+            {/* Шапка: подпись колонки, шкала часов и сумма часов без света.
+                У каждой ячейки явная колонка: .sr-only абсолютен и сам grid-ячейку НЕ занимает —
+                без явных col-start шкала часов падала в узкую первую колонку (3rem) и все
+                подписи часов слипались в левом краю, а «Без світла» уезжала в центр. */}
+            <span className="sr-only col-start-1 row-start-1">{t('queues.queueLabel')}</span>
+            <div className="relative col-start-2 row-start-1 h-4">
               {HOUR_TICKS.map((hour) => {
                 const left = (hour / 24) * 100;
                 return (
@@ -141,13 +148,13 @@ export const Queues24hMatrix: React.FC<Queues24hMatrixProps> = ({
 
               {/* Живой бейдж текущего времени — над линией, сквозь все строки. */}
               <span
-                className="absolute -top-7 z-20 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground shadow-md"
-                style={{ left: `${badgePercent}%` }}
+                className="absolute -top-7 z-20 whitespace-nowrap rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold text-primary-foreground shadow-md"
+                style={{ left: `${badgePercent}%`, transform: `translateX(${badgeShift})` }}
               >
                 {t('monitor.matrixNow', { time: minutesToHm(nowMinutes) })}
               </span>
             </div>
-            <span className="text-right leading-tight">{t('monitor.matrixOffTotal')}</span>
+            <span className="col-start-3 row-start-1 text-right leading-tight">{t('monitor.matrixOffTotal')}</span>
 
             {/* Строки очередей. Каждая — одна кнопка на три колонки: тап по любому месту
                 строки делает очередь активной, как плитка, но без перехода на другой экран. */}

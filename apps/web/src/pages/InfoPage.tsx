@@ -1,10 +1,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Newspaper } from 'lucide-react';
-import { MaintenanceNotice } from '../components/common/MaintenanceNotice.js';
+import { NewsPage } from './NewsPage.js';
 
 /**
- * Раздел «Інфо»: лента новостей операторов.
+ * Раздел «Інфо»: лента новостей операторов. NewsPage живёт здесь сегментом (`embedded`):
+ * свой заголовок рисует таб, а лента — содержимое. Раньше вместо неё стояла заглушка
+ * «на обслуговуванні», хотя готовая страница и работающий `GET /news` были в коде.
  */
 export const InfoPage: React.FC = () => {
   const { t } = useTranslation();
@@ -18,10 +20,7 @@ export const InfoPage: React.FC = () => {
         <p className="text-xs text-muted-foreground sm:text-sm">{t('info.subtitle')}</p>
       </header>
 
-      <MaintenanceNotice
-        title="Стрічка новин на плановому обслуговуванні"
-        subtitle="Проводяться роботи з модернізації джерел та оновлення телеграм-каналів обленерго."
-      />
+      <NewsPage embedded />
     </div>
   );
 };

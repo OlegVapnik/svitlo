@@ -617,8 +617,10 @@ export const HomePage: React.FC = () => {
                   <Smartphone className="h-4 w-4" aria-hidden />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-on-surface">{t('home.androidApp')}</p>
-                  <p className="truncate text-xs text-on-surface-variant">{t('home.githubHint')}</p>
+                  {/* Без truncate: в узкой правой колонке обрезка читалась как «Застосунок …»
+                      — обрыв посреди слова выглядит как баг, а перенос на вторую строку нет. */}
+                  <p className="text-sm font-medium text-on-surface">{t('home.androidApp')}</p>
+                  <p className="text-xs text-on-surface-variant">{t('home.githubHint')}</p>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">

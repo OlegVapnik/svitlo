@@ -1,12 +1,9 @@
 import {
   Activity,
-  Building2,
   CalendarDays,
   Home,
   Info,
-  MapPin,
   Search,
-  Upload,
   Zap,
   type LucideIcon,
 } from 'lucide-react';
@@ -90,9 +87,3 @@ export const SIDEBAR_ENTRIES: SidebarEntry[] = [
   { to: '/info', icon: Info, labelKey: 'nav.info', tab: '/info' },
 ];
 
-/** Служебные адреса вне публичного меню: импорт графика, выбор области. */
-export const ADMIN_ENTRIES: SidebarEntry[] = [
-  { to: '/schedule-import', icon: Upload, labelKey: 'nav.scheduleImport', tab: 'admin' },
-  { to: '/region', icon: Building2, labelKey: 'nav.region', tab: 'admin' },
-  { to: '/my-address', icon: MapPin, labelKey: 'nav.myAddress', tab: 'admin' },
-];

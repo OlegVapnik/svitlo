@@ -6,7 +6,8 @@ import { useRegion } from '../hooks/useRegion.js';
 import { useRegionQueue } from '../hooks/useRegionQueue.js';
 import { useQueues, useUpcomingGroupOutages } from '../api/queries.js';
 import { GroupMatrix } from '../components/monitor/GroupMatrix.js';
-import { MaintenanceNotice } from '../components/common/MaintenanceNotice.js';
+import { OutagesPage } from './OutagesPage.js';
+import { IncidentsPage } from './IncidentsPage.js';
 import { hapticTick } from '../lib/haptics.js';
 import { cn } from '../lib/cn.js';
 
@@ -102,18 +103,8 @@ export const MonitorPage: React.FC = () => {
           }}
         />
       )}
-      {segment === 'outages' && (
-        <MaintenanceNotice
-          title="Відключення тимчасово недоступні"
-          subtitle="Розділ переглядається та проходить регламентне оновлення шлюзів постачальників."
-        />
-      )}
-      {segment === 'incidents' && (
-        <MaintenanceNotice
-          title="Події та аварії на обслуговуванні"
-          subtitle="Тривають технічні роботи з оптимізації каналу подій енергомережі."
-        />
-      )}
+      {segment === 'outages' && <OutagesPage embedded />}
+      {segment === 'incidents' && <IncidentsPage embedded />}
     </div>
   );
 };
