@@ -10,7 +10,6 @@ describe('tabIndexOf', () => {
     expect(tabIndexOf('/')).toBe(0);
     expect(tabIndexOf('/search')).toBe(1);
     expect(tabIndexOf('/monitor')).toBe(2);
-    expect(tabIndexOf('/info')).toBe(3);
     expect(tabIndexOf('/monitor/outages')).toBe(2);
   });
 
@@ -23,18 +22,16 @@ describe('tabIndexOf', () => {
 describe('resolveTabDirection', () => {
   test('вправо по панели — следующий таб, влево — предыдущий', () => {
     expect(resolveTabDirection('/', '/search')).toBe('next');
-    expect(resolveTabDirection('/monitor', '/info')).toBe('next');
-    expect(resolveTabDirection('/info', '/monitor')).toBe('prev');
+    expect(resolveTabDirection('/search', '/monitor')).toBe('next');
+    expect(resolveTabDirection('/monitor', '/search')).toBe('prev');
     expect(resolveTabDirection('/search', '/')).toBe('prev');
   });
 
   test('шаг через таб сохраняет направление: это тот же порядок панели', () => {
     expect(resolveTabDirection('/', '/monitor')).toBe('next');
-    expect(resolveTabDirection('/info', '/search')).toBe('prev');
   });
 
   test('тот же таб не двигается: подразделы переключаются без сдвига', () => {
-    // /monitor → /monitor?tab=outages меняет только query, но проверяем и равные пути.
     expect(resolveTabDirection('/monitor', '/monitor')).toBe('none');
     expect(resolveTabDirection('/monitor/outages', '/monitor')).toBe('none');
   });

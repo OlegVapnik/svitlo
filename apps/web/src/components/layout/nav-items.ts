@@ -2,7 +2,6 @@ import {
   Activity,
   CalendarDays,
   Home,
-  Info,
   Search,
   Zap,
   type LucideIcon,
@@ -27,7 +26,6 @@ export const TAB_ITEMS: TabItem[] = [
   { to: '/', icon: Zap, labelKey: 'nav.home' },
   { to: '/search', icon: Search, labelKey: 'nav.search' },
   { to: '/monitor', icon: Activity, labelKey: 'nav.monitor' },
-  { to: '/info', icon: Info, labelKey: 'nav.info' },
 ];
 
 /**
@@ -45,7 +43,8 @@ export const LEGACY_ROUTES: Array<{ from: string; to: string }> = [
   { from: '/queues', to: '/monitor' },
   { from: '/streets', to: '/search' },
   { from: '/my-address', to: '/search' },
-  { from: '/news', to: '/info' },
+  { from: '/news', to: '/' },
+  { from: '/info', to: '/' },
 ];
 
 /**
@@ -82,8 +81,5 @@ export const SIDEBAR_ENTRIES: SidebarEntry[] = [
   { to: '/', icon: Home, labelKey: 'nav.home', tab: '/' },
   { to: '/search', icon: Search, labelKey: 'nav.search', tab: '/search' },
   { to: '/monitor', icon: CalendarDays, labelKey: 'nav.monitorGroups', tab: '/monitor' },
-  { to: '/monitor?tab=outages', icon: Zap, labelKey: 'nav.monitorOutages', tab: '/monitor' },
-  { to: '/monitor?tab=incidents', icon: Activity, labelKey: 'nav.monitorIncidents', tab: '/monitor' },
-  { to: '/info', icon: Info, labelKey: 'nav.info', tab: '/info' },
 ];
 

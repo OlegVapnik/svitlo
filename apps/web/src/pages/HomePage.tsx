@@ -666,7 +666,7 @@ export const HomePage: React.FC = () => {
                 isLoading={statusLoading}
               />
               <MiniStat
-                to="/incidents"
+                to="/monitor"
                 icon={TriangleAlert}
                 tone="warning"
                 label={t('home.statIncidents')}

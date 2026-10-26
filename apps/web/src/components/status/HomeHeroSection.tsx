@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import {
   BadgeCheck,
   CalendarDays,
@@ -711,16 +710,7 @@ export const HomeHeroSection: React.FC = () => {
           )}
 
           {/* Швидкі дії */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-            <div className="flex flex-wrap gap-2">
-              <Link
-                to="/my-address"
-                className="inline-flex min-h-10 items-center rounded-full border border-border bg-card px-4 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
-              >
-                {t('nav.myAddress')}
-              </Link>
-            </div>
-
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
             {schedule?.lastImportedAt && (
               <span className="text-[11px] text-muted-foreground">
                 {t('common.updatedAt')} {formatKyivTime(schedule.lastImportedAt)}

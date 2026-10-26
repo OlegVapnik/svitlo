@@ -37,7 +37,7 @@ export const IncidentBanner: React.FC<IncidentBannerProps> = ({ incident }) => {
 
       <div className="flex shrink-0 items-center gap-1">
         <Link
-          to="/incidents"
+          to="/monitor"
           className="flex min-h-11 items-center gap-1 whitespace-nowrap text-xs font-bold underline underline-offset-2"
         >
           <span>{t('common.details')}</span>

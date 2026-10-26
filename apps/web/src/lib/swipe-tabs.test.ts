@@ -9,15 +9,13 @@ describe('resolveSwipeTarget', () => {
   test('свайп влево ведёт на следующий таб, вправо — на предыдущий', () => {
     expect(resolveSwipeTarget('/', -120, 4)).toBe('/search');
     expect(resolveSwipeTarget('/search', -120, 4)).toBe('/monitor');
-    expect(resolveSwipeTarget('/monitor', -120, 4)).toBe('/info');
-    expect(resolveSwipeTarget('/info', 120, -4)).toBe('/monitor');
     expect(resolveSwipeTarget('/monitor', 120, -4)).toBe('/search');
     expect(resolveSwipeTarget('/search', 120, -4)).toBe('/');
   });
 
   test('на краях ленты листать некуда', () => {
     expect(resolveSwipeTarget('/', 120, 0)).toBeNull();
-    expect(resolveSwipeTarget('/info', -120, 0)).toBeNull();
+    expect(resolveSwipeTarget('/monitor', -120, 0)).toBeNull();
   });
 
   test('короткий жест — не листание', () => {
@@ -33,7 +31,8 @@ describe('resolveSwipeTarget', () => {
   });
 
   test('вложенный маршрут таба листается как сам таб', () => {
-    expect(resolveSwipeTarget('/monitor/outages', -120, 0)).toBe('/info');
+    expect(resolveSwipeTarget('/monitor/outages', -120, 0)).toBeNull();
+    expect(resolveSwipeTarget('/monitor/outages', 120, 0)).toBe('/search');
     expect(resolveSwipeTarget('/search/streets', 120, 0)).toBe('/');
   });
 
