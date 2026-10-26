@@ -356,6 +356,44 @@ export function parseTelegramChannel(html: string, source: CustomNewsSource): Ne
   );
 }
 
+/**
+ * Кеш останньої вдалої стрічки власних джерел у kv-store. Читається на холодному старті
+ * (initialData запиту), щоб пості були видимі одразу, до першого клієнтського фетчу.
+ */
+const CACHE_KEY = 'mobile.customNewsCache';
+/** 30 хв — скільки кеш вважається свіжим для холодного старту. */
+export const CUSTOM_NEWS_CACHE_TTL_MS = 30 * 60_000;
+
+export interface CustomNewsCache {
+  items: NewsItem[];
+  savedAt: number;
+}
+
+/** Остання вдала стрічка власних джерел; null — кешу немає або він пошкоджений. */
+export function loadCustomNewsCache(): CustomNewsCache | null {
+  try {
+    const raw = storage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const candidate = parsed as Partial<CustomNewsCache>;
+    if (!Array.isArray(candidate.items) || typeof candidate.savedAt !== 'number') return null;
+    return { items: candidate.items, savedAt: candidate.savedAt };
+  } catch {
+    return null;
+  }
+}
+
+/** Зберегти стрічку з поточним timestamp — викликається після кожної вдалої збірки. */
+export function saveCustomNewsCache(items: NewsItem[]): void {
+  try {
+    const cache: CustomNewsCache = { items, savedAt: Date.now() };
+    storage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    /* сховище недоступне — кеш просто не збережеться */
+  }
+}
+
 /** Завантажує й розбирає одне джерело; помилки мережі/парсингу йдуть нагору зі зрозумілим текстом. */
 export async function fetchCustomSource(source: CustomNewsSource): Promise<NewsItem[]> {
   let payload: string;

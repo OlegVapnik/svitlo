@@ -21,6 +21,7 @@ import type { NewsItem } from '@svitlo/shared';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { SwipeableScreen } from '@/components/navigation/SwipeableScreen';
 import { useRegion } from '@/context/RegionContext';
+import { useSettings } from '@/context/SettingsContext';
 import { useCustomNewsSources } from '@/hooks/useCustomNewsSources';
 import { useTheme, type Palette } from '@/theme/ThemeProvider';
 
@@ -30,6 +31,10 @@ import { useTheme, type Palette } from '@/theme/ThemeProvider';
  * Дані — той самий `useNews`, що у веба: збір робить крон воркера, а `/news` віддається з
  * R2-снапшота, тому стрічка не витрачає квоту D1. Регіональна видача без записів підхоплює
  * загальноукраїнську — так область без своїх джерел не виглядає «зламаною».
+ *
+ * Режим «новини вимкнено» (тумблер у налаштуваннях): серверні запити взагалі не летять
+ * (enabled: false у useNews, useNewsSources винесено в окремий компонент, який не монтується),
+ * стрічка показує лише пости власних джерел, що читаються клієнтсько.
  */
 
 type KindFilter = 'all' | 'outage' | 'emergency' | 'schedule-change' | 'repair' | 'ukraine' | 'other';
@@ -93,6 +98,7 @@ export default function InfoScreen() {
   const { palette } = useTheme();
   const router = useRouter();
   const { currentRegion } = useRegion();
+  const { newsDisabled } = useSettings();
 
   const [kind, setKind] = useState<KindFilter>('all');
   const [ukraineWide, setUkraineWide] = useState(false);
@@ -107,6 +113,7 @@ export default function InfoScreen() {
     sources: customSources,
     items: customItems,
     errors: customErrors,
+    isRefetching: customIsRefetching,
     addSource,
     removeSource,
     refetchCustom,
@@ -119,8 +126,9 @@ export default function InfoScreen() {
     excludeKind: onlyPower ? 'other' : undefined,
     ukraineWide: ukraineWide || undefined,
     limit: 50,
+    // «Спасіння квот D1»: тумблер повністю вимикає серверні запити стрічки.
+    enabled: !newsDisabled,
   });
-  const { data: sourcesData } = useNewsSources();
 
   const items = data?.data ?? [];
 
@@ -132,16 +140,13 @@ export default function InfoScreen() {
     excludeKind: onlyPower ? 'other' : undefined,
     ukraineWide: true,
     limit: 50,
-    enabled: useUkraineFallback,
+    enabled: !newsDisabled && useUkraineFallback,
   });
-
-  const sources = sourcesData?.data ?? [];
-  const failedSources = sources.filter((source) => Boolean(source.lastError));
-  const checkedAt = latestIso(sources.map((source) => source.lastPolledAt));
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase('uk-UA');
     // Власні джерела користувача підмішуються в ту саму стрічку (kind 'other').
+    // Коли новини вимкнено, серверна частина порожня — лишається лише customItems.
     const source = [
       ...(items.length > 0 ? items : (fallbackData?.data ?? [])),
       ...customItems,
@@ -157,7 +162,7 @@ export default function InfoScreen() {
     );
   }, [items, fallbackData, onlyPower, query, customItems]);
 
-  const refreshing = isRefetching || isLoading || fallbackLoading;
+  const refreshing = newsDisabled ? customIsRefetching : isRefetching || isLoading || fallbackLoading;
   const stale = data?.meta?.stale === true;
 
   // Джерела, чий останній фетч впав — показуємо одним рядком-попередженням.
@@ -200,6 +205,11 @@ export default function InfoScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => {
+                // Новини вимкнено — тягнути сервер немає сенсу, оновлюємо лише власні джерела.
+                if (newsDisabled) {
+                  refetchCustom();
+                  return;
+                }
                 void refetch();
                 refetchCustom();
               }}
@@ -224,32 +234,59 @@ export default function InfoScreen() {
           />
 
           {/* ── Мої джерела ────────────────────────────────────────── */}
-          {(customSources.length > 0 || showAddSource) && (
-            <View
-              className="gap-3 rounded-3xl p-4"
-              style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
-            >
-              <View className="flex-row items-center gap-2">
-                <Text className="text-sm font-bold text-foreground">Мої джерела</Text>
-                {customSources.length > 0 && (
-                  <Text className="text-[11px] text-muted-foreground">
-                    {customSources.length} {pluralSources(customSources.length)}
+          {/* Карточка всегда видима: с нулём источников это единственная точка входа в фичу. */}
+          <View
+            className="gap-3 rounded-3xl p-4"
+            style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
+          >
+            <View className="flex-row items-center gap-2">
+              <Text className="text-sm font-bold text-foreground">Мої джерела</Text>
+              {customSources.length > 0 && (
+                <Text className="text-[11px] text-muted-foreground">
+                  {customSources.length} {pluralSources(customSources.length)}
+                </Text>
+              )}
+              <View className="flex-1" />
+              <Pressable
+                onPress={() => {
+                  setSourceError(null);
+                  setShowAddSource((value) => !value);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Додати джерело"
+                className="h-7 w-7 items-center justify-center rounded-full active:opacity-70"
+                style={{ backgroundColor: palette.surfaceContainerHigh }}
+              >
+                <Ionicons name="add" size={16} color={palette.foreground} />
+              </Pressable>
+            </View>
+
+            {/* Пустое состояние: приглашение вместо скрытой карточки */}
+            {customSources.length === 0 && !showAddSource && (
+              <View className="gap-2">
+                <View className="flex-row items-center gap-2">
+                  <Ionicons name="paper-plane-outline" size={13} color={palette.primary} />
+                  <Text className="flex-1 text-[11px] leading-snug text-muted-foreground">
+                    Telegram-канал свого облэнерго, місцевий паблик або RSS — пости читаються прямо
+                    з телефону, сервер не витрачає квоту бази.
                   </Text>
-                )}
-                <View className="flex-1" />
+                </View>
                 <Pressable
                   onPress={() => {
                     setSourceError(null);
-                    setShowAddSource((value) => !value);
+                    setShowAddSource(true);
                   }}
                   accessibilityRole="button"
                   accessibilityLabel="Додати джерело"
-                  className="h-7 w-7 items-center justify-center rounded-full active:opacity-70"
-                  style={{ backgroundColor: palette.surfaceContainerHigh }}
+                  className="self-start rounded-full px-3.5 py-1.5 active:opacity-80"
+                  style={{ backgroundColor: palette.primaryContainer }}
                 >
-                  <Ionicons name="add" size={16} color={palette.foreground} />
+                  <Text className="text-xs font-bold" style={{ color: palette.primary }}>
+                    Додати джерело
+                  </Text>
                 </Pressable>
               </View>
+            )}
 
               {/* Інлайн-форма додавання */}
               {showAddSource && (
@@ -332,12 +369,13 @@ export default function InfoScreen() {
                 </View>
               )}
 
-              <Text className="text-[11px] leading-relaxed text-muted-foreground">
-                Підтримуються RSS/Atom-стрічки та публічні Telegram-канали. Джерела читаються прямо з
-                телефону.
-              </Text>
-            </View>
-          )}
+              {customSources.length > 0 && (
+                <Text className="text-[11px] leading-relaxed text-muted-foreground">
+                  Підтримуються RSS/Atom-стрічки та публічні Telegram-канали. Джерела читаються прямо
+                  з телефону.
+                </Text>
+              )}
+          </View>
 
           {/* ── Новини ─────────────────────────────────────────────── */}
           <View className="gap-3">
@@ -416,21 +454,36 @@ export default function InfoScreen() {
               />
             </View>
 
-            {/* Стан збору: коли перевіряли джерела й хто з них зламався */}
-            {sources.length > 0 && (
-              <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
-                <Text className="text-[11px] text-muted-foreground">
-                  Джерел: {sources.length} · Перевірено {formatTime(checkedAt)}
-                </Text>
-                {failedSources.length > 0 && (
-                  <Text className="text-[11px] font-semibold" style={{ color: palette.destructive }}>
-                    Не відповідає: {failedSources.map((source) => sourceLabel(source.sourceKey)).join(', ')}
-                  </Text>
-                )}
-              </View>
-            )}
+            {/* Стан збору: коли перевіряли джерела й хто з них зламався.
+                Окремий компонент з власним useNewsSources — у режимі «новини вимкнено»
+                він не монтується, тож серверний запит джерел не летить узагалі. */}
+            {!newsDisabled && <ServerSourcesRow palette={palette} />}
 
-            {isError ? (
+            {newsDisabled ? (
+              <>
+                <StateCard
+                  icon="eye-off-outline"
+                  title="Новини вимкнено"
+                  subtitle="Увімкніть стрічку в налаштуваннях або додайте власні джерела — вони читаються без сервера"
+                  palette={palette}
+                />
+                {filtered.length > 0 && (
+                  <View className="gap-2.5">
+                    {filtered.map((item) => (
+                      <NewsCard
+                        key={item.contentHash}
+                        item={item}
+                        palette={palette}
+                        expanded={expandedId === item.contentHash}
+                        onToggle={() =>
+                          setExpandedId((current) => (current === item.contentHash ? null : item.contentHash))
+                        }
+                      />
+                    ))}
+                  </View>
+                )}
+              </>
+            ) : isError ? (
               <StateCard
                 icon="cloud-offline-outline"
                 title="Новини не завантажилися"
@@ -492,6 +545,33 @@ export default function InfoScreen() {
         </ScrollView>
       </SafeAreaView>
     </SwipeableScreen>
+  );
+}
+
+/**
+ * Стан серверного збору: скільки джерел, коли перевіряли, хто не відповідає.
+ * Виклик useNewsSources живе тут, а не в InfoScreen: компонент монтується лише коли
+ * серверні новини увімкнені, тому тумблер «Вимкнути новини» прибирає і цей запит.
+ */
+function ServerSourcesRow({ palette }: { palette: Palette }) {
+  const { data: sourcesData } = useNewsSources();
+  const sources = sourcesData?.data ?? [];
+  if (sources.length === 0) return null;
+
+  const failedSources = sources.filter((source) => Boolean(source.lastError));
+  const checkedAt = latestIso(sources.map((source) => source.lastPolledAt));
+
+  return (
+    <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+      <Text className="text-[11px] text-muted-foreground">
+        Джерел: {sources.length} · Перевірено {formatTime(checkedAt)}
+      </Text>
+      {failedSources.length > 0 && (
+        <Text className="text-[11px] font-semibold" style={{ color: palette.destructive }}>
+          Не відповідає: {failedSources.map((source) => sourceLabel(source.sourceKey)).join(', ')}
+        </Text>
+      )}
+    </View>
   );
 }
 

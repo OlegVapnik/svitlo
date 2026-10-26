@@ -4,14 +4,18 @@ import { storage } from '@svitlo/core';
 
 const LIVE_KEY = 'mobile.liveNotification';
 const EARLY_KEY = 'mobile.earlyLightDetector';
+const NEWS_DISABLED_KEY = 'mobile.newsDisabled';
 
 interface SettingsContextValue {
   /** Постоянный индикатор сети в шторке уведомлений. */
   liveNotification: boolean;
   /** Детектор «світло з'явилося раніше графіка» по зарядке. */
   earlyLightDetector: boolean;
+  /** Повне вимкнення серверних запитів стрічки новин (економія квоти D1). */
+  newsDisabled: boolean;
   setLiveNotification: (value: boolean) => void;
   setEarlyLightDetector: (value: boolean) => void;
+  setNewsDisabled: (value: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -33,6 +37,7 @@ function readBool(key: string, fallback: boolean): boolean {
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [liveNotification, setLiveState] = useState(() => readBool(LIVE_KEY, false));
   const [earlyLightDetector, setEarlyState] = useState(() => readBool(EARLY_KEY, true));
+  const [newsDisabled, setNewsState] = useState(() => readBool(NEWS_DISABLED_KEY, false));
 
   const setLiveNotification = useCallback((value: boolean) => {
     setLiveState(value);
@@ -52,9 +57,25 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setNewsDisabled = useCallback((value: boolean) => {
+    setNewsState(value);
+    try {
+      storage.setItem(NEWS_DISABLED_KEY, value ? 'true' : 'false');
+    } catch {
+      /* см. выше */
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ liveNotification, earlyLightDetector, setLiveNotification, setEarlyLightDetector }),
-    [liveNotification, earlyLightDetector, setLiveNotification, setEarlyLightDetector],
+    () => ({
+      liveNotification,
+      earlyLightDetector,
+      newsDisabled,
+      setLiveNotification,
+      setEarlyLightDetector,
+      setNewsDisabled,
+    }),
+    [liveNotification, earlyLightDetector, newsDisabled, setLiveNotification, setEarlyLightDetector, setNewsDisabled],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
