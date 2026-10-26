@@ -36,7 +36,10 @@ export interface LiveNotificationPayload {
   body: string;
   /** Тон состояния: изумруд / янтарь / рубин / графит. */
   color: string;
-  /** 0…100 прогресс текущего слота; null — прогресс неизвестен. */
+  /**
+   * Прогресс текущего слота 0…100. Минималистичный свёрнутый вид прогресс-бар больше не
+   * показывает — поле оставлено для совместимости с `useLiveNotification` и игнорируется.
+   */
   progress: number | null;
   /** Конец слота (мс): по нему ОС сама тикает обратный отсчёт. */
   endsAtMs: number | null;
@@ -144,13 +147,18 @@ const NOTIFICATION_ACTIONS = [
  * картинки, но с текстом и действиями.
  *
  * `showChronometer` + `chronometerDirection: 'down'` — секунды тикает сама ОС, без JS-таймера
- * и без расхода батареи. Прогресс обновляется, когда экран пересчитывает состояние (раз в 30 с).
+ * и без расхода батареи. Текст и картинка обновляются, когда экран пересчитывает состояние.
  */
 export async function showLiveNotification(payload: LiveNotificationPayload): Promise<void> {
+  // Свёрнутый вид собирает тот же билдер, что и картинку: короткий статус в заголовке и одна
+  // строка деталей. Номер очереди appended в тело — Notifee не умеет subText в свёрнутом виде.
+  const title = payload.banner?.collapsed?.title ?? payload.title;
+  const body = payload.banner?.collapsed?.body ?? payload.body;
+
   if (!IS_ANDROID) {
     // На iOS постоянных уведомлений нет: показываем актуальный статус обычной плашкой.
     // Идентификатор один и тот же — новое уведомление заменяет предыдущее, а не копится.
-    await showIosNotification('svitlo-live', payload.title, payload.body, false);
+    await showIosNotification('svitlo-live', title, body, false);
     return;
   }
 
@@ -172,14 +180,6 @@ export async function showLiveNotification(payload: LiveNotificationPayload): Pr
 
   if (picture) {
     android.style = { type: AndroidStyle.BIGPICTURE, picture };
-  }
-
-  if (payload.progress != null) {
-    android.progress = {
-      max: 100,
-      current: Math.max(0, Math.min(100, Math.round(payload.progress))),
-      indeterminate: false,
-    };
   }
 
   if (payload.endsAtMs != null) {

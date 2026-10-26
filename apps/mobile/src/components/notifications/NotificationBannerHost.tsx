@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Text, View } from 'react-native';
 import { captureRef } from 'react-native-view-shot';
-import Svg, { Circle, Defs, Line, Pattern, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Rect } from 'react-native-svg';
 
 import { formatMinutesUk } from '@svitlo/core/lib/scheduleWindow';
 
-import { StatusPill } from '@/components/ui/StatusPill';
 import { setBannerRenderer, type NotificationBanner } from '@/lib/notification-banner';
 import { useTheme, type PowerState } from '@/theme/ThemeProvider';
 
-/** Логический размер карточки: снимок делается в 3× (1080×570), текст не мылится. */
+/** Логический размер карточки: снимок делается в 3× (1080×780), текст не мылится. */
 const CARD_WIDTH = 360;
-const CARD_HEIGHT = 190;
+const CARD_HEIGHT = 260;
 const CAPTURE_SCALE = 3;
 
 const TIMELINE_WIDTH = CARD_WIDTH - 32;
-const TIMELINE_HEIGHT = 22;
-const SLOT_GAP = 1;
+const TIMELINE_HEIGHT = 16;
+
+/** Минимальная палитра плашки: зелёный / красный / серый — как в макете. */
+const ACCENT: Record<PowerState, { color: string; soft: string }> = {
+  on: { color: '#10B981', soft: 'rgba(16,185,129,0.14)' },
+  warning: { color: '#10B981', soft: 'rgba(16,185,129,0.14)' },
+  allClear: { color: '#10B981', soft: 'rgba(16,185,129,0.14)' },
+  off: { color: '#F43F5E', soft: 'rgba(244,63,94,0.14)' },
+  unknown: { color: '#71717A', soft: 'rgba(113,113,122,0.16)' },
+};
 
 /**
  * Плашка для шторки: скрытая карточка + снимок по требованию.
@@ -53,7 +60,7 @@ export function NotificationBannerHost() {
     let cancelled = false;
 
     const shoot = async () => {
-      // Два кадра: первый раскладывает карточку, второй дорисовывает SVG-градиент и шкалу.
+      // Два кадра: первый раскладывает карточку, второй дорисовывает SVG-шкалу.
       // В фоне requestAnimationFrame не тикает, поэтому ждём ещё и таймер: без него промис
       // завис бы и уведомление вообще не обновилось.
       await Promise.race([
@@ -99,11 +106,17 @@ export function NotificationBannerHost() {
   );
 }
 
-
-/** Карточка 1:1 с Hero-секцией главного экрана, но без интерактива. */
+/** Карточка по макету: шапка «Svitlo», крупный таймер, сплошная шкала суток и кнопки. */
 function BannerCard({ banner }: { banner: NotificationBanner }) {
   const { palette } = useTheme();
-  const tone = palette.status[banner.state];
+  const accent = ACCENT[banner.state];
+  const chipText = banner.queue ? `${banner.pill} · Черга ${banner.queue}` : banner.pill;
+  const summaryText =
+    banner.offMinutes > 0
+      ? `Без світла за добу: ${formatMinutesUk(banner.offMinutes)}${
+          banner.offRanges.length > 0 ? ` · ${banner.offRanges.join(', ')}` : ''
+        }`
+      : 'Без світла за добу: 0 хв';
 
   return (
     <View
@@ -111,126 +124,182 @@ function BannerCard({ banner }: { banner: NotificationBanner }) {
         width: CARD_WIDTH,
         height: CARD_HEIGHT,
         backgroundColor: palette.card,
-        borderColor: palette.hairline,
-        borderWidth: 1,
         borderRadius: 20,
         padding: 16,
         overflow: 'hidden',
       }}
     >
-      {/* Свечение тона состояния в правом верхнем углу — как у Hero-карточки. */}
-      <View pointerEvents="none" style={{ position: 'absolute', right: -50, top: -70 }}>
-        <Svg width={260} height={260}>
-          <Defs>
-            <RadialGradient id="banner-glow" cx="50%" cy="50%" r="50%">
-              <Stop offset="0" stopColor={tone.color} stopOpacity={0.22} />
-              <Stop offset="1" stopColor={tone.color} stopOpacity={0} />
-            </RadialGradient>
-          </Defs>
-          <Circle cx={130} cy={130} r={130} fill="url(#banner-glow)" />
-        </Svg>
-      </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <StatusPill state={banner.state} label={banner.pill} pulse={banner.state === 'on'} />
-        <Text
+      {/* Шапка: зелёный круг с молнией, «Svitlo» и текущее время; справа — чип очереди. */}
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View
           style={{
-            color: palette.mutedForeground,
-            fontSize: 10,
-            fontWeight: '700',
-            letterSpacing: 1.4,
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            backgroundColor: '#10B981',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          {banner.queue ? `ЧЕРГА ${banner.queue}` : 'ЧЕРГА НЕ ВИБРАНА'}
+          <Text style={{ color: '#ffffff', fontSize: 15 }}>⚡</Text>
+        </View>
+        <Text
+          style={{
+            marginLeft: 8,
+            color: palette.foreground,
+            fontSize: 14,
+            fontWeight: '700',
+          }}
+        >
+          Svitlo
+        </Text>
+        {banner.clockTime ? (
+          <Text style={{ color: palette.mutedForeground, fontSize: 14 }}>
+            {` · ${banner.clockTime}`}
+          </Text>
+        ) : null}
+        <View style={{ flex: 1 }} />
+        <View
+          style={{
+            backgroundColor: accent.soft,
+            borderRadius: 999,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: accent.color, fontSize: 11, fontWeight: '600' }} numberOfLines={1}>
+            {chipText}
+          </Text>
+        </View>
+      </View>
+
+      {/* Статусная строка: точка состояния + короткий статус цветом акцента. */}
+      <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View
+          style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: accent.color }}
+        />
+        <Text style={{ color: accent.color, fontSize: 13, fontWeight: '700' }}>
+          {banner.headline}
         </Text>
       </View>
 
+      {/* Главное число: крупный таймер либо (без таймера) состояние. */}
       <Text
         numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.55}
         style={{
-          marginTop: 8,
-          color: tone.text,
-          fontSize: 22,
-          fontWeight: '800',
-          letterSpacing: -0.4,
+          marginTop: 2,
+          color: palette.foreground,
+          fontSize: 40,
+          fontWeight: '900',
+          lineHeight: 42,
         }}
       >
-        {banner.headline}
+        {banner.timer ? banner.timer.value : banner.headline}
       </Text>
-
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 12,
-        }}
-      >
-        <Text numberOfLines={1} style={{ flex: 1, color: palette.mutedForeground, fontSize: 11 }}>
-          {banner.detail}
+      {banner.timer ? (
+        <Text style={{ marginTop: 1, color: palette.mutedForeground, fontSize: 12, lineHeight: 15 }}>
+          {banner.event
+            ? `${banner.timer.prefix} · ${banner.event.verb} `
+            : banner.timer.prefix}
+          {banner.event ? (
+            <Text style={{ color: palette.foreground, fontWeight: '700' }}>
+              {banner.event.time}
+            </Text>
+          ) : null}
         </Text>
-        {banner.timer ? (
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            <Text
-              style={{
-                color: palette.mutedForeground,
-                fontSize: 9,
-                fontWeight: '700',
-                letterSpacing: 1,
-                textTransform: 'uppercase',
-              }}
-            >
-              {banner.timer.prefix}
-            </Text>
-            <Text style={{ color: tone.text, fontSize: 16, fontWeight: '800' }}>
-              {banner.timer.value}
-            </Text>
-          </View>
-        ) : null}
+      ) : null}
+
+      {/* Шкала суток: сплошная зелёная лента, красные блоки отключений, белый маркер «зараз». */}
+      <View style={{ marginTop: 10 }}>
+        <BannerTimeline slots={banner.slots} marker={banner.nowFraction} />
+        <View
+          style={{
+            marginTop: 3,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text style={{ color: palette.mutedForeground, fontSize: 10, lineHeight: 12 }}>00:00</Text>
+          <Text
+            style={{
+              color: palette.mutedForeground,
+              fontSize: 10,
+              lineHeight: 12,
+              position: 'absolute',
+              left: '50%',
+              transform: [{ translateX: -50 }],
+            }}
+          >
+            12:00
+          </Text>
+          <Text style={{ color: palette.mutedForeground, fontSize: 10, lineHeight: 12 }}>24:00</Text>
+        </View>
+      </View>
+
+      {/* Сводка за добу: красный маркер + минуты и диапазоны отключений. */}
+      <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: '#F43F5E' }} />
+        <Text
+          numberOfLines={1}
+          style={{ flex: 1, color: palette.mutedForeground, fontSize: 11, lineHeight: 14 }}
+        >
+          {summaryText}
+        </Text>
       </View>
 
       <View style={{ flex: 1 }} />
 
-      <BannerTimeline slots={banner.slots} marker={banner.nowFraction} state={banner.state} />
-
-      <View
-        style={{
-          marginTop: 7,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Text style={{ color: '#71717a', fontSize: 9, fontWeight: '600' }}>
-          {banner.offMinutes > 0
-            ? `Без світла за добу: ${formatMinutesUk(banner.offMinutes)}`
-            : `Графік на ${banner.date}`}
-        </Text>
-        <Text style={{ color: '#71717a', fontSize: 9, fontWeight: '700' }}>
-          00:00 · 12:00 · 24:00
-        </Text>
+      {/* Кнопки — часть картинки (декоративные): реальные действия дают системные кнопки. */}
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View
+          style={{
+            flex: 1,
+            height: 44,
+            borderRadius: 999,
+            backgroundColor: '#10B981',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ color: '#05231a', fontSize: 14, fontWeight: '700' }}>
+            Поділитися графіком
+          </Text>
+        </View>
+        <View
+          style={{
+            flex: 1,
+            height: 44,
+            borderRadius: 999,
+            backgroundColor: '#1f1f27',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ color: palette.foreground, fontSize: 14, fontWeight: '600' }}>
+            Оновити
+          </Text>
+        </View>
       </View>
     </View>
   );
 }
 
 /**
- * 24-часовая шкала плашки: 48 получасовых сегментов, красные — со штриховкой, белая засечка —
- * текущая минута. Та же грамматика, что у `Timeline24h` главного экрана.
+ * 24-часовая шкала плашки: сплошная лента без зазоров — зелёный «світло є» (можливе отключение
+ * тоже зелёный: янтарного в плашке больше нет), отключения — сплошной красный, белый маркер —
+ * текущая минута.
  */
 function BannerTimeline({
   slots,
   marker,
-  state,
 }: {
   slots: (number | null)[];
   marker: number | null;
-  state: PowerState;
 }) {
-  const innerWidth = TIMELINE_WIDTH - 8;
-  const innerHeight = TIMELINE_HEIGHT - 8;
-  const slotWidth = (innerWidth - SLOT_GAP * (slots.length - 1)) / Math.max(1, slots.length);
-  const markerX = marker == null ? null : Math.max(0, Math.min(1, marker)) * innerWidth;
+  const slotWidth = TIMELINE_WIDTH / Math.max(1, slots.length);
+  const markerX = marker == null ? null : Math.max(0, Math.min(1, marker)) * TIMELINE_WIDTH;
 
   return (
     <View
@@ -238,99 +307,49 @@ function BannerTimeline({
         width: TIMELINE_WIDTH,
         height: TIMELINE_HEIGHT,
         backgroundColor: '#0e0e12',
-        borderColor: 'rgba(255,255,255,0.06)',
-        borderWidth: 1,
-        borderRadius: 8,
+        borderRadius: 999,
         overflow: 'hidden',
       }}
     >
       <Svg
-        width={innerWidth}
-        height={innerHeight}
-        viewBox={`0 0 ${innerWidth} ${innerHeight}`}
+        width={TIMELINE_WIDTH}
+        height={TIMELINE_HEIGHT}
+        viewBox={`0 0 ${TIMELINE_WIDTH} ${TIMELINE_HEIGHT}`}
         preserveAspectRatio="none"
-        style={{ position: 'absolute', left: 4, top: 4 }}
       >
-        <Defs>
-          <Pattern
-            id="banner-hatch"
-            width={5}
-            height={5}
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
-          >
-            <Line
-              x1={0}
-              y1={0}
-              x2={0}
-              y2={5}
-              stroke="rgba(255,228,230,0.34)"
-              strokeWidth={1.6}
-              strokeLinecap="round"
-            />
-          </Pattern>
-        </Defs>
-
         {slots.map((code, index) => (
           <Rect
             key={`slot-${index}`}
-            x={index * (slotWidth + SLOT_GAP)}
+            x={index * slotWidth}
             y={0}
-            width={slotWidth}
-            height={innerHeight}
-            rx={1.5}
-            fill={
-              code === 3
-                ? 'rgba(244,63,94,0.34)'
-                : code === 2
-                  ? 'rgba(245,158,11,0.26)'
-                  : code === 1
-                    ? 'rgba(16,185,129,0.24)'
-                    : '#1b1b22'
-            }
+            width={slotWidth + 0.5}
+            height={TIMELINE_HEIGHT}
+            rx={0}
+            fill={code === 3 ? '#F43F5E' : code === 1 || code === 2 ? '#10B981' : '#1b1b22'}
           />
         ))}
 
-        {slots.map((code, index) =>
-          code === 3 ? (
-            <Rect
-              key={`hatch-${index}`}
-              x={index * (slotWidth + SLOT_GAP)}
-              y={0}
-              width={slotWidth}
-              height={innerHeight}
-              rx={1.5}
-              fill="url(#banner-hatch)"
-            />
-          ) : null,
-        )}
-
         {markerX != null ? (
           <>
-            <Rect x={markerX - 4} y={0} width={8} height={innerHeight} fill="#ffffff" opacity={0.16} />
-            <Rect x={markerX - 1} y={0} width={2} height={innerHeight} fill="#ffffff" />
+            <Rect
+              x={markerX - 3.5}
+              y={0}
+              width={7}
+              height={TIMELINE_HEIGHT}
+              fill="#ffffff"
+              opacity={0.25}
+            />
+            <Rect
+              x={markerX - 1.5}
+              y={0}
+              width={3}
+              height={TIMELINE_HEIGHT}
+              rx={1.5}
+              fill="#ffffff"
+            />
           </>
         ) : null}
-
-        {/* Тон состояния — тонкая полоса-подпись под шкалой, чтобы цвет читался и без текста. */}
-        <Rect x={0} y={innerHeight - 1.5} width={innerWidth} height={1.5} fill={accentFor(state)} opacity={0.5} />
       </Svg>
     </View>
   );
 }
-
-/** Тот же цвет, что у уведомления: шкала не спорит с акцентом шторки. */
-function accentFor(state: PowerState): string {
-  switch (state) {
-    case 'on':
-    case 'allClear':
-      return '#10B981';
-    case 'warning':
-      return '#F59E0B';
-    case 'off':
-      return '#F43F5E';
-    default:
-      return '#71717A';
-  }
-}
-
