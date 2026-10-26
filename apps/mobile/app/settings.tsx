@@ -20,7 +20,7 @@ import { useTheme, type Palette } from '@/theme/ThemeProvider';
 export default function SettingsScreen() {
   const { palette } = useTheme();
   const router = useRouter();
-  const { mascotEnabled, setMascotEnabled, liveNotification, setLiveNotification, earlyLightDetector, setEarlyLightDetector } =
+  const { liveNotification, setLiveNotification, earlyLightDetector, setEarlyLightDetector } =
     useSettings();
   const { pending, openSheet } = useUpdates();
 
@@ -43,22 +43,6 @@ export default function SettingsScreen() {
             <Ionicons name="arrow-back" size={16} color={palette.mutedForeground} />
           </Pressable>
           <Text className="text-2xl font-bold tracking-tight text-foreground">Налаштування</Text>
-        </View>
-
-        {/* ── Персонаж ─────────────────────────────────────────────── */}
-        <View
-          className="gap-3 rounded-3xl p-4"
-          style={{ backgroundColor: palette.card, borderColor: palette.hairline, borderWidth: 1 }}
-        >
-          <Text className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Персонаж</Text>
-
-          <SettingsRow
-            label="Маскот на головній"
-            caption="Анімована персонажка на головному екрані"
-            value={mascotEnabled}
-            onValueChange={setMascotEnabled}
-            palette={palette}
-          />
         </View>
 
         {/* ── Повідомлення ─────────────────────────────────────────── */}

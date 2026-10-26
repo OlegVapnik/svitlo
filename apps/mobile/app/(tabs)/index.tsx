@@ -14,7 +14,6 @@ import { formatMinutesUk, minutesOfDay, minutesToHm, slotProgress } from '@svitl
 
 import { AccidentBanner } from '@/components/home/AccidentBanner';
 import { HeroStatus } from '@/components/home/HeroStatus';
-import { Mascot } from '@/components/mascot/Mascot';
 import { placeIconEmoji } from '@/components/places/PlaceIcon';
 import { SavedPlacesCarousel } from '@/components/places/SavedPlacesCarousel';
 import { Timeline24h } from '@/components/schedule/Timeline24h';
@@ -44,7 +43,7 @@ export default function HomeScreen() {
   const { currentRegion, currentRegionData } = useRegion();
   const { palette } = useTheme();
   const { selectedQueue, selectQueue } = useRegionQueue(currentRegion, currentRegionData.queues ?? []);
-  const { liveNotification, earlyLightDetector, mascotEnabled } = useSettings();
+  const { liveNotification, earlyLightDetector } = useSettings();
   const today = useMemo(() => kyivDateOffsetKey(0), []);
   const now = useMinuteTicker();
   const tomorrow = useMemo(() => kyivDateOffsetKey(1), []);
@@ -548,9 +547,6 @@ export default function HomeScreen() {
             covered={currentRegionData.covered}
             onSelect={selectQueue}
           />
-
-          {/* 6) Маскотка: лежить унизу головного екрана */}
-          {mascotEnabled ? <Mascot mood="sleep" powerState={state} /> : null}
         </ScrollView>
       </SafeAreaView>
     </SwipeableScreen>
