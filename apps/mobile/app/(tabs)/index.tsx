@@ -21,6 +21,7 @@ import { QueueGrid } from '@/components/home/QueueGrid';
 import { ScreenHeader } from '@/components/navigation/ScreenHeader';
 import { useRegion } from '@/context/RegionContext';
 import { useSettings } from '@/context/SettingsContext';
+import { useUpdates } from '@/context/UpdateContext';
 import { useApplySavedPlace } from '@/hooks/useApplySavedPlace';
 import { useEarlyPowerDetector } from '@/hooks/useEarlyPowerDetector';
 import { useHomeWidget } from '@/hooks/useHomeWidget';
@@ -44,6 +45,7 @@ export default function HomeScreen() {
   const { palette } = useTheme();
   const { selectedQueue, selectQueue } = useRegionQueue(currentRegion, currentRegionData.queues ?? []);
   const { liveNotification, earlyLightDetector } = useSettings();
+  const { pending } = useUpdates();
   const today = useMemo(() => kyivDateOffsetKey(0), []);
   const now = useMinuteTicker();
   const tomorrow = useMemo(() => kyivDateOffsetKey(1), []);
@@ -414,6 +416,31 @@ export default function HomeScreen() {
 
           {/* 2) Мої місця с индикаторами состояния */}
           <SavedPlacesCarousel selectedQueue={selectedQueue} placesStatusMap={placesStatusMap} />
+
+          {/* Компактный баннер доступного обновления: ведёт в карточку на «Налаштуваннях» */}
+          {pending ? (
+            <Animated.View
+              entering={FadeIn.duration(200)}
+              className="flex-row items-center gap-2.5 rounded-2xl border p-3"
+              style={{ backgroundColor: 'rgba(16, 185, 129, 0.10)', borderColor: 'rgba(16, 185, 129, 0.35)' }}
+            >
+              <Ionicons name="download-outline" size={18} color="#10B981" />
+              <Text className="flex-1 text-xs font-semibold text-foreground">
+                Доступне оновлення v{pending.version}
+              </Text>
+              <Pressable
+                onPress={() => router.push('/settings')}
+                accessibilityRole="button"
+                accessibilityLabel="Оновити застосунок"
+                className="rounded-full px-3 py-1.5 active:opacity-80"
+                style={{ backgroundColor: '#10B981' }}
+              >
+                <Text className="text-xs font-bold" style={{ color: '#05231a' }}>
+                  Оновити
+                </Text>
+              </Pressable>
+            </Animated.View>
+          ) : null}
 
           <AccidentBanner outages={outages} loading={outagesQuery.isLoading} />
 

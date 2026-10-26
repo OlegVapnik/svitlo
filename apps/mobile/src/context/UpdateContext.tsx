@@ -29,6 +29,13 @@ export const APP_VERSION: string =
 
 export type UpdatePhase = 'idle' | 'downloading' | 'verifying' | 'ready' | 'applying' | 'error';
 
+/**
+ * Ступени многоступенчатого прогресса карточки обновлений (Morphe-стиль):
+ * ожидание → скачивание → сверка SHA-256 → готово к установке.
+ * В отличие от `UpdatePhase` здесь нет `applying`: установка — действие поверх «ready».
+ */
+export type UpdateStage = 'idle' | 'downloading' | 'verifying' | 'ready' | 'error';
+
 /** Обновление, которое ждёт пользователя: тихий JS-бандл или полный APK. */
 export interface PendingUpdate {
   kind: UpdateKind;
@@ -62,9 +69,30 @@ interface UpdateContextValue {
   startDownload: () => void;
   /** Применить: OTA — перезапуск процесса, APK — системный установщик. */
   apply: () => void;
+  /** Метаданные последней сборки с сервера (`/api/v1/version`): apkUrl, releasedAt, размер. */
+  versionMeta: AppVersionInfo | null;
+  /** Ступень карточки обновлений: idle → downloading → verifying → ready (или error). */
+  stage: UpdateStage;
+  /** Прогресс активной ступени в процентах 0…100; `null` — скачивание не идёт. */
+  stageProgress: number | null;
+  /** Какой контур обновления сейчас в работе: тихий бандл или полный APK. */
+  stageKind: UpdateKind | null;
+  /** Текст ошибки ступени; сбрасывается повторным запуском и `clearError()`. */
+  errorMessage: string | null;
+  /** Быстрый OTA: скачать JS-бандл, сверить и применить перезапуском процесса. */
+  startOtaUpdate: () => void;
+  /** Полный APK: скачать с прогрессом и сверить SHA-256; установка — кнопкой на ступени «ready». */
+  startApkUpdate: () => void;
+  /** Сбросить ошибку и вернуть карточку в исходное состояние. */
+  clearError: () => void;
 }
 
 const UpdateContext = createContext<UpdateContextValue | null>(null);
+
+/** Прямая ссылка на APK в GitHub Releases: первичный источник, `versionMeta.apkUrl` — резерв. */
+function githubApkUrl(version: string): string {
+  return `https://github.com/OlegVapnik/svitlo/releases/download/v${version}/svitlo-${version}.apk`;
+}
 
 
 /** Ключ, по которому запоминаем отклонение: новая версия снова покажет капсулу. */
@@ -95,9 +123,13 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
   const [otaVersion, setOtaVersion] = useState<string | null>(null);
   const [otaSize, setOtaSize] = useState<number | null>(null);
   const [otaSha, setOtaSha] = useState<string | null>(null);
-  const [phase, setPhase] = useState<UpdatePhase>('idle');
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  // Стейт-машина карточки обновлений. Легаси-поля (phase/progress/error) выводятся из неё,
+  // чтобы ChangelogSheet и старые потребители работали без изменений.
+  const [stage, setStage] = useState<UpdateStage>('idle');
+  const [stageKind, setStageKind] = useState<UpdateKind | null>(null);
+  const [stageProgress, setStageProgress] = useState<number | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [apkReady, setApkReady] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
@@ -126,14 +158,11 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       // это откат JS, а не обновление. Равные версии оставляем: JS мог уехать вперёд
       // с тем же versionName APK.
       if (compareVersions(info.version, APP_VERSION) < 0) return;
-      const downloaded = await downloadOtaBundle(info, (fraction) => {
-        if (active && fraction < 1) setProgress(fraction);
-      });
+      const downloaded = await downloadOtaBundle(info);
       if (!active || !downloaded) return;
       setOtaVersion(downloaded);
       setOtaSize(info.sizeBytes ?? null);
       setOtaSha(info.sha256 ?? null);
-      setProgress(0);
     };
     void check();
     const timer = setInterval(() => void check(), 60_000);
@@ -174,28 +203,117 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
     return null;
   }, [apkInfo, apkUpdate, otaSha, otaSize, otaVersion]);
 
-  const startDownload = useCallback(() => {
-    if (!isAndroid || !apkInfo || phase === 'downloading' || phase === 'verifying') return;
-    setError(null);
-    setPhase('downloading');
-    setProgress(0);
+  /**
+   * Перезапуск процесса через нативный `AppRestart`: гасит процесс и поднимает launcher-intent.
+   * Возвращает `false`, если сборка старая и модуля нет — вызывающий код остаётся с честным
+   * «застосується після наступного запуску» вместо ложного «готово».
+   */
+  const restartApp = useCallback((): boolean => {
+    // Два пути к одному модулю: в bridgeless-режиме legacy-модуль может быть виден только
+    // через TurboModuleRegistry (interop layer), а в старом — через NativeModules.
+    type RestartModule = { restart?: () => void };
+    const registry = TurboModuleRegistry as unknown as { get<T>(name: string): T | null };
+    const restart =
+      (NativeModules as { AppRestart?: RestartModule }).AppRestart?.restart ??
+      registry.get<RestartModule>('AppRestart')?.restart;
+    if (typeof restart !== 'function') return false;
+    setApplying(true);
+    setErrorMessage(null);
+    restart();
+    return true;
+  }, []);
+
+  /**
+   * Полный APK: скачать (сначала GitHub Releases, при неудаче — apkUrl из `/api/v1/version`),
+   * сверить SHA-256 на отдельной ступени и остановиться на «ready». Установка — отдельным
+   * действием (`apply`), чтобы человек сам решал, когда открывать системный установщик.
+   */
+  const startApkUpdate = useCallback(() => {
+    if (!isAndroid || !apkInfo || stage === 'downloading' || stage === 'verifying') return;
+    setStageKind('apk');
+    setStage('downloading');
+    setStageProgress(0);
+    setErrorMessage(null);
     void (async () => {
-      const result = await downloadApk(apkInfo, (fraction) => {
-        setProgress(fraction);
-        // После последнего байта начинается сверка SHA-256: 34 МБ хэшируются пару секунд,
-        // и без отдельной фазы интерфейс выглядел бы зависшим на 99 %.
-        setPhase(fraction >= 1 ? 'verifying' : 'downloading');
-      });
+      // После последнего байта начинается сверка SHA-256: 34 МБ хэшируются пару секунд,
+      // и без отдельной фазы интерфейс выглядел бы зависшим на 99 %.
+      const onProgress = (fraction: number) => {
+        setStageProgress(Math.round(fraction * 100));
+        setStage(fraction >= 1 ? 'verifying' : 'downloading');
+      };
+      // Файл в обоих источниках один и тот же — SHA-256 сверяется в обоих случаях.
+      const githubUrl = githubApkUrl(apkInfo.version);
+      let result =
+        githubUrl !== apkInfo.apkUrl ? await downloadApk({ ...apkInfo, apkUrl: githubUrl }, onProgress) : null;
+      if (!result) result = await downloadApk(apkInfo, onProgress);
       if (result) {
         setApkReady(true);
-        setPhase('ready');
-        setProgress(1);
+        setStageProgress(100);
+        setStage('ready');
         return;
       }
-      setPhase('error');
-      setError('Не вдалося завантажити APK. Перевірте зв’язок і спробуйте ще раз.');
+      setStage('error');
+      setErrorMessage('Не вдалося завантажити APK. Перевірте зв’язок і спробуйте ще раз.');
     })();
-  }, [apkInfo, isAndroid, phase]);
+  }, [apkInfo, isAndroid, stage]);
+
+  /** Прежнее имя для шторки «Що нового»: тот же полный APK с прогрессом. */
+  const startDownload = startApkUpdate;
+
+  /**
+   * Быстрый OTA: скачать JS-бандл, дождаться сверки хэша внутри `downloadOtaBundle`
+   * (ступень «verifying») и применить перезапуском процесса. Если бандл уже на диске —
+   * ступени скачивания пропускаются, карточка сразу показывает «готово».
+   */
+  const startOtaUpdate = useCallback(() => {
+    if (!isAndroid || stage === 'downloading' || stage === 'verifying') return;
+    setStageKind('ota');
+    setErrorMessage(null);
+    if (pending?.kind === 'ota') {
+      setStageProgress(100);
+      setStage('ready');
+      if (!restartApp()) {
+        setErrorMessage('Оновлення застосується після наступного запуску застосунку.');
+      }
+      return;
+    }
+    setStage('downloading');
+    setStageProgress(0);
+    void (async () => {
+      const info = await fetchOtaBundleInfo();
+      if (!info || compareVersions(info.version, APP_VERSION) <= 0) {
+        // Нового JS-бандла нет — это не сбой, а «уже актуально»: возвращаем карточку в idle.
+        setStage('idle');
+        setStageProgress(null);
+        setErrorMessage('Швидке OTA недоступне: новіший JS-бандл сервер не публікував.');
+        return;
+      }
+      const version = await downloadOtaBundle(info, (fraction) => {
+        setStageProgress(Math.round(fraction * 100));
+        setStage(fraction >= 1 ? 'verifying' : 'downloading');
+      });
+      if (!version) {
+        setStage('error');
+        setErrorMessage('Не вдалося завантажити OTA-бандл. Перевірте зв’язок і спробуйте ще раз.');
+        return;
+      }
+      setOtaVersion(version);
+      setOtaSize(info.sizeBytes ?? null);
+      setOtaSha(info.sha256 ?? null);
+      setStageProgress(100);
+      setStage('ready');
+      // Применение OTA — это перезапуск: нативный загрузчик подхватит бандл со старта.
+      if (!restartApp()) {
+        setErrorMessage('Оновлення застосується після наступного запуску застосунку.');
+      }
+    })();
+  }, [isAndroid, pending, restartApp, stage]);
+
+  const clearError = useCallback(() => {
+    setErrorMessage(null);
+    setStageProgress(null);
+    setStage((current) => (current === 'error' ? 'idle' : current));
+  }, []);
 
   const apply = useCallback(() => {
     if (!isAndroid || !pending) return;
@@ -205,15 +323,18 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
         startDownload();
         return;
       }
-      setPhase('applying');
-      setError(null);
+      setStageKind('apk');
+      setApplying(true);
+      setErrorMessage(null);
       void installApk(apkPath(apkInfo.version)).then((result) => {
         if (result === 'opened') {
-          setPhase('ready');
+          setApplying(false);
+          setStage('ready');
           return;
         }
-        setPhase('error');
-        setError(
+        setApplying(false);
+        setStage('error');
+        setErrorMessage(
           result === 'unsupported'
             ? 'Ця збірка не вміє ставити APK сама. Завантажте новий APK із сайту й установіть його вручну.'
             : 'Система не відкрила інсталятор. Дозвольте встановлення з цього джерела в налаштуваннях.',
@@ -224,31 +345,23 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
 
     // OTA: путь к бандлу читается один раз при старте процесса, поэтому «застосувати» —
     // это перезапуск. Нативный модуль гасит процесс и поднимает launcher-intent.
-    // Два пути к одному модулю: в bridgeless-режиме legacy-модуль может быть виден только
-    // через TurboModuleRegistry (interop layer), а в старом — через NativeModules.
-    type RestartModule = { restart?: () => void };
-    const registry = TurboModuleRegistry as unknown as { get<T>(name: string): T | null };
-    const restart =
-      (NativeModules as { AppRestart?: RestartModule }).AppRestart?.restart ??
-      registry.get<RestartModule>('AppRestart')?.restart;
-    if (typeof restart === 'function') {
-      setPhase('applying');
-      setError(null);
-      restart();
-      return;
-    }
+    if (restartApp()) return;
     // Старая сборка без нативного модуля: обещать мгновенное применение нельзя, но и молчать
     // о том, что бандл уже на диске, — тоже.
-    setError('Оновлення застосується після наступного запуску застосунку.');
-  }, [apkInfo, apkReady, isAndroid, pending, startDownload]);
+    setErrorMessage('Оновлення застосується після наступного запуску застосунку.');
+  }, [apkInfo, apkReady, isAndroid, pending, restartApp, startDownload]);
+
+  // Легаси-проекция стейт-машины для существующих потребителей (ChangelogSheet и др.).
+  const phase: UpdatePhase = applying ? 'applying' : stage;
+  const legacyProgress = (stageProgress ?? 0) / 100;
 
   const value = useMemo<UpdateContextValue>(
     () => ({
       pending,
       dismissed: Boolean(pending && dismissedKey === pendingKey(pending)),
       phase,
-      progress,
-      error,
+      progress: legacyProgress,
+      error: errorMessage,
       apkReady,
       sheetOpen,
       openSheet: () => setSheetOpen(true),
@@ -258,8 +371,33 @@ export function UpdateProvider({ children }: { children: ReactNode }) {
       },
       startDownload,
       apply,
+      versionMeta: apkInfo,
+      stage,
+      stageProgress,
+      stageKind,
+      errorMessage,
+      startOtaUpdate,
+      startApkUpdate,
+      clearError,
     }),
-    [apply, apkReady, dismissedKey, error, pending, phase, progress, sheetOpen, startDownload],
+    [
+      apkInfo,
+      apkReady,
+      apply,
+      clearError,
+      dismissedKey,
+      errorMessage,
+      legacyProgress,
+      pending,
+      phase,
+      sheetOpen,
+      stage,
+      stageKind,
+      stageProgress,
+      startApkUpdate,
+      startDownload,
+      startOtaUpdate,
+    ],
   );
 
   return <UpdateContext.Provider value={value}>{children}</UpdateContext.Provider>;
