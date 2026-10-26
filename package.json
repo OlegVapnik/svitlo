@@ -1,7 +1,7 @@
 {
   "name": "svitlo",
   "private": true,
-  "version": "2.41.0",
+  "version": "2.41.1",
   "type": "module",
   "scripts": {
     "build": "npm run build --workspace @svitlo/web && npm run build --workspace @svitlo/api",

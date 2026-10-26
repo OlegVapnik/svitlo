@@ -1,8 +1,8 @@
-import notifee, { AndroidImportance, AndroidStyle, AndroidVisibility } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidVisibility } from '@notifee/react-native';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-import { renderNotificationBanner, type NotificationBanner } from '@/lib/notification-banner';
+import type { NotificationBanner } from '@/lib/notification-banner';
 import { notificationIconName } from '@/lib/widget';
 
 export const LIVE_CHANNEL = 'power-status';
@@ -140,18 +140,18 @@ const NOTIFICATION_ACTIONS = [
 ];
 
 /**
- * Постоянная плашка в шторке: статус, графическая карточка, кнопки и системный хронометр.
+ * Постоянная плашка в шторке: статус, кнопки и системный хронометр.
  *
- * Плашка рисуется RN-вёрсткой (`NotificationBannerHost`) и снимается в PNG. Если снимок не
- * удался (например, приложение стартовало фоном), уведомление показывается как обычно — без
- * картинки, но с текстом и действиями.
+ * Развёрнутый BigPicture-снимок карточки убрали: в шторке он выглядел как вставленная
+ * PNG-картинка. Остался системный текст из того же билдера (collapsed title/body) —
+ * `NotificationBanner` больше не рисуется, данные из него идут только в текст и виджеты.
  *
  * `showChronometer` + `chronometerDirection: 'down'` — секунды тикает сама ОС, без JS-таймера
- * и без расхода батареи. Текст и картинка обновляются, когда экран пересчитывает состояние.
+ * и без расхода батареи. Текст обновляется, когда экран пересчитывает состояние.
  */
 export async function showLiveNotification(payload: LiveNotificationPayload): Promise<void> {
-  // Свёрнутый вид собирает тот же билдер, что и картинку: короткий статус в заголовке и одна
-  // строка деталей. Номер очереди appended в тело — Notifee не умеет subText в свёрнутом виде.
+  // Свёрнутый вид собирает билдер баннера: короткий статус в заголовке и одна строка деталей.
+  // Номер очереди appended в тело — Notifee не умеет subText в свёрнутом виде.
   const title = payload.banner?.collapsed?.title ?? payload.title;
   const body = payload.banner?.collapsed?.body ?? payload.body;
 
@@ -163,7 +163,6 @@ export async function showLiveNotification(payload: LiveNotificationPayload): Pr
   }
 
   await ensureChannels();
-  const picture = payload.banner ? await renderNotificationBanner(payload.banner) : null;
 
   const android: Parameters<typeof notifee.displayNotification>[0]['android'] = {
     channelId: LIVE_CHANNEL,
@@ -178,10 +177,6 @@ export async function showLiveNotification(payload: LiveNotificationPayload): Pr
     actions: NOTIFICATION_ACTIONS,
   };
 
-  if (picture) {
-    android.style = { type: AndroidStyle.BIGPICTURE, picture };
-  }
-
   if (payload.endsAtMs != null) {
     android.showChronometer = true;
     android.chronometerDirection = 'down';
@@ -190,8 +185,8 @@ export async function showLiveNotification(payload: LiveNotificationPayload): Pr
 
   await notifee.displayNotification({
     id: 'svitlo-live',
-    title: payload.title,
-    body: payload.body,
+    title,
+    body,
     android,
   });
 }
@@ -230,8 +225,8 @@ export async function notifyEarlyPower(
   }
 
   await ensureChannels();
-  const picture = banner ? await renderNotificationBanner(banner) : null;
 
+  // BigPicture убран по той же причине, что и у живой плашки — см. showLiveNotification.
   const android: Parameters<typeof notifee.displayNotification>[0]['android'] = {
     channelId: ALERT_CHANNEL,
     smallIcon: notificationIconName(),
@@ -241,10 +236,6 @@ export async function notifyEarlyPower(
     visibility: AndroidVisibility.PUBLIC,
     actions: NOTIFICATION_ACTIONS,
   };
-
-  if (picture) {
-    android.style = { type: AndroidStyle.BIGPICTURE, picture };
-  }
 
   await notifee.displayNotification({
     id: 'svitlo-early-power',

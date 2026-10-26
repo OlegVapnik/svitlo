@@ -16,7 +16,6 @@ import { RegionProvider } from '@/context/RegionContext';
 import { SettingsProvider } from '@/context/SettingsContext';
 import { SyncProvider } from '@/context/SyncContext';
 import { UpdateProvider } from '@/context/UpdateContext';
-import { NotificationBannerHost } from '@/components/notifications/NotificationBannerHost';
 import { registerNotificationActions } from '@/lib/notification-actions';
 import { installStorage } from '@/lib/storage';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
@@ -56,8 +55,6 @@ export default function RootLayout() {
               <SyncProvider>
                 <SettingsProvider>
                   <RootNavigator />
-                  {/* Скрытая карточка для шторки: живёт рядом с экранами, но вне их layout. */}
-                  <NotificationBannerHost />
                 </SettingsProvider>
               </SyncProvider>
             </RegionProvider>

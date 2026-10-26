@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-26T00:46:24.098Z",
- "version": "2.41.0",
+ "generatedAt": "2026-10-26T01:04:54.513Z",
+ "version": "2.41.1",
  "note": "Згенеровано tools/gen_changelog.mjs з історії git. Не редагувати вручну.",
  "totalReleases": 2,
  "totalFeatures": 9,
