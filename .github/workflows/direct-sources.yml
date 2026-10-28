@@ -36,7 +36,9 @@ jobs:
           python -m pip install "curl_cffi>=0.10,<0.13"
 
       - name: Unit tests
-        run: python -m unittest discover -s tools/direct_sources -p 'test_*.py' -v
+        # `-t .` — корень репо как top-level, иначе относительные импорты
+        # `from .base import ...` в тестах не резолвятся (ImportError).
+        run: python -m unittest discover -s tools/direct_sources -p 'test_*.py' -t . -v
 
       - name: Sync direct sources
         env:

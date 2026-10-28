@@ -1,0 +1,87 @@
+# CI-гейты миграции (docs/ARCHITECTURE.md §9, ADR-0008).
+# Сейчас: дрейф каталога регионов, границы зависимостей (§5.4), typecheck и тесты
+# воркспейсов и воркера. Гейты contracts/audit/ota добавляются отдельными шагами.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality (lint/typecheck/test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Шаг 1: каталог регионов — производный от packages/shared. Правка воркера руками
+      # или забытая регенерация валят гейт (генератор идемпотентен, см. ADR-0008).
+      - name: Каталог регионов: нет дрейфа с источником
+        if: hashFiles('cf-worker/src/regions.ts') != ''
+        run: pnpm gen:regions && git diff --exit-code
+
+      # Шаг 6: границы зависимостей (§5.4). Запрещённые направления (domain → пакеты,
+      # модуль → index.ts, платформа → модули, web ↔ mobile, клиент → воркер) валят гейт.
+      - name: Границы зависимостей (§5.4)
+        run: pnpm check:boundaries
+
+      - name: Lint (tsc --noEmit)
+        run: pnpm -r --if-present lint
+
+      - name: Typecheck
+        run: pnpm -r --if-present typecheck
+
+      - name: Test
+        run: pnpm -r --if-present test
+
+  worker:
+    name: worker (tsc + node --test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # cf-worker есть в internal-стволе и отсутствует в публичном срезе (ADR-0009).
+    # hashFiles() разрешён только в if шагов — джоба всегда стартует, шаги скользят.
+    defaults:
+      run:
+        working-directory: cf-worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+
+      - name: Install dependencies
+        if: hashFiles('cf-worker/package.json') != ''
+        run: npm ci
+
+      - name: Typecheck
+        if: hashFiles('cf-worker/package.json') != ''
+        run: npx tsc --noEmit
+
+      - name: Test
+        if: hashFiles('cf-worker/package.json') != ''
+        run: node --test tests/*.test.ts
