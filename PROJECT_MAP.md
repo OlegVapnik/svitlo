@@ -21,11 +21,18 @@
   - Виправлено логіку збереження слотів (`replace: true` для запобігання застарілим накладанням) та якір поточної доби в HeroStatus.
   - Додано обробку Telegram Webhook та розширено ендпоінти статусу здоров'я D1.
 
-- **Сбор графиков перешёл на `tools/osr_engine/`**: три транспорта (curl_cffi → Camoufox →
-  Telegram-превью), нормализованные слоты, статусы публикации (`PublicationStatus`),
-  SHA-256 fingerprint-дедуп пушей, state в `.cache/osr_state.json`, systemd-таймер
-  (`tools/osr_engine/systemd/`, каждые 15 мин) + `run-sync.sh`. Боевой ingest 24.10:
-  7 областей, 264 слота, 0 rejected.
+- **Сбор графиков перешёл на `tools/osr_engine/`**: нормализованные слоты, статусы
+  публикации (`PublicationStatus`), SHA-256 fingerprint-дедуп пушей, state в
+  `.cache/osr_state.json`, systemd-таймер (`tools/osr_engine/systemd/`, каждые 15 мин) +
+  `run-sync.sh`. Боевой ingest 24.10: 7 областей, 264 слота, 0 rejected.
+- **Транспорт ОСР переписан на три уровня антидетекта** (29.10, `tools/osr_engine/transport/`,
+  было `transport.py`): Tier 1 `curl_cffi` → `httpx` → `requests` → `urllib`;
+  Tier 2 `patchright` → `playwright`; Tier 3 `camoufox`; распознавание заглушек
+  (`challenge.py`), эскалация по требованию (`escalation.py`), сессии с `cf_clearance`.
+  22 unittest без сети. Установка опциональных пакетов —
+  `tools/osr_engine/requirements-transport.txt`, описание — `docs/OSR-ANTIDETECT.md`.
+- **Защита от отката графика**: ранг джерела (`mirror` 1 < `telegram` 2 < `energy-ua` 3)
+  плюс отказ писать снимок старше 45 минут (`409 STALE_SNAPSHOT`).
 - **Крон-зеркало отключено**: `MIRROR_SYNC_ENABLED="false"` (wrangler.toml:47) —
   `syncMirrorSchedule()` в `scheduled()` больше не выполняется; зеркало
   `dtek-api.svitlo-proxy.workers.dev` мертво (данные от 17.10).
