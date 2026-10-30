@@ -47,11 +47,27 @@ transport/
 ## Встановлення
 
 ```bash
-python3 -m venv ~/.local/share/osr-venv
-~/.local/share/osr-venv/bin/pip install -r tools/osr_engine/requirements-transport.txt
-~/.local/share/osr-venv/bin/patchright install chromium   # Tier 2
-~/.local/share/osr-venv/bin/camoufox fetch                # Tier 3, ~200 МБ
+python3 -m venv ~/.local/share/camoufox-venv
+~/.local/share/camoufox-venv/bin/pip install -r tools/osr_engine/requirements-transport.txt
+~/.local/share/camoufox-venv/bin/patchright install chromium   # Tier 2
+~/.local/share/camoufox-venv/bin/camoufox fetch                # Tier 3, ~200 МБ
+
+# Утиліти зручно викликати без повного шляху
+ln -sf ~/.local/share/camoufox-venv/bin/patchright ~/.local/bin/patchright
+ln -sf ~/.local/share/camoufox-venv/bin/camoufox ~/.local/bin/camoufox
 ```
+
+### Робоче оточення (як задеплоєно зараз)
+
+| Що | Де лежить |
+| --- | --- |
+| Основний venv для збору | `~/.local/share/camoufox-venv` — curl_cffi 0.16.3, httpx 0.28.1, patchright 1.64.2, playwright 1.62.0, camoufox 0.5.8 |
+| Симлінки в PATH | `~/.local/bin/patchright`, `~/.local/bin/camoufox` → бінарники з `camoufox-venv` |
+| Старий venv | `~/.local/share/osr-venv` — пакети ті самі, але PATH на нього не вказує; залишений для сумісності зі старими запусками |
+| Скрипти крона/ручних прогонів | `tools/osr_engine/run-sync.sh` (`PY=/home/oleg/.local/share/camoufox-venv/bin/python`), `tools/direct_sources/reserve-night.sh` |
+
+Нові прогони запускати тільки з `camoufox-venv`: саме цей інтерпретатор бачать
+`run-sync.sh` і `reserve-night.sh`, і саме до нього прив'язані симлінки.
 
 Без цих пакетів движок не падає: `available_backends()` / `available_engines()`
 повертають те, що реально є, а `fetch_with_escalation` тихо працює на нижчому рівні.
@@ -61,10 +77,13 @@ python3 -m venv ~/.local/share/osr-venv
 Перевірка, що рівні піднялися:
 
 ```bash
-~/.local/share/osr-venv/bin/python -c \
+~/.local/share/camoufox-venv/bin/python -c \
   "from tools.osr_engine.transport import backend_names, available_engines; \
    print(backend_names(), available_engines())"
 ```
+
+На задеплоєному оточенні очікуваний вивід —
+`['curl_cffi', 'httpx', 'requests', 'urllib'] ['patchright', 'playwright', 'camoufox']`.
 
 ## Захист від відкату даних назад
 

@@ -3,10 +3,13 @@
 # воркспейсов и воркера. Гейты contracts/audit/ota добавляются отдельными шагами.
 name: CI
 
+# Тільки ручний запуск.
+#
+# Actions на цьому репозиторії не оплачуються, тому кожен автоматичний запуск закінчувався
+# листом «No jobs were run»: workflow є, ранери недоступні. Усі гейти (test, tsc, boundaries,
+# gen:regions, deploy --dry-run) женемо локально й у pre-push, тому автоматичні тригери тут
+# не потрібні — вони лише спамили пошту.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
