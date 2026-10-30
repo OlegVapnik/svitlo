@@ -55,6 +55,7 @@
 | Гейт у скриптах | `pnpm check:versions` |
 | Метадані APK | `apps/api/src/data/version.json` (пише лише `tools/build-android-apk.sh --publish-only`) |
 | Кореневий хеш | `tools/build-android-apk.sh` оновлює `version.json → apk.{url,sha256,size}` після публікації в R2 |
+| GitHub Release | `tools/publish-github-release.sh` (викликається збіркою; `--latest`, ідемпотентний) |
 
 Порядок релізу:
 
@@ -62,13 +63,20 @@
 node tools/sync-version.mjs --set 2.42.0        # версія + versionCode+1 у всіх похідних
 node tools/gen_changelog.mjs                    # чейнджлог із курованих нотаток (без git-хешів)
 pnpm check:versions && pnpm -r test             # гейти
-./tools/build-android-apk.sh                    # APK → R2 + метадані + кореневий version.json
+./tools/build-android-apk.sh                    # APK → R2 + метадані + кореневий version.json + GitHub Release
 ./tools/publish-ota.sh                          # JS-бандл → Pages
 # OTA для GitHub raw: каталог ota/ лежить у публічному репозиторії, а прямий push в origin
 # заборонено ADR-0009. Дозволений обхід — лише для ota/ і лише з --no-verify:
 #   git worktree add /tmp/pub origin/main && cp -r ota /tmp/pub/ && cd /tmp/pub \
 #     && git commit -am "chore(ota): OTA vX.Y.Z" && git push --no-verify origin HEAD:main
 ```
+
+Третій пакет-носій — GitHub Releases. Застосунок качає повний APK саме звідти
+(`releases/download/v{version}/svitlo-{version}.apk`), а `apkUrl` з `/api/v1/version` — лише
+резерв. Крок довго робився руками, і 2.41.1/2.41.2 вийшли в R2 та OTA, але на GitHub чотири дні
+висіла 2.41.0: у людей, які ставили «повний APK», завантаження падало в резервний шлях.
+Тому реліз тепер створює сама збірка, а `--latest` виставляється явно (інакше GitHub позначає
+останнім той, що створено пізніше за часом, а не за версією).
 
 Дві пастки, які вже коштували релізу:
 
