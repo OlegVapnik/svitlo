@@ -35,7 +35,7 @@
   плюс отказ писать снимок старше 45 минут (`409 STALE_SNAPSHOT`).
 - **Крон-зеркало отключено**: `MIRROR_SYNC_ENABLED="false"` (wrangler.toml:47) —
   `syncMirrorSchedule()` в `scheduled()` больше не выполняется; зеркало
-  `dtek-api.svitlo-proxy.workers.dev` мертво (данные от 17.10).
+  зовнішнє дзеркало видалене; джерела лише офіційні.
 - **Виток квоты D1 устранён** (инцидент 24.10, ~833k rows_read за 27 мин ночи):
   причина — `/sync` в `HOT_SNAPSHOT_WARM_PATHS` (полное чтение directory_settlements
   24k + directory_streets 31k на каждый тик). Убран из прогрева; индексы справочников
@@ -233,7 +233,7 @@ ota/                   копия OTA-манифеста и бандлов дл�
 
 | Источник | Роль | Код |
 |---|---|---|
-| Зеркало ДТЕК `https://dtek-api.svitlo-proxy.workers.dev/` | основной источник слотов и покрытия на всю страну | `cf-worker/src/mirror-sync.ts`, `mirror-parser.ts` |
+| Кaskad відкритих джерел (OE_OUTAGE_DATA, outage-data-ua, svitlo.live) + офіційні адаптери | основний шлях слотів і покриття | `cf-worker/src/open-outage-sources.ts` |
 | Telegram-каналы операторов | дополнение там, где зеркало молчит | `cf-worker/src/telegram-schedule.ts` |
 | Energy-UA | парсер готов; из Worker получает 403 Cloudflare Managed Challenge | `cf-worker/src/energy-ua.ts`, `energy-ua-parse.ts`, `ingest.ts` |
 | Прямые ОСР | Черновцы, Одесса, Николаев, Ивано-Франковск, Львов, Ровно и др. | `tools/osr_direct_sync.py`, `tools/osr_sources.py` |

@@ -8,7 +8,7 @@
 
 API Svitlo розширено з монорегіонального режиму (лише Чернігівська область) на мультирегіональний для областей України.
 
-- **Джерело даних:** публічне «дзеркало» ГПВ (Cloudflare Worker над DTEK-подібним API), налаштоване через `MIRROR_SCHEDULE_URL` (типово `https://dtek-api.svitlo-proxy.workers.dev/`).
+- **Джерело даних:** офіційні сайти операторів (прямі адаптери, Browser Run) та відкриті машинні фіди. Мертве «дзеркало» на Cloudflare Worker видалене повністю.
 - **Один запит на всю Україну:** дзеркало повертає єдиний JSON-payload (~220 КБ), який містить дані для всіх доступних областей одночасно.
 - **Цілісний кеш у пам'яті:** отриманий payload кешується цілком у пам'яті процесу на час `MIRROR_SCHEDULE_TTL_SEC` (типово `600` секунд / 10 хвилин). Окремі запити користувачів до різних областей або черг не здійснюють додаткових мережевих запитів до дзеркала.
 - **Ідентифікація областей:** регіони адресуються виключно через mirror `cpu` (ідентифікатор у дзеркалі), наприклад:
@@ -31,7 +31,7 @@ API Svitlo розширено з монорегіонального режиму
 ```bash
 # Увімкнення дзеркала ГПВ
 MIRROR_SCHEDULE_ENABLED=true
-MIRROR_SCHEDULE_URL=https://dtek-api.svitlo-proxy.workers.dev/
+# MIRROR_SCHEDULE_URL видалено: дзеркало більше не використовується.
 
 # Типова область для запитів без ?region=
 MIRROR_SCHEDULE_REGION=chernihivska-oblast
@@ -226,7 +226,7 @@ curl -s "localhost:3001/api/v1/queues?region=dnipro-cek"
 ### Дії оператора при аварії дзеркала:
 - Перевірити доступність worker зовні:
   ```bash
-  curl -sI https://dtek-api.svitlo-proxy.workers.dev/
+  curl -sI https://svitlo-api.olegvapnik45.workers.dev/api/v1/health
   ```
 - Перевірити логи API-сервісу:
   ```bash
