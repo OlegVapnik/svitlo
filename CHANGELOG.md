@@ -130,7 +130,7 @@
 
 ### Додано
 - **OSR Direct Scraper Engine (`tools/osr_engine/`)** — власний модульний конвеєр збору
-  графіків напряму з сайтів операторів: три рівні транспорту (curl_cffi → Camoufox →
+  графіків напряму з сайтів операторів: три рівні транспорту (curl_cffi · Camoufox ·
   Telegram-прев'ю), нормалізований контракт слотів, явні статуси публікації
   (`published / all_clear / not_published / stale / transport_error / parse_error`),
   SHA-256 fingerprint-дедуплікація пушів у D1.
