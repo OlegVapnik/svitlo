@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-11-01T22:50:59.850Z",
-  "version": "2.44.5",
+  "generatedAt": "2026-11-01T23:53:53.741Z",
+  "version": "2.44.6",
   "jsBundle": {
-    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-8e5cbb36d5d547b1.gz",
-    "sha256": "8e5cbb36d5d547b1dc111c6b74994fdbff324366a6f6d2b1081cce8c9a755532",
-    "sizeBytes": 2967153,
-    "version": "2.44.5",
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-aad3c23549b9d50d.gz",
+    "sha256": "aad3c23549b9d50d0e4d8268a6d1292166748419681e426645efedb650edcc68",
+    "sizeBytes": 2966800,
+    "version": "2.44.6",
     "assets": [
       {
         "path": "drawable-mdpi/__node_modules_pnpm_exporouter58029_6940959119adfd32b6a48cab812958cd_node_modules_exporouter_assets_arrow_down.png",
@@ -150,5 +150,5 @@
     ]
   },
   "keyId": "svitlo-ota-2026-1",
-  "signature": "ZWe0P4/M2YRz68mqX3irMggp3xD66r65Zv6ByOvEkEmThysRp6qIQX2hStDq4BbrQgy/MoE3lb0vw9d+vpSNCQ=="
+  "signature": "sRD/+U9v/Tg0Zaj051sz30zL7W7+YNaw8MGhxEVfepFu0tGVE/b9pyMyYWci2gPhIMVwSAGK9IivIJI9o/s3CQ=="
 }
