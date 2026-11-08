@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2×1 «Капсула-Датчик». Редизайн у стилі застосунку: назва місця та пігулка статусу зверху,
+  великий таймер у центрі, внизу «змійка» 24-годинної шкали (48 заокруглених півгодинних
+  сегментів: штрихування відключень і білий маркер «зараз») та рядок точного часу
+  («Вимкнуть о 23:00»).
+
+  Чому все так щільно: у клітинці 2×1 HyperOS дає ≈40–60dp висоти. Раніше сума вмісту була
+  ≈104dp (padding 24 + шапка 14 + таймер 31 + підпис 11 + шкала 14 + деталь 10), зайвий
+  вертикальний padding з'їдав залишок, і лаунчер різав таймер рівно навпіл — знизу було видно
+  половину цифр «5 год 02 хв». Тепер:
+   - вертикальні падінги 4dp, горизонтальні 9dp (раніше 12dp з усіх боків);
+   - таймер авто-розмірний (16…26sp, базовий кегль 22sp, maxLines=1), тому ніколи не
+     виходить за клітинку;
+   - рядок «до відключення» (widget_timer_prefix) у 2×1 прихований: той самий зміст несе
+     точний час у widget_detail. У високій клітинці (від 96dp) провайдер показує його знову.
+
+  Тап по всій капсулі листає збережені місця, тап по пігулці відкриває застосунок.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_capsule_unknown"
+    android:paddingHorizontal="9dp"
+    android:paddingVertical="4dp">
+
+    <TextView
+        android:id="@+id/widget_cycle"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/widget_cycle_place"
+        android:focusable="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/widget_dot"
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginEnd="4dp"
+                android:importantForAccessibility="no"
+                android:scaleType="fitCenter"
+                android:src="@drawable/widget_dot_unknown" />
+
+            <!--
+              Назва місця забирає весь залишок: у 110dp клітинці два бейджі (черга + статус)
+              раніше витискали її в «…». maxWidth тут не потрібен — ширину тримає weight.
+            -->
+            <TextView
+                android:id="@+id/widget_place"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_no_data"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <!-- Очередь окремим чипом: «Дім · 6/1» в одну строку з місцем обрізалось. -->
+            <TextView
+                android:id="@+id/widget_queue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/widget_pill"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="1dp"
+                android:textColor="#E4E4E7"
+                android:textSize="8sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/widget_pill"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/widget_pill_bright"
+                android:clickable="true"
+                android:contentDescription="@string/widget_open_app"
+                android:ellipsize="end"
+                android:focusable="true"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="1dp"
+                android:text="@string/widget_no_data"
+                android:textColor="#F4F4F5"
+                android:textSize="8sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Таймер у 0dp+weight: авто-розмір рахує шрифт від реального залишку висоти. -->
+        <TextView
+            android:id="@+id/widget_timer"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:autoSizeMaxTextSize="26sp"
+            android:autoSizeMinTextSize="16sp"
+            android:autoSizeTextType="uniform"
+            android:gravity="center_vertical"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="—"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <!-- Прихований у 2×1: точний час є в widget_detail. Провайдер показує його у високій
+             клітинці (від 96dp), щоб підпис «до відключення» не дублював detail. -->
+        <TextView
+            android:id="@+id/widget_timer_prefix"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:textColor="#A1A1AA"
+            android:textSize="8sp"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_scale"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:layout_marginTop="2dp"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY" />
+
+        <TextView
+            android:id="@+id/widget_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="@string/widget_open_hint"
+            android:textColor="#D4D4D8"
+            android:textSize="8sp" />
+    </LinearLayout>
+</FrameLayout>

@@ -1,0 +1,102 @@
+import { NativeModules, Platform } from 'react-native';
+
+import type { NotificationBanner } from '@/lib/notification-banner';
+
+/**
+ * Мост к нативному виджету (`SvitloWidgetModule`).
+ *
+ * Виджет живёт вне React и обновляется системой, поэтому обмен односторонний: приложение
+ * складывает снимок состояния в `SharedPreferences`, виджет перерисовывается. Обратно
+ * приходят только клики по зонам — их забирает `consumeAction` и сразу очищает.
+ */
+interface SvitloWidgetBridge {
+  update(payload: string): void;
+  consumeAction(): Promise<string | null>;
+  clear(): void;
+  /** Имя drawable для плашки в шторке; приходит из нативного `getConstants()`. */
+  notificationIcon?: string;
+}
+
+export type WidgetAction = 'refresh' | 'next_queue' | 'cycle_bookmark';
+
+import { buildWidgetPayload, type WidgetSnapshotExtras } from '@/lib/widget-payload';
+
+export type { WidgetPlaceSnapshot, WidgetSnapshotExtras } from '@/lib/widget-payload';
+
+interface SvitloSharedDefaultsBridge {
+  setPayload(payload: string): void;
+}
+
+const bridge: SvitloWidgetBridge | undefined = NativeModules.SvitloWidget;
+const sharedDefaults: SvitloSharedDefaultsBridge | undefined = NativeModules.SvitloSharedDefaults;
+
+/**
+ * Имя иконки для `smallIcon` постоянной плашки.
+ *
+ * Приходит из нативного модуля, а не из литерала: ресурс обязан быть статически
+ * использован в Kotlin, иначе `shrinkResources` вырезает drawable и уведомление не показывается.
+ * Здесь это ещё и единственный источник имени — JS и Android не расходятся.
+ */
+export function notificationIconName(): string {
+  return bridge?.notificationIcon ?? 'ic_stat_svitlo';
+}
+
+/** Виджеты есть только в Android-сборке: в web/ios вызовы молча ничего не делают. */
+export function isWidgetAvailable(): boolean {
+  return Platform.OS === 'android' && bridge != null;
+}
+
+/**
+ * Отдаёт виджету тот же снимок, что и плашку уведомления: одно состояние — одно изображение.
+ *
+ * JSON плоский и короткий: нативный рендер ждёт ровно эти поля (см. `WidgetPayload.kt`),
+ * лишние он игнорирует. `slots` — 48 получасовых кодов, `nowFraction` — позиция «зараз».
+ */
+export function pushWidgetSnapshot(
+  banner: NotificationBanner,
+  extras?: WidgetSnapshotExtras,
+  updatedAt = Date.now(),
+): void {
+  const serialized = JSON.stringify(buildWidgetPayload(banner, extras, updatedAt));
+  // `SvitloWidget` — виключно Android-модуль: на iOS його немає в NativeModules, а явна
+  // перевірка платформи захищає від випадкового дзвінка в міст і без перевірки bridge.
+  if (Platform.OS === 'android' && bridge) {
+    try {
+      bridge.update(serialized);
+    } catch {
+      /* виджет не установлен/модуль недоступен — экран из-за этого падать не должен */
+    }
+  }
+  // На iOS виджетного расширения пока нет, но контейнер App Group уже общий: кладём тот же
+  // снимок в `UserDefaults(suiteName:)`, чтобы расширение могло читать его без переделки JS.
+  if (Platform.OS === 'ios' && sharedDefaults) {
+    try {
+      sharedDefaults.setPayload(serialized);
+    } catch {
+      /* модуль не подключён в этой сборке — молча пропускаем */
+    }
+  }
+}
+
+/** Забирает отложенное действие клика по зоне виджета. */
+export async function consumeWidgetAction(): Promise<WidgetAction | null> {
+  if (Platform.OS !== 'android' || !bridge) return null;
+  try {
+    const action = await bridge.consumeAction();
+    return action === 'refresh' || action === 'next_queue' || action === 'cycle_bookmark'
+      ? action
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Сброс данных виджета: он вернётся к честной заглушке «немає даних». */
+export function clearWidget(): void {
+  if (Platform.OS !== 'android' || !bridge) return;
+  try {
+    bridge.clear();
+  } catch {
+    /* нечего очищать */
+  }
+}

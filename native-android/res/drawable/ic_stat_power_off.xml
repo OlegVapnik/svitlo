@@ -1,0 +1,14 @@
+<!-- smallIcon плашки: света нет (молния перечёркнута). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillAlpha="0.4"
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M13,2L4.09,12.97c-0.33,0.39 0.07,0.97 0.56,0.86L10,12.67L10,21c0,0.55 0.45,1 1,1h0.02c0.32,0 0.62,-0.16 0.81,-0.42L20.91,11.03c0.33,-0.39 -0.07,-0.97 -0.56,-0.86L14,11.33L14,3c0,-0.55 -0.45,-1 -1,-1z"/>
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M3.7,5.3L3.7,5.3c-0.39,0.39 -0.39,1.02 0,1.41l2.4,2.4l-2.01,2.86c-0.33,0.39 0.07,0.97 0.56,0.86L10,12.67L10,21c0,0.55 0.45,1 1,1h0.02c0.32,0 0.62,-0.16 0.81,-0.42l2.47,-3.5l2.99,2.99c0.39,0.39 1.02,0.39 1.41,0l0,0c0.39,-0.39 0.39,-1.02 0,-1.41L5.11,5.3C4.72,4.91 4.09,4.91 3.7,5.3z"/>
+</vector>

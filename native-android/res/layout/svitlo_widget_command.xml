@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  4×2 «Командний Центр»: сверху переключатель места, очередь и обновление; в центре —
+  живой таймер с подписью, рядок точного часу, шкала суток с пятью опорами; снизу — две
+  плитки «Сьогодні»/«Завтра» с часами отключений, а не только суммарными минутами.
+
+  Після репорту з HyperOS рядок деталей («Вимкнуть о 23:00») винесено на власний рядок:
+  раніше він жив у одному горизонтальному рядку з підписом «до відключення» і при вузькій
+  клітинці приклеювався до нього — на екрані виходило «до відключенняНаступне відключення».
+
+  Компактна вертикаль: 8 + 20 + 28 + 12 + 14 + 9 + плитки ≈ 140dp. Раніше шапка займала
+  22dp, ряд таймера 30dp і шкала 18dp — сумарно плитки видавлювались за межі клітинки,
+  і HyperOS показував «Не вдається завантажити віджет» або обрізав низ.
+
+  Высоты подписей 00…24 заданы явно: RemoteViews не переносит layout-атрибуты из style.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_panel"
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <!--
+          Полоса-«светофор». Именно ImageView, а не <View>: RemoteViews надувает только
+          классы с аннотацией @RemoteView, а android.view.View к ним не относится —
+          HyperOS и часть прошивок отвечают на такой макет «Не вдається завантажити віджет».
+        -->
+        <FrameLayout
+        android:id="@+id/widget_accent"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="7dp"
+        android:background="@drawable/widget_accent_unknown"
+        android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="vertical">
+
+            <!-- Шапка: назва місця має пріоритет, бейджі черги й статусу — мінімальні. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/widget_dot"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginEnd="4dp"
+                    android:importantForAccessibility="no"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_dot_unknown" />
+
+                <LinearLayout
+                    android:id="@+id/widget_place_group"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/widget_pill"
+                    android:clickable="true"
+                    android:contentDescription="@string/widget_cycle_place"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="2dp">
+
+                    <TextView
+                        android:id="@+id/widget_place"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:maxWidth="150dp"
+                        android:text="@string/widget_no_data"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <ImageView
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:layout_marginStart="3dp"
+                        android:importantForAccessibility="no"
+                        android:src="@drawable/ic_widget_chevron_down" />
+                </LinearLayout>
+
+                <!-- Очередь отдельным чипом: в шапке 4×2 раньше жила только подпись места. -->
+                <TextView
+                    android:id="@+id/widget_queue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/widget_pill"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="2dp"
+                    android:textColor="#E4E4E7"
+                    android:textSize="9sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/widget_pill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/widget_pill"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="2dp"
+                    android:text="@string/widget_no_data"
+                    android:textColor="#FFFFFF"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
+            <!--
+              Ряд таймера — wrap_content: таймер 24sp в жёсткие 26dp не влезал и резался
+              по вертикали (видна только верхняя половина цифр). Тут лише таймер і його
+              підпис-пояснення; жодних сусідів, до яких можна «приклеїтись».
+            -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_timer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="—"
+                    android:textColor="#FFFFFF"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_timer_prefix"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:textColor="#A1A1AA"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
+            <!-- Окремий рядок точного часу: «Вимкнуть о 23:00», «Увімкнуть о 13:00». -->
+            <TextView
+                android:id="@+id/widget_detail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:gravity="start"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="#A1A1AA"
+                android:textSize="9sp" />
+
+            <ImageView
+                android:id="@+id/widget_scale"
+                android:layout_width="match_parent"
+                android:layout_height="12dp"
+                android:layout_marginTop="2dp"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_scale_start"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="00"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_hour_6"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="6"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_hour_12"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="12"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_hour_18"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="18"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_scale_end"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="24"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/widget_today_tile"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/widget_row_unknown"
+                    android:clickable="true"
+                    android:contentDescription="@string/widget_open_app"
+                    android:focusable="true"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="7dp"
+                    android:paddingVertical="4dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:includeFontPadding="false"
+                        android:letterSpacing="0.08"
+                        android:maxLines="1"
+                        android:text="@string/widget_today"
+                        android:textAllCaps="true"
+                        android:textColor="#A1A1AA"
+                        android:textSize="8sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/widget_today_value"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_no_data"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <!-- Часы отключений: «09:30–13:00, 17:00–20:00». Минуты без контекста
+                         не отвечали на вопрос «когда именно», ради которого виджет и нужен.
+                         Провайдер скрывает строку (GONE), если она повторяет значение выше. -->
+                    <TextView
+                        android:id="@+id/widget_today_windows"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_no_outages"
+                        android:textColor="#A1A1AA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- Разделитель между плитками: FrameLayout вместо <View> — тот же @RemoteView. -->
+                <FrameLayout
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginHorizontal="5dp"
+                    android:layout_marginVertical="2dp"
+                    android:background="@drawable/widget_divider"
+                    android:importantForAccessibility="no" />
+
+                <LinearLayout
+                    android:id="@+id/widget_tomorrow_tile"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@drawable/widget_row_unknown"
+                    android:clickable="true"
+                    android:contentDescription="@string/widget_open_app"
+                    android:focusable="true"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="7dp"
+                    android:paddingVertical="4dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:includeFontPadding="false"
+                        android:letterSpacing="0.08"
+                        android:maxLines="1"
+                        android:text="@string/widget_tomorrow"
+                        android:textAllCaps="true"
+                        android:textColor="#A1A1AA"
+                        android:textSize="8sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/widget_tomorrow_value"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_no_data"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/widget_tomorrow_windows"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:ellipsize="end"
+                        android:includeFontPadding="false"
+                        android:maxLines="1"
+                        android:text="@string/widget_schedule_evening"
+                        android:textColor="#A1A1AA"
+                        android:textSize="10sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

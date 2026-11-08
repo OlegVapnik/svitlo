@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2×2 «Наступна Зміна». Квадратний формат: сверху смуга стану і шапка (точка, назва місця,
+  черга, пігулка статусу), в центрі великий таймер із підписом, нижче — рядок деталей і
+  «змійка» доби з маркером «зараз». Невидима зона widget_cycle на весь віджет листає місця.
+
+  Що виправлено після репорту з HyperOS:
+   - назва місця більше не стискається в «…»: у квадратній клітинці (110dp) бейджі «2/2»
+     і «За графіком» мали padding 6–8dp і з'їдали ~120dp із 90 доступних. Тепер бейджі
+     компактні (8–10sp, padding 4–5dp), а назва має weight=1 і пріоритет;
+   - «змійка» не прилипає до нижньої рамки: корінь має paddingBottom 12dp, а не 12dp з усіх
+     боків при вдвічі більшому вмісті — раніше шкала стояла впритул до краю картки;
+   - вертикаль центрується навколо таймера (gravity=center), тому порожнеча розподіляється
+     зверху і знизу, а не збивається в один блок над шкалою.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_panel"
+    android:paddingHorizontal="10dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="12dp">
+
+    <TextView
+        android:id="@+id/widget_cycle"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/widget_cycle_place"
+        android:focusable="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Полоса-«светофор» сверху: цвет ставится в bindEvent по состоянию сети. -->
+        <!-- FrameLayout, а не <View>: RemoteViews надувает только @RemoteView-классы,
+             android.view.View к ним не относится — на HyperOS такой макет даёт
+             «Не вдається завантажити віджет». -->
+        <FrameLayout
+        android:id="@+id/widget_accent"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginBottom="6dp"
+        android:background="@drawable/widget_accent_unknown"
+        android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/widget_dot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="4dp"
+                android:importantForAccessibility="no"
+                android:scaleType="fitCenter"
+                android:src="@drawable/widget_dot_unknown" />
+
+            <!--
+              Шапка як у решти віджетів: ● місце [2/2] [статус]. Раніше тут стояло статичне
+              «ЗАРАЗ», і в вузькій 2×2 клітинці воно обрізалось до «ЗАРА». Місце гнучке
+              (weight=1) з ellipsize: чипи черги й статусу не стискаються, але й не мають
+              права забрати всю ширину — тому їхні падінги мінімальні.
+            -->
+            <TextView
+                android:id="@+id/widget_place"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="@string/widget_no_data"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_queue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/widget_pill"
+                android:ellipsize="end"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:maxWidth="40dp"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="1dp"
+                android:textColor="#E4E4E7"
+                android:textSize="8sp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/widget_pill"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/widget_pill"
+                android:clickable="true"
+                android:contentDescription="@string/widget_open_app"
+                android:ellipsize="end"
+                android:focusable="true"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:maxWidth="64dp"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="1dp"
+                android:text="@string/widget_no_data"
+                android:textColor="#FFFFFF"
+                android:textSize="8sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_timer_prefix"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:textColor="#A1A1AA"
+                android:textSize="9sp" />
+
+            <TextView
+                android:id="@+id/widget_timer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:text="—"
+                android:textColor="#FFFFFF"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:text="@string/widget_open_hint"
+            android:textColor="#D4D4D8"
+            android:textSize="9sp" />
+
+        <ImageView
+            android:id="@+id/widget_scale"
+            android:layout_width="match_parent"
+            android:layout_height="10dp"
+            android:layout_marginTop="5dp"
+            android:importantForAccessibility="no"
+            android:scaleType="fitXY" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

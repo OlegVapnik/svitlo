@@ -1,0 +1,107 @@
+{
+  "expo": {
+    "name": "Svitlo",
+    "slug": "svitlo",
+    "version": "2.44.9",
+    "orientation": "portrait",
+    "scheme": "svitlo",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#09090b",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "ua.com.svitlo.app",
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/ios-icon-dark.png",
+        "tinted": "./assets/ios-icon-tinted.png"
+      },
+      "infoPlist": {
+        "CFBundleDisplayName": "Svitlo",
+        "CFBundleDevelopmentRegion": "uk",
+        "CFBundleLocalizations": [
+          "uk"
+        ],
+        "LSRequiresIPhoneOS": true,
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Svitlo не збирає геодані. Дозвіл потрібен лише для швидкого пошуку вашої черги за адресою.",
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification"
+        ],
+        "UIStatusBarStyle": "UIStatusBarStyleLightContent",
+        "UIViewControllerBasedStatusBarAppearance": true
+      }
+    },
+    "android": {
+      "package": "ua.com.svitlo.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#09090b",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "versionCode": 298
+    },
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#09090b",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 128,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#09090b",
+            "image": "./assets/splash-icon.png"
+          }
+        }
+      ],
+      "./plugins/withAndroidWidget",
+      "./plugins/withSvitloNative",
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/Inter-Regular.ttf",
+            "./assets/fonts/Inter-Medium.ttf",
+            "./assets/fonts/Inter-SemiBold.ttf",
+            "./assets/fonts/Inter-Bold.ttf",
+            "./assets/fonts/Inter-ExtraBold.ttf"
+          ]
+        }
+      ],
+      "expo-sharing",
+      "expo-notifications",
+      "expo-sqlite",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "5d35774a-1192-411c-90fe-7767110dbec5"
+      }
+    },
+    "owner": "olegvapnik"
+  }
+}

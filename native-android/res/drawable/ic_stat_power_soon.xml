@@ -1,0 +1,13 @@
+<!-- smallIcon плашки: скорое отключение (молния наполовину «выйдет из контура»). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M13,2L4.09,12.97c-0.33,0.39 0.07,0.97 0.56,0.86L10,12.67L10,21c0,0.55 0.45,1 1,1h0.02c0.32,0 0.62,-0.16 0.81,-0.42L20.91,11.03c0.33,-0.39 -0.07,-0.97 -0.56,-0.86L14,11.33L14,3c0,-0.55 -0.45,-1 -1,-1z"/>
+  <path
+      android:fillColor="#B91C1C"
+      android:pathData="M20,3.5l-1.5,0L18.5,2l-1,0L17.5,3.5L16,3.5l0,1l1.5,0l0,1.5l1,0l0,-1.5l1.5,0z"/>
+</vector>

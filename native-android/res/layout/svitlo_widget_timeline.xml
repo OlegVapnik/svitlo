@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  4×1 «Таймлайн Суток». Верхняя строка — статус, место, очередь и крупный таймер;
+  снизу — шкала 24 часов с пятью опорными подписями вместо двух.
+
+  Почему пять подписей: с «00» и «24:00» по краям середина шкалы была нечитаемой —
+  человек не понимал, где «сейчас» и где границы отключения. Метки 6/12/18 дают опору,
+  а «зараз» рисует сама шкала (WidgetTimeline).
+
+  Вертикаль: 2 + 22 + 1 + 13 + 1 + 10 + 9 + 2 ≈ 60dp — це реальна висота клітинки 4×1
+  (HyperOS дає ≈60–72dp). Раніше було 83dp, і лаунчер обрізав макет, показуючи
+  «Не вдається завантажити віджет». Горизонтальні падінги — 8dp: у 4×1 дорогий кожен dp
+  ширини, бо шкала 00…24 має лишитись читабельною.
+
+  Важно: height у каждой вьюхи задан явно — RemoteViews создаёт LayoutParams по XML,
+  а не по style, иначе лаунчер падает с «You must supply a layout_height attribute».
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_panel"
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="2dp">
+
+    <TextView
+        android:id="@+id/widget_cycle"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:contentDescription="@string/widget_cycle_place"
+        android:focusable="true" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <!--
+          Полоса-«светофор». Именно ImageView, а не <View>: RemoteViews надувает только
+          классы с аннотацией @RemoteView, а android.view.View к ним не относится —
+          HyperOS и часть прошивок отвечают на такой макет «Не вдається завантажити віджет».
+        -->
+        <FrameLayout
+        android:id="@+id/widget_accent"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="8dp"
+        android:background="@drawable/widget_accent_unknown"
+        android:importantForAccessibility="no" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="vertical">
+
+            <!--
+              Высота ряда — wrap_content: здесь стоит таймер 18sp, и жёсткие 16dp резали
+              цифры ровно пополам (баг 2.41.3 на POCO F5 Pro).
+            -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!--
+                  Высота точки — ровно 7dp, а не wrap_content: у `<shape>` нет intrinsic
+                  размера, и ImageView с wrap_content растягивался в 0 высоты. На HyperOS
+                  такой «сплюснутый» овал выглядел тире перед названием места («- Дім»),
+                  хотя в макете нет ни одного текстового символа-разделителя.
+                -->
+                <ImageView
+                    android:id="@+id/widget_dot"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginEnd="5dp"
+                    android:importantForAccessibility="no"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/widget_dot_unknown" />
+
+                <TextView
+                    android:id="@+id/widget_place"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:maxWidth="150dp"
+                    android:text="@string/widget_no_data"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <!-- Очередь отдельной вьюхой: «Дім · 6/1» одной строкой вытесняло место. -->
+                <TextView
+                    android:id="@+id/widget_queue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:background="@drawable/widget_pill"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="1dp"
+                    android:textColor="#E4E4E7"
+                    android:textSize="8sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/widget_timer"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="—"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!--
+              Ряд пігулки та деталей: висота wrap_content + minHeight 13dp, а не жорсткі
+              10dp. Пігулка «За графіком» із paddingVertical 2dp і кеглем 9sp вимагає
+              ≈13–14dp — у 10dp вона сплющувалась, і текст обрізався знизу (репорт з
+              HyperOS). `gravity=center_vertical` тримає обидві в'юхи на одній осі, тому
+              бейдж не «сповзає» вгору, коли деталь займає два рядки.
+            -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:gravity="center_vertical"
+                android:minHeight="13dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_pill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/widget_pill"
+                    android:ellipsize="end"
+                    android:gravity="center_vertical"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:paddingHorizontal="5dp"
+                    android:paddingVertical="2dp"
+                    android:text="@string/widget_no_data"
+                    android:textColor="#FFFFFF"
+                    android:textSize="9sp" />
+
+                <TextView
+                    android:id="@+id/widget_detail"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:gravity="center_vertical|start"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="@string/widget_open_hint"
+                    android:textColor="#A1A1AA"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
+            <ImageView
+                android:id="@+id/widget_scale"
+                android:layout_width="match_parent"
+                android:layout_height="10dp"
+                android:layout_marginTop="1dp"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_scale_start"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="00"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_hour_6"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="6"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_hour_12"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="12"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_hour_18"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="18"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+
+                <TextView
+                    android:id="@+id/widget_scale_end"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:text="24"
+                    android:textColor="#71717A"
+                    android:textSize="7sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

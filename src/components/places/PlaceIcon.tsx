@@ -1,0 +1,86 @@
+import type { ComponentProps } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Pressable, View } from 'react-native';
+import { Text } from '@/components/ui/AppText';
+
+import { PLACE_ICONS, type PlaceIcon } from '@svitlo/core/lib/saved-places';
+import { useTheme } from '@/theme/ThemeProvider';
+
+const META: Record<PlaceIcon, { icon: ComponentProps<typeof Ionicons>['name']; label: string }> = {
+  home: { icon: 'home-outline', label: 'Дім' },
+  work: { icon: 'briefcase-outline', label: 'Робота' },
+  family: { icon: 'people-outline', label: 'Родина' },
+  dacha: { icon: 'leaf-outline', label: 'Дача' },
+  garage: { icon: 'car-outline', label: 'Гараж' },
+  office: { icon: 'business-outline', label: 'Офіс' },
+  school: { icon: 'school-outline', label: 'Школа' },
+  star: { icon: 'star-outline', label: 'Інше' },
+};
+
+export function PlaceIconBadge({
+  icon,
+  size = 18,
+  color = '#FFFFFF',
+}: {
+  icon: PlaceIcon;
+  size?: number;
+  color?: string;
+}) {
+  return <Ionicons name={META[icon].icon} size={size} color={color} />;
+}
+
+export function PlaceIconPicker({
+  value,
+  onChange,
+}: {
+  value: PlaceIcon;
+  onChange: (icon: PlaceIcon) => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <View className="flex-row flex-wrap gap-2">
+      {PLACE_ICONS.map((icon) => {
+        const selected = icon === value;
+        return (
+          <Pressable
+            key={icon}
+            onPress={() => onChange(icon)}
+            accessibilityRole="button"
+            accessibilityLabel={META[icon].label}
+            accessibilityState={{ selected }}
+            style={{
+              backgroundColor: selected ? palette.primaryContainer : palette.surfaceContainerHigh,
+              borderColor: selected ? palette.primary : palette.border,
+            }}
+            className="h-10 w-10 items-center justify-center rounded-full border active:opacity-80"
+          >
+            <PlaceIconBadge icon={icon} size={18} color="#FFFFFF" />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export function iconLabel(icon: PlaceIcon): string {
+  return META[icon].label;
+}
+
+/** Емодзі для нативних віджетів: там немає Ionicons, а емодзі є в системному шрифті. */
+const EMBLEM: Record<PlaceIcon, string> = {
+  home: '🏠',
+  work: '💼',
+  family: '👨‍👩‍👧',
+  dacha: '🌳',
+  garage: '🚗',
+  office: '🏢',
+  school: '🎓',
+  star: '⭐',
+};
+
+export function placeIconEmoji(icon: PlaceIcon): string {
+  return EMBLEM[icon] ?? '⭐';
+}
+
+export { PLACE_ICONS };

@@ -1,0 +1,35 @@
+<!--
+  Пользовательские строки живого статуса (QS-плитка + постоянная плашка шторки).
+
+  Правило из 2.41.4: кириллица только в ресурсах — кириллические литералы в Kotlin
+  приезжают на устройство в неизменённом виде только для чисел и «HH:mm». Числа
+  подставляются по тем же форматам, что и у виджетов (widget_*_short и т.д.).
+-->
+<resources>
+  <!-- Канал плашки. -->
+  <string name="live_channel_name">Живий статус світла</string>
+  <string name="live_channel_desc">Постійний індикатор зі станом мережі й таймером</string>
+
+  <!-- QS-плитка. -->
+  <string name="live_tile_label">Svitlo</string>
+  <string name="live_tile_prompt">Оберіть чергу</string>
+  <string name="live_tile_unavailable">Svitlo</string>
+  <string name="live_tile_on_plain">Є світло</string>
+  <string name="live_tile_on_queue">Є світло · %1$s</string>
+  <string name="live_tile_off_plain">Немає світла</string>
+  <string name="live_tile_off_queue">Немає · %1$s</string>
+  <string name="live_tile_until_off">До %1$s · %2$s</string>
+  <string name="live_tile_until_on">Увімкнуть о %1$s</string>
+
+  <!-- Постоянная плашка шторки. -->
+  <string name="live_notif_title_on">%1$s — світло за графіком</string>
+  <string name="live_notif_title_warning">%1$s — скоро вимкнуть</string>
+  <string name="live_notif_title_off">%1$s — світла немає</string>
+  <string name="live_notif_body">Наступне вікно: %1$s · Сьогодні без світла: %2$s</string>
+  <string name="live_notif_window_only">Наступне вікно: %1$s</string>
+  <string name="live_notif_outage_only">Сьогодні без світла: %1$s</string>
+
+  <!-- Promoted chip (Android 14+): короткий текст поверх плашки. -->
+  <string name="live_chip_return">до %1$s</string>
+  <string name="live_chip_off">без світла до %1$s</string>
+</resources>

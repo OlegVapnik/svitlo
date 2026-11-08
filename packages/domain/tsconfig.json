@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    // Пакет не залежить від типів середовища: ні Node, ні Workers, ні DOM. Якщо домену
+    // знадобився тип із рантайму — це сигнал, що логіка не доменна.
+    "types": []
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

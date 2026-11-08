@@ -1,0 +1,25 @@
+{
+  "name": "@svitlo/domain",
+  "version": "2.44.9",
+  "private": true,
+  "type": "module",
+  "description": "Чистий домен Svitlo: київський час, доба, інтервали. Нуль runtime-залежностей.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./kyiv-time": "./src/kyiv-time.ts",
+    "./schedule": "./src/schedule-utils.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^5.0.3"
+  }
+}

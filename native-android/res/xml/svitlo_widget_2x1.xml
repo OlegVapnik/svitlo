@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2×1 «Капсула-Датчик». updatePeriodMillis=30 хв — системний мінімум; частіше виджет
+  обновляє приложение снимком из JS. Нулевые размеры при первом добавлении не страшны:
+  макет декларативный, без Bitmap под пиксели лаунчера.
+
+  Межі ресайзу задані ОДНАКОВО у всіх п'яти провайдерах: HyperOS (MIUI launcher) ігнорує
+  горизонтальний/вертикальний ресайз, якщо немає `maxResizeWidth`/`maxResizeHeight` — без них
+  ручка розтягування просто не з'являється, і віджет «не змінює розмір» (репорт з HyperOS).
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_desc_capsule"
+    android:initialLayout="@layout/svitlo_widget_capsule"
+    android:maxResizeHeight="420dp"
+    android:maxResizeWidth="520dp"
+    android:minHeight="40dp"
+    android:minResizeHeight="60dp"
+    android:minResizeWidth="110dp"
+    android:minWidth="110dp"
+    android:previewLayout="@layout/svitlo_widget_capsule"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="1"
+    android:targetCellWidth="2"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />
