@@ -1,154 +1,154 @@
 {
-  "generatedAt": "2026-11-10T01:34:10.000Z",
-  "version": "2.47.0",
+  "generatedAt": "2026-11-10T01:58:48.180Z",
+  "version": "2.48.0",
   "jsBundle": {
-    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-8b465e5d7be7693c.gz",
-    "sha256": "8b465e5d7be7693c57347f5d8ae56672263fb2597bf14c26784dd8c1751541ff",
-    "sizeBytes": 3013903,
-    "version": "2.47.0",
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-50544df6abc59236.gz",
+    "sha256": "50544df6abc59236c05f9979cc906b54eb977aa5a1ca03ee53f08342d45d93ca",
+    "sizeBytes": 3008822,
+    "version": "2.48.0",
     "assets": [
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_down.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_down.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_down.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_down.png",
         "sizeBytes": 9456
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_right.xml",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_right.xml",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_right.xml",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_right.xml",
         "sizeBytes": 307
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_checkmark.xml",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_checkmark.xml",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_checkmark.xml",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_checkmark.xml",
         "sizeBytes": 312
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_error.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_error.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_error.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_error.png",
         "sizeBytes": 469
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_file.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_file.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_file.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_file.png",
         "sizeBytes": 138
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_forward.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_forward.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_forward.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_forward.png",
         "sizeBytes": 188
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_pkg.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_pkg.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_pkg.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_pkg.png",
         "sizeBytes": 364
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
         "sizeBytes": 100
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backiconmask.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backiconmask.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backiconmask.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backiconmask.png",
         "sizeBytes": 653
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
         "sizeBytes": 220
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
         "sizeBytes": 141
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
         "sizeBytes": 258
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_sitemap.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_sitemap.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_sitemap.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_sitemap.png",
         "sizeBytes": 465
       },
       {
-        "path": "drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_unmatched.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_unmatched.png",
+        "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_unmatched.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_unmatched.png",
         "sizeBytes": 4752
       },
       {
-        "path": "drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "path": "drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
         "sizeBytes": 134
       },
       {
-        "path": "drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "path": "drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
         "sizeBytes": 334
       },
       {
-        "path": "drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "path": "drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
         "sizeBytes": 201
       },
       {
-        "path": "drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "path": "drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
         "sizeBytes": 483
       },
       {
-        "path": "drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "path": "drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
         "sizeBytes": 167
       },
       {
-        "path": "drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "path": "drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
         "sizeBytes": 502
       },
       {
-        "path": "drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "path": "drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
         "sizeBytes": 266
       },
       {
-        "path": "drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "path": "drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
         "sizeBytes": 728
       },
       {
-        "path": "drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "path": "drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_backicon.png",
         "sizeBytes": 207
       },
       {
-        "path": "drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "path": "drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_clearicon.png",
         "sizeBytes": 645
       },
       {
-        "path": "drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "path": "drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_closeicon.png",
         "sizeBytes": 332
       },
       {
-        "path": "drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "path": "drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/drawable-xxxhdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_reactnavigation_elements_searchicon.png",
         "sizeBytes": 928
-      },
-      {
-        "path": "raw/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_expovectoricons1511_expofont58011_expo58023_reactnative0881_babelcor_971b24250122ce3f93ca528cc82af7a3_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/___home_ubuntu_repos_svitlomobile_node_modules_pnpm_expovectoricons1511_expofont58011_expo58023_reactnative0881_babelcor_971b24250122ce3f93ca528cc82af7a3_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
-        "sizeBytes": 389724
       },
       {
         "path": "raw/keep.xml",
         "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/keep.xml",
-        "sizeBytes": 2553
+        "sizeBytes": 2043
+      },
+      {
+        "path": "raw/node_modules_pnpm_expovectoricons1511_expofont58011_expo58023_reactnative0881_babelcor_971b24250122ce3f93ca528cc82af7a3_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
+        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/node_modules_pnpm_expovectoricons1511_expofont58011_expo58023_reactnative0881_babelcor_971b24250122ce3f93ca528cc82af7a3_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
+        "sizeBytes": 389724
       }
     ]
   },
   "keyId": "svitlo-ota-2026-1",
-  "signature": "9Ocl63HwB15vkkvtI3xzRXvfqzfItBCZBhx82F8BSAiiJ+HzOeDdoQbnk5walFj4NQhPzh7bpnbIil/HZA9jCw=="
+  "signature": "5TsoXpvJiDT8D6OUmUtR/iwBqZhL/GiepunDmtM6FW70M+QcwPmE/jqOUDZTYNBPmIqiGQgLNgNC2dpkgA9fBQ=="
 }
