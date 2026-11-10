@@ -305,17 +305,23 @@ export function regionFreshnessSection(region: RegionSummary): RegionFreshnessSe
  */
 export function sortRegionsByDataFreshness(regions: RegionSummary[]): RegionSummary[] {
   const byCpu = new Map(regions.map((region) => [region.cpu, region]));
+  const hasGraph = (region: RegionSummary): boolean =>
+    region.covered === true && region.allClear !== true && (region.todaySlots ?? 0) > 0;
+  const isAllClear = (region: RegionSummary): boolean =>
+    region.covered === true && region.allClear === true;
   const rank = (region: RegionSummary): number => {
-    if (region.covered || (region.todaySlots ?? 0) > 0) return 0;
-    if (regionHasAnyData(region)) return 1;
+    if (hasGraph(region)) return 0;
+    if (isAllClear(region)) return 1;
+    if (regionHasAnyData(region)) return 2;
     // Мережа (ЦЕК/ДнЕМ) наследует свежесть родителя, иначе живая область выглядела бы
     // мёртвой только из-за одной подсети.
     if (region.parentCpu) {
       const parent = byCpu.get(region.parentCpu);
-      if (parent && (parent.covered || (parent.todaySlots ?? 0) > 0)) return 0;
-      if (parent && regionHasAnyData(parent)) return 1;
+      if (parent && hasGraph(parent)) return 0;
+      if (parent && isAllClear(parent)) return 1;
+      if (parent && regionHasAnyData(parent)) return 2;
     }
-    return 2;
+    return 3;
   };
   return [...regions].sort(
     (a, b) => rank(a) - rank(b) || a.nameUa.localeCompare(b.nameUa, 'uk'),
