@@ -16,15 +16,15 @@ you must offer its corresponding source code to users of that service.
   - назву «Svitlo» та похідні назви застосунку;
   - логотип, іконки застосунку (assets/icon.png, adaptive та monochrome іконки);
   - скріншоти інтерфейсу (docs/screenshots/);
-  - домен svitlo.live та пов'язані з ним адреси.
+  - доменні імена, під якими розповсюджується застосунок.
 
 Форки можуть використовувати код, але не повинні виглядати як офіційний Svitlo:
 будь ласка, змініть назву, іконку й оформлення, щоб користувачі не плутали ваш
 застосунок з оригіналом.
 
 The AGPL-3.0 license covers source code only. It does NOT grant rights to the
-"Svitlo" name, the app logo and icons, the UI screenshots, or the svitlo.live
-domain. Forks are welcome to use the code, but must not masquerade as the
+"Svitlo" name, the app logo and icons, the UI screenshots, or the domain
+names used to distribute the app. Forks are welcome to use the code, but must not masquerade as the
 official Svitlo app.
 
 СТОРОННІ КОМПОНЕНТИ / THIRD-PARTY COMPONENTS
