@@ -21,7 +21,7 @@
   <a href="https://github.com/OlegVapnik/svitlo/releases/latest"><b>Завантажити APK</b></a> ·
   <a href="https://svitlo-ank.pages.dev">ВебВерсія</a> ·
   <a href="https://t.me/UABlackoutBot"><b>Telegram-бот</b></a> ·
-  <a href="https://t.me/OlegVapnik">Telegram</a> ·
+  <a href="https://t.me/OlegVapnik">Telegram</a>
 </p>
 
 ```
@@ -59,10 +59,9 @@ Svitlo відповідає на одне питання: **коли в мене
 графіки пізно або не публікують зовсім. Якщо даних немає — застосунок так і каже, а не малює
 зелене «у вас усе гаразд».
 
-Дані збирає окремий серверний двигун
-[svitlo-oracle-worker](https://github.com/OlegVapnik/svitlo-oracle-worker) на Zig: він обходить
-25 джерел (сайти обленерго, ДТЕК, Telegram-боти, OCR карток у Telegram), зводить їх у консенсус
-й публікує в Cloudflare Worker. Мобільний застосунок лише читає цей API і кешує все локально.
+Дані збирає окремий серверний двигун на Zig: він обходить 25 джерел (сайти обленерго, ДТЕК,
+Telegram-боти, OCR карток у Telegram), зводить їх у консенсус й публікує в Cloudflare Worker.
+Мобільний застосунок лише читає цей API і кешує все локально.
 Той самий API живить Telegram-бот [@UABlackoutBot](https://t.me/UABlackoutBot) — для тих, кому
 потрібен графік і нагадування просто в чаті, без встановлення застосунку.
 
@@ -275,9 +274,8 @@ OTA працює лише на Android: бандл збирається під H
 ## Звідки дані
 
 - **API**: Cloudflare Worker, `https://svitlo-api.olegvapnik45.workers.dev/api/v1`.
-- **Двигун**: [svitlo-oracle-worker](https://github.com/OlegVapnik/svitlo-oracle-worker) — 23
-  області, 25 джерел, опитування раз на хвилину. Дві області (Донецька, Луганська) позначені
-  `not_published`: там графік не складають.
+- **Двигун**: окремий серверний застосунок на Zig — 23 області, 25 джерел, опитування раз на
+  хвилину. Дві області (Донецька, Луганська) позначені `not_published`: там графік не складають.
 - **Адресні довідники**: статичні пакети на Cloudflare Pages з маніфестом `version 2`
   (населені пункти, шарди вулиць за першою літерою, шарди будинків за номером 0…15). Клієнт
   читає їх локально, щоб автокомпліт не смикав базу на кожен символ.
