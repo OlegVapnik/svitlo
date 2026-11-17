@@ -305,4 +305,4 @@ OTA працює лише на Android: бандл збирається під H
 зміни. Назва **Svitlo**, логотип і скріншоти застосунку під лицензію не підпадають і належать
 автору (див. [NOTICE](NOTICE)).
 
-Copyright © 2026 Oleh Vapnik.
+Copyright © 2026 OlegVapnik.
