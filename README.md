@@ -20,7 +20,7 @@
 <p align="center">
   <a href="https://github.com/OlegVapnik/svitlo/releases/latest"><b>Завантажити APK</b></a> ·
   <a href="https://svitlo-ank.pages.dev">Вебверсія</a> ·
-  <a href="https://t.me/UABlackoutBot"><b>Telegram-бот @UABlackoutBot</b></a> ·
+  <a href="https://t.me/UABlackoutBot"><b>Telegram-бот</b></a> ·
   <a href="https://t.me/OlegVapnik">Telegram</a> ·
   <a href="https://github.com/OlegVapnik/svitlo-oracle-worker">Двигун збору даних</a>
 </p>
