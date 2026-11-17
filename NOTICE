@@ -1,0 +1,37 @@
+Svitlo
+Copyright © 2026 Oleh Vapnik
+
+Цей репозиторій розповсюджується під GNU Affero General Public License v3.0
+(див. файл LICENSE). Якщо ви запускаєте змінену версію як мережевий сервіс,
+ви зобов'язані надати доступ до її вихідного коду.
+
+This repository is licensed under the GNU Affero General Public License v3.0
+(see the LICENSE file). If you run a modified version as a network service,
+you must offer its corresponding source code to users of that service.
+
+ТОВАРНІ ЗНАКИ / TRADEMARKS
+
+Ліцензія AGPL-3.0 поширюється на програмний код. Вона НЕ надає прав на:
+
+  - назву «Svitlo» та похідні назви застосунку;
+  - логотип, іконки застосунку (assets/icon.png, adaptive та monochrome іконки);
+  - скріншоти інтерфейсу (docs/screenshots/);
+  - домен svitlo.live та пов'язані з ним адреси.
+
+Форки можуть використовувати код, але не повинні виглядати як офіційний Svitlo:
+будь ласка, змініть назву, іконку й оформлення, щоб користувачі не плутали ваш
+застосунок з оригіналом.
+
+The AGPL-3.0 license covers source code only. It does NOT grant rights to the
+"Svitlo" name, the app logo and icons, the UI screenshots, or the svitlo.live
+domain. Forks are welcome to use the code, but must not masquerade as the
+official Svitlo app.
+
+СТОРОННІ КОМПОНЕНТИ / THIRD-PARTY COMPONENTS
+
+Залежності з npm зберігають власні ліцензії (переважно MIT та Apache-2.0).
+Логотипи операторів, назви областей та публічні графіки відключень належать
+відповідним операторам розподільчих мереж і використовуються як публічна
+інформація про стан енергосистеми.
+
+Контакт / Contact: olegvapnik45@gmail.com
