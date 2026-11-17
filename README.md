@@ -20,6 +20,7 @@
 <p align="center">
   <a href="https://github.com/OlegVapnik/svitlo/releases/latest"><b>Завантажити APK</b></a> ·
   <a href="https://svitlo-ank.pages.dev">Вебверсія</a> ·
+  <a href="https://t.me/UABlackoutBot"><b>Telegram-бот @UABlackoutBot</b></a> ·
   <a href="https://t.me/OlegVapnik">Telegram</a> ·
   <a href="https://github.com/OlegVapnik/svitlo-oracle-worker">Двигун збору даних</a>
 </p>
@@ -63,6 +64,8 @@ Svitlo відповідає на одне питання: **коли в мене
 [svitlo-oracle-worker](https://github.com/OlegVapnik/svitlo-oracle-worker) на Zig: він обходить
 25 джерел (сайти обленерго, ДТЕК, Telegram-боти, OCR карток у Telegram), зводить їх у консенсус
 й публікує в Cloudflare Worker. Мобільний застосунок лише читає цей API і кешує все локально.
+Той самий API живить Telegram-бот [@UABlackoutBot](https://t.me/UABlackoutBot) — для тих, кому
+потрібен графік і нагадування просто в чаті, без встановлення застосунку.
 
 <p align="center">
   <img src="docs/screenshots/home.jpg" width="220" alt="Головна: відлік до наступного відключення">
@@ -100,6 +103,10 @@ Svitlo відповідає на одне питання: **коли в мене
   відкочується, якщо не стартує.
 - **Офлайн-first.** Останній відомий стан зберігається локально й показується одразу, ще до
   мережі. Синхронізація йде у фоні.
+- **Telegram-бот [@UABlackoutBot](https://t.me/UABlackoutBot).** Той самий графік без
+  встановлення застосунку: показує чергу на сьогодні й завтра, нагадує за 15 хвилин до
+  відключення та повідомляє про ГАВ/СГАВ. Кнопка Mini App відкриває вебверсію одразу з вашою
+  областю та чергою.
 
 ## Екрани
 
