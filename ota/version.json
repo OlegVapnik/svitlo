@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-11-12T19:06:25.001Z",
-  "version": "2.48.6",
+  "generatedAt": "2026-11-24T20:56:35.506Z",
+  "version": "2.48.8",
   "jsBundle": {
-    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-f712f6f0f72203ad.gz",
-    "sha256": "f712f6f0f72203ad64705c4672cd6e77ea1dffb9099031bb8968a2004f2ba143",
-    "sizeBytes": 3008702,
-    "version": "2.48.6",
+    "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/bundle-48394afb71d446a9.gz",
+    "sha256": "48394afb71d446a9e3a8d74fcc154b75159e83f56826a5c1e4cbe489c516eac2",
+    "sizeBytes": 3005988,
+    "version": "2.48.8",
     "assets": [
       {
         "path": "drawable-mdpi/node_modules_pnpm_exporouter58030_5ae374e9852316968809551c40a8ccd5_node_modules_exporouter_assets_arrow_down.png",
@@ -140,15 +140,10 @@
       {
         "path": "raw/keep.xml",
         "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/keep.xml",
-        "sizeBytes": 2043
-      },
-      {
-        "path": "raw/node_modules_pnpm_expovectoricons1511_expofont58011_expo58023_reactnative0881_babelcor_971b24250122ce3f93ca528cc82af7a3_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
-        "url": "https://raw.githubusercontent.com/OlegVapnik/svitlo/main/ota/assets/raw/node_modules_pnpm_expovectoricons1511_expofont58011_expo58023_reactnative0881_babelcor_971b24250122ce3f93ca528cc82af7a3_node_modules_expo_vectoricons_build_vendor_reactnativevectoricons_fonts_ionicons.ttf",
-        "sizeBytes": 389724
+        "sizeBytes": 1837
       }
     ]
   },
   "keyId": "svitlo-ota-2026-1",
-  "signature": "z8Azg98r/203JmfzX08GztAIX0uktMvm4dTdyr4L2p1cQ10Fj/6gGNRyQ2J+4Fcd9ILSsS1r6w0rvmKLHHTbDA=="
+  "signature": "xwo0Jm1iNTrnE2Et6IrY3i48WAP9mEc44wbZhB9iRR/g49iWUpBRd9dSpgKnPlBGGDKawquF9+tBH8VoWD8wDw=="
 }
